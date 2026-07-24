@@ -69,15 +69,18 @@ export function Onboarding() {
     if (!validate()) return;
     setSubmitting(true);
     setSubmitError("");
+    let navigationStarted = false;
     try {
       await api.createAnonymousSession().catch((error) => { if (!(error instanceof ApiError && error.status === 409)) throw error; });
       const title = `${form.district} ${form.industry} ${STAGE_LABELS[form.business_stage]}`;
       const created = await api.createCase(form, title);
+      sessionStorage.setItem(`ter-doctor:case:${created.id}`, JSON.stringify(created));
+      navigationStarted = true;
       router.push(`/cases/${created.id}/explore`);
     } catch (error) {
       setSubmitError(error instanceof ApiError ? error.message : "서비스 연결을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
-      setSubmitting(false);
+      if (!navigationStarted) setSubmitting(false);
     }
   }
 
