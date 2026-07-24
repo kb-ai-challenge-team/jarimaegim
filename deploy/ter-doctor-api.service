@@ -1,0 +1,22 @@
+[Unit]
+Description=Ter Doctor FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/ter-doctor
+EnvironmentFile=/home/ec2-user/ter-doctor/.env
+ExecStart=/home/ec2-user/ter-doctor/backend/.venv/bin/uvicorn app.main:app --app-dir /home/ec2-user/ter-doctor/backend --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+StateDirectory=ter-doctor
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

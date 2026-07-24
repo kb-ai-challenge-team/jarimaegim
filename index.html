@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="공개데이터로 서울 창업 입지를 비교하고 실행 계획을 정리하는 터닥터 데모">
+  <meta name="theme-color" content="#ffbc00">
+  <title>터닥터 — 창업 입지 의사결정 지도</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="skip-links" aria-label="건너뛰기 링크">
+    <a href="#canvas">지도와 후보</a><a href="#caseContext">현재 조건</a><a href="#copilot">AI 대화</a>
+  </div>
+
+  <div class="app-shell kbland-layout" id="app" data-mobile-view="explore">
+    <aside class="primary-rail" aria-label="주요 메뉴">
+      <button class="rail-brand" type="button" data-action="go-stage" data-stage="explore" aria-label="터닥터 탐색 홈">
+        <span class="rail-logo" aria-hidden="true"><i></i><i></i></span><strong>터닥터</strong>
+      </button>
+      <nav class="rail-nav">
+        <button type="button" data-action="go-stage" data-stage="explore" data-rail-stage="explore" aria-current="page"><span aria-hidden="true">⌖</span>탐색</button>
+        <button type="button" data-action="go-stage" data-stage="analysis" data-rail-stage="analysis"><span aria-hidden="true">≋</span>분석</button>
+        <button type="button" data-action="go-stage" data-stage="plan" data-rail-stage="plan"><span aria-hidden="true">▤</span>계획</button>
+        <button type="button" data-action="go-stage" data-stage="execution" data-rail-stage="execution"><span aria-hidden="true">✓</span>실행</button>
+      </nav>
+      <div class="rail-bottom">
+        <button type="button" data-action="toggle-copilot" aria-controls="copilot" aria-expanded="false"><span aria-hidden="true">AI</span>대화</button>
+        <button type="button" data-action="open-login"><span aria-hidden="true">○</span>저장</button>
+      </div>
+    </aside>
+
+    <div class="stage-shell">
+      <header class="global-header map-header">
+        <button class="mobile-brand" type="button" data-action="go-stage" data-stage="explore" aria-label="터닥터 탐색 홈"><span class="rail-logo" aria-hidden="true"><i></i><i></i></span></button>
+        <form class="location-search" id="searchForm" role="search">
+          <span class="search-kicker">현재 케이스</span>
+          <input id="caseTitle" aria-label="지역 또는 상권 검색" value="마포구 카페 첫 창업" autocomplete="off">
+          <button type="submit" aria-label="검색"><span aria-hidden="true">⌕</span></button>
+        </form>
+        <section class="case-context" id="caseContext" aria-label="현재 분석 조건">
+          <div class="context-chips" id="contextChips"></div>
+          <button class="filter-edit" type="button" data-action="open-conditions"><span aria-hidden="true">☷</span> 조건</button>
+        </section>
+        <div class="header-actions">
+          <span class="header-state" id="saveState">임시 보관</span>
+          <button class="ai-open" type="button" data-action="toggle-copilot" aria-controls="copilot" aria-expanded="false"><span aria-hidden="true">AI</span> 코파일럿</button>
+        </div>
+      </header>
+
+      <main class="main-layout">
+        <section class="workspace" aria-label="창업 의사결정 지도와 캔버스">
+          <nav class="canvas-nav" aria-label="캔버스 영역" id="canvasNav"></nav>
+          <div class="canvas" id="canvas" tabindex="-1"></div>
+          <div class="compare-tray" id="compareTray" aria-live="polite"></div>
+        </section>
+
+        <aside class="copilot-panel" id="copilot" aria-label="터닥터 AI 코파일럿">
+          <header class="copilot-header">
+            <div class="copilot-glyph" aria-hidden="true"><span>AI</span></div>
+            <div><strong>터닥터 코파일럿</strong><span id="copilotContext">현재: 후보 탐색</span></div>
+            <button class="icon-only" type="button" data-action="toggle-copilot" aria-label="AI 코파일럿 닫기">×</button>
+          </header>
+          <section class="work-status" aria-label="AI 작업 상태">
+            <div class="status-title"><span>작업 상태</span><strong id="workStatusLabel">근거 확인 완료</strong></div>
+            <div class="status-steps" id="workStatusSteps"></div>
+          </section>
+          <div class="message-list" id="messageList" role="log" aria-live="polite" aria-relevant="additions"></div>
+          <section class="change-proposal" id="changeProposal" aria-label="AI 변경 제안">
+            <div class="proposal-head"><span class="change-number">변경 1</span><strong>탐색 범위를 넓힐까요?</strong></div>
+            <div class="diff-row"><span>보행 범위</span><del>10분</del><span class="diff-arrow" aria-hidden="true">→</span><ins>15분</ins></div>
+            <p>현재 비교 후보 2곳은 그대로 유지됩니다.</p>
+            <div class="proposal-actions"><button class="small-primary" type="button" data-action="apply-change">적용</button><button class="small-quiet" type="button" data-action="dismiss-change">취소</button></div>
+          </section>
+          <div class="quick-actions" id="quickActions" aria-label="빠른 작업"></div>
+          <form class="composer" id="chatForm">
+            <label class="sr-only" for="chatInput">터닥터 AI에게 메시지 보내기</label>
+            <textarea id="chatInput" rows="2" placeholder="후보나 근거에 대해 물어보세요"></textarea>
+            <div class="composer-footer"><span>조건 변경 전 확인을 요청합니다.</span><button class="send-button" type="submit">전송</button></div>
+          </form>
+        </aside>
+        <button class="drawer-scrim" type="button" data-action="toggle-copilot" aria-label="AI 코파일럿 닫기"></button>
+      </main>
+
+      <nav class="mobile-switcher" aria-label="모바일 보기 전환">
+        <button type="button" data-action="mobile-view" data-view="explore" aria-selected="true"><span aria-hidden="true">⌖</span>탐색</button>
+        <button type="button" data-action="mobile-view" data-view="analysis" aria-selected="false"><span aria-hidden="true">≋</span>분석</button>
+        <button type="button" data-action="mobile-view" data-view="conversation" aria-selected="false"><span aria-hidden="true">AI</span>대화</button>
+      </nav>
+    </div>
+  </div>
+
+  <div class="decision-trace" id="decisionTrace" aria-hidden="true"><span>1</span></div>
+
+  <dialog class="sheet-dialog" id="conditionDialog" aria-labelledby="conditionTitle">
+    <form method="dialog" id="conditionForm">
+      <header class="dialog-header"><div><span class="section-label">CASE CONDITIONS</span><h2 id="conditionTitle">분석 조건 수정</h2><p>확정 전에는 후보와 분석을 덮어쓰지 않습니다.</p></div><button class="icon-only" value="cancel" aria-label="조건 수정 닫기">×</button></header>
+      <div class="condition-grid">
+        <label><span>업종</span><input name="industry" value="카페" required></label>
+        <label><span>지역</span><select name="area"><option>서울 마포구</option><option>서울 성동구</option><option>서울 영등포구</option><option>서울 강남구</option></select></label>
+        <label><span>총예산</span><div class="money-input"><input name="budget" type="number" min="0" value="12000" required><span>만 원</span></div></label>
+        <label><span>자기자본</span><div class="money-input"><input name="capital" type="number" min="0" value="8000" required><span>만 원</span></div></label>
+        <fieldset><legend>사업단계</legend><label class="radio"><input type="radio" name="businessStage" value="예비 창업" checked>예비 창업</label><label class="radio"><input type="radio" name="businessStage" value="운영 중 이전">운영 중 이전</label></fieldset>
+        <fieldset><legend>창업형태</legend><label class="radio"><input type="radio" name="startupType" value="개인" checked>개인</label><label class="radio"><input type="radio" name="startupType" value="프랜차이즈">프랜차이즈</label><label class="radio"><input type="radio" name="startupType" value="미정">미정</label></fieldset>
+      </div>
+      <footer class="dialog-actions"><button class="quiet-button" value="cancel">취소</button><button class="primary-button" value="default" data-action="save-conditions">조건 저장하고 다시 보기</button></footer>
+    </form>
+  </dialog>
+
+  <dialog class="evidence-dialog" id="evidenceDialog" aria-labelledby="evidenceTitle">
+    <header class="dialog-header"><div><span class="section-label">DATA PROVENANCE</span><h2 id="evidenceTitle">근거와 한계</h2><p id="evidenceSubtitle">서울 상권분석 · 2025 Q4</p></div><button class="icon-only" type="button" data-action="close-evidence" aria-label="근거 닫기">×</button></header>
+    <div class="evidence-body" id="evidenceBody"></div>
+  </dialog>
+
+  <dialog class="login-dialog" id="loginDialog" aria-labelledby="loginTitle">
+    <div class="login-mark" aria-hidden="true">T</div><h2 id="loginTitle">이 케이스를 계속 보관할까요?</h2><p>로그인하면 현재 조건과 비교 후보가 그대로 유지됩니다. 분석은 로그인 없이 계속할 수 있습니다.</p><button class="primary-button" type="button" data-action="mock-login">이메일로 저장하기</button><button class="quiet-button" type="button" data-action="close-login">지금은 계속 둘러보기</button>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

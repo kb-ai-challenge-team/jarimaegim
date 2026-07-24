@@ -1,0 +1,50 @@
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=(".env", "../.env", ".env.local"), extra="ignore")
+
+    app_env: str = "development"
+    app_origin: str = "http://127.0.0.1:4173"
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
+    next_public_supabase_anon_key: str = ""
+    next_public_kakao_map_js_key: str = ""
+    anon_token_pepper: str = "development-only-change-before-deploy"
+    anonymous_session_hours: int = 24
+    document_storage_dir: str = ".data/documents"
+
+    kakao_rest_api_key: str = ""
+    openai_api_key: str = ""
+    ai_chat_model: str = ""
+    ai_explanation_enabled: bool = True
+    ai_daily_request_limit: int = 20
+
+    seoul_open_data_key: str = ""
+    data_go_kr_service_key: str = ""
+    bizinfo_api_key: str = ""
+    kstartup_api_key: str = ""
+    finlife_api_key: str = ""
+    seoul_commercial_api_url: str = ""
+    bizinfo_api_url: str = ""
+    kstartup_api_url: str = ""
+    finlife_api_url: str = ""
+
+    aws_region: str = "ap-northeast-2"
+    ses_from_email: str = ""
+    privacy_rights_email: str = ""
+    financial_application_enabled: bool = False
+    consultation_transfer_enabled: bool = False
+    mydata_enabled: bool = False
+
+    @property
+    def supabase_configured(self) -> bool:
+        return bool(self.supabase_url and self.supabase_service_role_key)
+
+
+@lru_cache
+
+def get_settings() -> Settings:
+    return Settings()

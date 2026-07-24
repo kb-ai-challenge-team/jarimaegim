@@ -1,0 +1,41 @@
+{
+  "name": "ter-doctor-service",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c cyan,green \"next dev -p 4173\" \"npm run api:dev\"",
+    "dev:web": "next dev -p 4173",
+    "api:dev": "backend/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
+    "build": "next build",
+    "start": "next start -p 4173",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test:kakao-tools": "node --test scripts/update-kakao-map-key.test.mjs scripts/check-kakao-sdk.test.mjs",
+    "api:check": "backend/.venv/bin/python -m compileall -q backend/app",
+    "config:update-kakao-map-key": "node scripts/update-kakao-map-key.mjs",
+    "check:kakao-sdk": "node scripts/check-kakao-sdk.mjs sdk",
+    "check:kakao-build-assets": "node scripts/check-kakao-sdk.mjs assets"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.12.3",
+    "@supabase/supabase-js": "2.110.7",
+    "lucide-react": "1.25.0",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "concurrently": "10.0.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.10",
+    "playwright-core": "1.61.1",
+    "typescript": "5.9.3"
+  }
+}

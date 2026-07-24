@@ -1,0 +1,21 @@
+[Unit]
+Description=Ter Doctor Next.js frontend
+After=network-online.target ter-doctor-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/ter-doctor
+Environment=NODE_ENV=production
+EnvironmentFile=/home/ec2-user/ter-doctor/.env
+ExecStart=/usr/local/bin/node /home/ec2-user/ter-doctor/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 4173
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
