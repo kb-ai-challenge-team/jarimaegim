@@ -1,1 +1,1 @@
-"""터닥터 FastAPI application package."""
+"""자리매김 FastAPI application package."""

@@ -7,7 +7,7 @@ export function Landing() {
   return (
     <main id="main-content" className="landing">
       <header className="landing-header">
-        <Link href="/" className="wordmark" aria-label="터닥터 홈"><span className="brand-symbol" aria-hidden="true">터</span><span className="wordmark-partner">KB부동산 ×</span><strong>터닥터</strong></Link>
+        <Link href="/" className="wordmark" aria-label="자리매김 홈"><span className="brand-symbol" aria-hidden="true"></span><span className="wordmark-partner">KB부동산 ×</span><strong>자리매김</strong></Link>
         <nav aria-label="보조 메뉴"><Link href="/privacy-policy">서비스 원칙</Link><Link href="/auth" className="header-login">로그인</Link></nav>
       </header>
 
@@ -29,7 +29,7 @@ export function Landing() {
           <p className="boundary-copy"><ShieldCheck size={16}/> 공개데이터 기반 참고정보 · 금융 승인이나 매출을 보장하지 않음 · 무료</p>
         </div>
 
-        <div className="hero-canvas" aria-label="터닥터 서비스 흐름 미리보기">
+        <div className="hero-canvas" aria-label="자리매김 서비스 흐름 미리보기">
           <div className="canvas-top"><span>창업 조건</span><span className="live-label">근거 확인 중</span></div>
           <div className="condition-line"><span>카페</span><span>마포구</span><span>예산 미입력</span></div>
           <div className="decision-path">
@@ -41,7 +41,7 @@ export function Landing() {
           </div>
           <div className="canvas-preview-grid">
             <article><Map/><small>입지 후보</small><strong>지도와 목록을 함께</strong><p>지도를 불러오지 못해도 같은 후보를 목록에서 계속 검토합니다.</p></article>
-            <article><MessageSquareText/><small>터닥터 AI</small><strong>계산보다 설명에 집중</strong><p>AI가 조건을 바꾸기 전 변경 내용과 영향 범위를 먼저 보여줍니다.</p></article>
+            <article><MessageSquareText/><small>자리매김 AI</small><strong>계산보다 설명에 집중</strong><p>AI가 조건을 바꾸기 전 변경 내용과 영향 범위를 먼저 보여줍니다.</p></article>
           </div>
           <div className="trace-demo" aria-hidden="true"><span>조건</span><i/><span>근거</span><i/><span>실행</span></div>
         </div>

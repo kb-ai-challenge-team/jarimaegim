@@ -321,7 +321,7 @@ function renderCopilot(preserveScroll = true) {
   els.workStatusSteps.innerHTML = `<span class="status-step done"></span><span class="status-step done"></span><span class="status-step ${state.dirtyAnalysis ? "current" : "done"}"></span>`;
   const nearBottom = els.messageList.scrollHeight - els.messageList.scrollTop - els.messageList.clientHeight < 56;
   const oldTop = els.messageList.scrollTop;
-  els.messageList.innerHTML = state.messages.map(message => `<div class="message ${message.role}"><div class="message-bubble">${escapeHTML(message.text).replaceAll("\n", "<br>")}${message.citation ? `<button class="message-citation" type="button" data-action="open-evidence" aria-label="근거 1 보기">[1]</button>` : ""}<span class="message-meta">${message.role === "assistant" ? "터닥터 AI" : "나"}</span></div></div>`).join("");
+  els.messageList.innerHTML = state.messages.map(message => `<div class="message ${message.role}"><div class="message-bubble">${escapeHTML(message.text).replaceAll("\n", "<br>")}${message.citation ? `<button class="message-citation" type="button" data-action="open-evidence" aria-label="근거 1 보기">[1]</button>` : ""}<span class="message-meta">${message.role === "assistant" ? "자리매김 AI" : "나"}</span></div></div>`).join("");
   if (preserveScroll && !nearBottom) els.messageList.scrollTop = oldTop;
   else els.messageList.scrollTop = els.messageList.scrollHeight;
   els.changeProposal.classList.toggle("hidden", !state.changeProposal);

@@ -29,7 +29,7 @@ official_sources = OfficialSourceService(settings)
 ai = AIService(settings)
 document_store = DocumentStore(settings.document_storage_dir)
 
-app = FastAPI(title="터닥터 API", version="1.0.0", docs_url="/api/v1/docs" if settings.app_env != "production" else None, redoc_url=None, openapi_url="/api/v1/openapi.json" if settings.app_env != "production" else None)
+app = FastAPI(title="자리매김 API", version="1.0.0", docs_url="/api/v1/docs" if settings.app_env != "production" else None, redoc_url=None, openapi_url="/api/v1/openapi.json" if settings.app_env != "production" else None)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "Idempotency-Key", "If-Match", "Last-Event-ID"])
 
 SEOUL_DISTRICTS = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"}
@@ -272,7 +272,7 @@ async def download_document(document_id: UUID, user: Actor = Depends(current_use
     path = document_store.pdf_path(document_id)
     if not path:
         raise HTTPException(404, {"code": "NOT_FOUND", "message": "PDF 파일을 찾을 수 없습니다."})
-    return FileResponse(path, media_type="application/pdf", filename=f"ter-doctor-{document['template']}.pdf")
+    return FileResponse(path, media_type="application/pdf", filename=f"jarimaegim-{document['template']}.pdf")
 
 
 @app.post("/api/v1/privacy/requests", status_code=202)

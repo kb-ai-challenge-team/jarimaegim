@@ -1,4 +1,4 @@
--- 터닥터 production baseline. Browser roles never access domain tables directly.
+-- 자리매김 production baseline. Browser roles never access domain tables directly.
 create extension if not exists pgcrypto;
 
 create type public.owner_kind as enum ('USER','ANONYMOUS');

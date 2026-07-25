@@ -60,14 +60,14 @@ def render_case_pdf(case: dict[str, Any], document: dict[str, Any]) -> bytes:
     except Exception:
         font = "Helvetica"
     buffer = BytesIO()
-    pdf = SimpleDocTemplate(buffer, pagesize=A4, title="터닥터 PDF 초안", author="터닥터")
+    pdf = SimpleDocTemplate(buffer, pagesize=A4, title="자리매김 PDF 초안", author="자리매김")
     styles = getSampleStyleSheet()
     for style in styles.byName.values():
         style.fontName = font
     rows = [["문서 ID", str(document["document_id"])], ["템플릿", str(document["template"])], ["케이스", str(case["id"])], ["제목", str(case["title"])], ["버전", str(case["version"])]]
     table = Table(rows, colWidths=[110, 380])
     table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), font), ("GRID", (0, 0), (-1, -1), .25, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story = [Paragraph("터닥터 PDF 초안", styles["Title"]), Spacer(1, 12), table, Spacer(1, 16), Paragraph("사용자 확인값", styles["Heading2"])]
+    story = [Paragraph("자리매김 PDF 초안", styles["Title"]), Spacer(1, 12), table, Spacer(1, 16), Paragraph("사용자 확인값", styles["Heading2"])]
     for key, value in case.get("inputs", {}).items():
         story.append(Paragraph(f"{key}: {value}", styles["BodyText"]))
     story.extend([Spacer(1, 16), Paragraph("AI가 작성한 초안이며 사용자 검토가 필요합니다. 결과는 보장되지 않으며 공식 원문이 우선합니다. 확인하지 못한 값은 공란으로 유지합니다.", styles["BodyText"])])

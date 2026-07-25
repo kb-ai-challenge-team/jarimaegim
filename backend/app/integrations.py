@@ -61,7 +61,7 @@ class Integrations:
                 pool=settings.upstream_connect_timeout_seconds,
             ),
             follow_redirects=False,
-            headers={"User-Agent": "ter-doctor-api/1.0"},
+            headers={"User-Agent": "jarimaegim-api/1.0"},
         )
 
     async def close(self) -> None:
@@ -206,7 +206,7 @@ class Integrations:
         if not (allow_ai and self.settings.ai_explanation_enabled and self.settings.openai_api_key and self.settings.ai_chat_model):
             return fallback, "safe_fallback", None
         prompt = (
-            "당신은 터닥터 결과 설명기입니다. 입력 JSON의 값만 쉬운 한국어로 재서술하세요. "
+            "당신은 자리매김 결과 설명기입니다. 입력 JSON의 값만 쉬운 한국어로 재서술하세요. "
             "새 수치, 확률, 원인, 금융 승인 가능성, 추천 순위를 만들지 마세요. B/C/U에서는 개인 생존확률을 언급하지 마세요. "
             "공식 원문 우선, 참고정보이며 보장이 아니라는 문장을 포함하세요.\nJSON:\n"
             + json.dumps(analysis, ensure_ascii=False, default=str)
@@ -243,11 +243,11 @@ class Integrations:
         except Exception:
             font = "Helvetica"
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, title="터닥터 PDF 초안", author="터닥터")
+        doc = SimpleDocTemplate(buffer, pagesize=A4, title="자리매김 PDF 초안", author="자리매김")
         styles = getSampleStyleSheet()
         for style in styles.byName.values():
             style.fontName = font
-        story = [Paragraph("터닥터 PDF 초안", styles["Title"]), Spacer(1, 12)]
+        story = [Paragraph("자리매김 PDF 초안", styles["Title"]), Spacer(1, 12)]
         rows = [
             ["문서 ID", str(document["document_id"])],
             ["생성 시각", str(document["created_at"])],
@@ -290,12 +290,12 @@ class Integrations:
         return output_numbers.issubset(source_numbers)
 
     async def chat_explanation(self, content: str, case_summary: dict[str, Any], *, allow_ai: bool = True) -> tuple[str, str, str | None]:
-        fallback = "확인했습니다. 터닥터는 공식 근거가 있는 정보만 설명하며, 현재 연동되지 않은 수치나 성공·승인 가능성은 만들지 않습니다."
+        fallback = "확인했습니다. 자리매김는 공식 근거가 있는 정보만 설명하며, 현재 연동되지 않은 수치나 성공·승인 가능성은 만들지 않습니다."
         if not (allow_ai and self.settings.ai_explanation_enabled and self.settings.openai_api_key and self.settings.ai_chat_model):
             return fallback, "safe_fallback", None
         minimized_content = re.sub(r"\d[\d,]*(?:[.]\d+)?(?:원|만원|억원|%)?", "[수치 생략]", content)
         prompt = (
-            "당신은 터닥터의 설명 전용 도우미입니다. 계산, 점수 생성, 개인 생존확률 생성, 금융 승인 예측, 자격 확정, 추천 순위를 하지 마세요. "
+            "당신은 자리매김의 설명 전용 도우미입니다. 계산, 점수 생성, 개인 생존확률 생성, 금융 승인 예측, 자격 확정, 추천 순위를 하지 마세요. "
             "사용자가 제공한 민감정보를 반복하지 마세요. 제공된 확인값과 공식 근거가 없으면 모른다고 말하고 공식 원문 확인을 안내하세요. "
             "답변은 간결한 한국어로 작성하세요.\n확인된 케이스:\n"
             + json.dumps(case_summary, ensure_ascii=False, default=str)

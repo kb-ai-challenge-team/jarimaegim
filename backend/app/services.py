@@ -211,7 +211,7 @@ class AIService:
         if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
             return {"message": "AI 설명 키가 아직 설정되지 않았습니다. 후보와 분석 화면의 저장된 공식 근거는 계속 확인할 수 있습니다.", "citations": [], "integration_status": "not_configured"}
         prompt = (
-            "당신은 터닥터의 설명 도우미입니다. 새로운 숫자, 점수, 비용, 금융 자격을 만들지 마세요. "
+            "당신은 자리매김의 설명 도우미입니다. 새로운 숫자, 점수, 비용, 금융 자격을 만들지 마세요. "
             "제공된 케이스 요약 안의 사실만 짧고 명확한 한국어로 설명하세요. 개인정보 입력을 요청하지 마세요.\n"
             f"케이스: {case_summary}\n사용자 질문: {user_text}"
         )

@@ -1,4 +1,4 @@
--- 터닥터 initial Supabase baseline. Browser roles have no direct table or Storage access.
+-- 자리매김 initial Supabase baseline. Browser roles have no direct table or Storage access.
 begin;
 
 create extension if not exists pgcrypto with schema extensions;

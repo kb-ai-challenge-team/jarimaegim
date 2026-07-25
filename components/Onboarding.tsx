@@ -88,7 +88,7 @@ export function Onboarding() {
     <main id="main-content" className="onboarding-shell">
       <header className="onboarding-header">
         <button onClick={() => router.push("/")} className="back-button"><ArrowLeft/> 처음으로</button>
-        <Link className="wordmark" href="/"><span className="brand-symbol">터</span><span className="wordmark-partner">KB부동산 ×</span><strong>터닥터</strong></Link>
+        <Link className="wordmark" href="/"><span className="brand-symbol"></span><span className="wordmark-partner">KB부동산 ×</span><strong>자리매김</strong></Link>
         <span>로그인 없이 시작</span>
       </header>
       <div className="onboarding-progress" aria-label="온보딩 진행">
@@ -147,7 +147,7 @@ export function Onboarding() {
         </section>
 
         <aside className="onboarding-guide" aria-label="AI 입력 안내">
-          <header><span><Sparkles/></span><div><strong>터닥터 AI</strong><small>조건 정리 도우미</small></div></header>
+          <header><span><Sparkles/></span><div><strong>자리매김 AI</strong><small>조건 정리 도우미</small></div></header>
           <div className="guide-message"><p>아직 정하지 못한 값은 비워 두지 않고 직접 확인할 수 있도록 표시해요.</p></div>
           <div className="guide-message user"><p>{natural || "마포구에서 카페를 준비하고 있어요."}</p></div>
           <section><MapPinned/><div><strong>서울 25개 자치구</strong><p>현재 지원하는 지역 안에서 공식 위치 후보를 찾습니다.</p></div></section>

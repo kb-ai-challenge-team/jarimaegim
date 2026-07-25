@@ -32,7 +32,7 @@ export function AuthView({ callbackError = false }: { callbackError?: boolean })
 
   return <main id="main-content" className="auth-page">
     <section className="auth-context" aria-label="로그인 후 이용할 수 있는 기능">
-      <Link href="/" className="wordmark"><span className="brand-symbol">터</span><span className="wordmark-partner">KB부동산 ×</span><strong>터닥터</strong></Link>
+      <Link href="/" className="wordmark"><span className="brand-symbol"></span><span className="wordmark-partner">KB부동산 ×</span><strong>자리매김</strong></Link>
       <div className="auth-context-copy"><span className="eyebrow">결정을 안전하게 이어가기</span><h1>내 창업 케이스를<br/>한곳에서 관리하세요.</h1><p>로그인 전 분석은 그대로 유지됩니다. 계정에는 사용자가 선택한 케이스와 문서만 연결합니다.</p></div>
       <div className="auth-trust-list">
         <article><Database/><div><strong>케이스 이어보기</strong><p>탐색 조건과 비교 후보, 계획 진행 상태를 보관합니다.</p></div></article>
@@ -45,7 +45,7 @@ export function AuthView({ callbackError = false }: { callbackError?: boolean })
     <section className="auth-panel">
       <div className="auth-card">
         <Link href="/" className="back-link"><ArrowLeft/> 처음으로</Link>
-        <div className="login-mark">터</div>
+        <div className="login-mark"></div>
         <span className="eyebrow">분석은 로그인 없이 가능</span>
         <h2>케이스를 계속 보관하세요.</h2>
         <p>현재 브라우저에서 진행한 조건을 이어서 사용하고 PDF와 알림을 이용할 수 있습니다.</p>

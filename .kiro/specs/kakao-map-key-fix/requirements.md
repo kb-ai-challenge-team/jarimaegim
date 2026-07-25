@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This specification covers only the mandatory Kakao Maps configuration repair for the existing Ter Doctor Next.js application. The repair replaces the malformed local public map key value, conditionally verifies or configures authorized Kakao Web origins, synchronizes production on the designated EC2 host, rebuilds and restarts the frontend, and validates SDK loading without disclosing key material. Optional integrations and unrelated source or configuration remain outside scope.
+This specification covers only the mandatory Kakao Maps configuration repair for the existing Jarimaegim Next.js application. The repair replaces the malformed local public map key value, conditionally verifies or configures authorized Kakao Web origins, synchronizes production on the designated EC2 host, rebuilds and restarts the frontend, and validates SDK loading without disclosing key material. Optional integrations and unrelated source or configuration remain outside scope.
 
 ## Glossary
 

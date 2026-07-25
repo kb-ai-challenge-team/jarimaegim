@@ -238,3 +238,7 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
   .landing-proof{margin-inline:32px;grid-template-columns:1fr}
   .landing-proof ul{max-width:900px}
 }
+
+
+/* 자리매김 generated brand mark */
+.brand-symbol,.brand-mark,.login-mark{background:#ffcc00 url('/icon.png') center/cover no-repeat!important;color:transparent!important;overflow:hidden}

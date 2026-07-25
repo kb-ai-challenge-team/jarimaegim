@@ -1,5 +1,5 @@
 [Unit]
-Description=Ter Doctor Next.js frontend
+Description=Jarimaegim Next.js frontend
 After=network-online.target ter-doctor-api.service
 Wants=network-online.target
 
