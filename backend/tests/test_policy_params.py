@@ -59,10 +59,30 @@ def test_industry_returns_field_map():
     assert PolicyParams(FULL).industry("카페")["cogs_ratio"] == 0.35
 
 
-def test_shipped_config_has_no_registered_values():
-    """커밋된 설정은 값이 비어 있어야 한다 — 임의 값 커밋 방지."""
+def _shipped_config() -> dict:
     from pathlib import Path
     path = Path(__file__).resolve().parents[2] / "config" / "policy-params.json"
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    params = PolicyParams(raw)
-    assert params.missing("카페") != []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_shipped_values_all_carry_a_source_and_date():
+    """등록된 값은 출처와 기준일을 반드시 갖는다 — 근거 없는 값의 커밋을 막는다."""
+    raw = _shipped_config()
+    for key, entry in raw["entries"].items():
+        if entry.get("value") is None:
+            continue
+        assert entry.get("source"), f"{key} 에 값이 있으나 출처가 없습니다"
+        assert entry.get("as_of"), f"{key} 에 값이 있으나 기준일이 없습니다"
+    for name, profile in (raw.get("industries") or {}).items():
+        assert profile.get("source"), f"industries.{name} 에 출처가 없습니다"
+        assert profile.get("as_of"), f"industries.{name} 에 기준일이 없습니다"
+
+
+def test_shipped_config_still_reports_what_is_missing():
+    """미등록 항목이 남아 있으면 missing 이 그것을 그대로 보고해야 한다."""
+    params = PolicyParams(_shipped_config())
+    gaps = params.missing("카페")
+    # 값이 전부 채워지면 이 단정은 자연히 빈 리스트가 되어야 하며, 그때는 밴드가 계산된다.
+    for key in gaps:
+        assert key.startswith("loan.") or key.startswith("stress.") \
+            or key.startswith("working_capital.") or key.startswith("industries."), key
