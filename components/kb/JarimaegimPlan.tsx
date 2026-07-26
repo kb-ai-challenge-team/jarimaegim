@@ -3,64 +3,92 @@
 import { useMemo, useState } from "react";
 import { CircleHelp, Coins, ExternalLink, Info, Landmark, LoaderCircle, LockKeyhole, Sparkles } from "lucide-react";
 import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
-import type { CaseRecord, CostItem, CostPlan, KbProduct, Program } from "@/lib/types";
+import type { BandLine, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
-import type { LocationState } from "@/lib/use-jarimaegim";
+import type { BandForm, LocationState } from "@/lib/use-jarimaegim";
 
-const BLANK_ITEMS: CostItem[] = [
-  { key: "deposit", label: "임차보증금", min_krw: null, max_krw: null, source_type: "USER" },
-  { key: "premium", label: "권리금", min_krw: null, max_krw: null, source_type: "UNAVAILABLE", note: "계약 전 직접 확인" },
-  { key: "interior", label: "인테리어·설비", min_krw: null, max_krw: null, source_type: "USER" },
-  { key: "inventory", label: "초기 재고·운영", min_krw: null, max_krw: null, source_type: "USER" },
-  { key: "reserve", label: "안전예비비", min_krw: null, max_krw: null, source_type: "USER" }
+const BAND_LABELS: Record<string, string> = { EQUITY_ONLY: "자기자본선", RECOMMENDED: "권장 조달선", MAXIMUM: "최대 조달선", OUT_OF_RANGE: "조달 불가" };
+const BAND_MARKS: Record<string, string> = { EQUITY_ONLY: "●", RECOMMENDED: "◐", MAXIMUM: "◑", OUT_OF_RANGE: "○" };
+
+const CAPITAL_FIELDS: { key: keyof BandForm; label: string; step: number; note?: string }[] = [
+  { key: "deposit_krw", label: "임차보증금", step: 1000000 },
+  { key: "key_money_krw", label: "권리금", step: 1000000, note: "계약 전 직접 확인" },
+  { key: "fitout_krw", label: "인테리어·설비", step: 1000000, note: "비우면 평수 기준 추정값을 씁니다" }
+];
+const MONTHLY_FIELDS: { key: keyof BandForm; label: string; step: number }[] = [
+  { key: "monthly_rent_krw", label: "월세", step: 100000 },
+  { key: "monthly_maintenance_krw", label: "관리비", step: 100000 },
+  { key: "other_monthly_fixed_krw", label: "기타 월 고정비", step: 100000 }
 ];
 
-export function PlanCost({ caseData, plan, busy, onSave }: { caseData: CaseRecord; plan: CostPlan | null; busy: boolean; onSave: (items: CostItem[]) => void }) {
-  const [items, setItems] = useState<CostItem[]>(BLANK_ITEMS);
-  const [issue, setIssue] = useState("");
-  const update = (key: string, side: "min_krw" | "max_krw", raw: string) => {
-    const value = raw === "" ? null : Math.max(0, Number(raw));
-    setItems((prev) => prev.map((item) => item.key === key ? { ...item, [side]: value } : item));
+export function BandTable({ lines }: { lines: BandLine[] }) {
+  return <div className="kb-band-table">
+    <div className="kb-band-head"><span>밴드</span><span>상한</span><span>월 상환</span><span>목표 일매출</span><span>현금소진</span></div>
+    {lines.map((line) => <div key={line.band} className="kb-band-row" data-band={line.band} data-pass={line.stress_pass ? "true" : "false"}>
+      <strong><em aria-hidden="true">{BAND_MARKS[line.band]}</em>{BAND_LABELS[line.band]}{line.is_estimate && <small>추정치</small>}</strong>
+      <span>{formatKrw(line.ceiling_krw)}</span>
+      <span>{line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"}</span>
+      <span>{formatKrw(line.target_daily_revenue_krw)}</span>
+      <span>{line.runway_months === null ? "조달 부족" : `${line.runway_months}개월`}</span>
+    </div>)}
+  </div>;
+}
+
+/** 비용 단계. 필요자금 내역을 조정하고 조달 밴드 3중선과 손익분기선을 본다. */
+export function PlanBands({ caseData, form, bands, state, busy, onField, onRecompute }: {
+  caseData: CaseRecord; form: BandForm; bands: FundingBandResult | null; state: LocationState;
+  busy: boolean; onField: (key: keyof BandForm, value: number | null) => void; onRecompute: () => void;
+}) {
+  const numeric = (key: keyof BandForm) => {
+    const value = form[key];
+    return value === null ? "" : String(value || "");
   };
-  const filled = items.some((item) => item.min_krw !== null || item.max_krw !== null);
-
-  /** A row left blank is "not confirmed", not "zero" — send it as UNAVAILABLE so it stays out of the sum. */
-  function submit() {
-    const problems: string[] = [];
-    const payload = items.map((item) => {
-      if (item.source_type === "UNAVAILABLE") return item;
-      if (item.min_krw === null && item.max_krw === null) return { ...item, source_type: "UNAVAILABLE" as const, note: "미입력 · 합계에서 제외" };
-      if (item.min_krw === null || item.max_krw === null) problems.push(`${item.label}: 최소와 최대를 모두 입력해 주세요.`);
-      else if (item.max_krw < item.min_krw) problems.push(`${item.label}: 최대가 최소보다 작습니다.`);
-      return item;
-    });
-    if (problems.length > 0) { setIssue(problems[0]); return; }
-    setIssue(""); onSave(payload);
-  }
-
   return <div className="kb-step">
-    <p className="kb-step-lead">확인한 금액만 합산합니다. 비워 둔 항목은 합계에서 빠지며, AI는 비용을 만들거나 바꾸지 않습니다.</p>
-    <div className="kb-cost-table">
-      <div className="kb-cost-head"><span>항목</span><span>최소</span><span>최대</span></div>
-      {items.map((item) => <div key={item.key} className="kb-cost-row">
-        <strong>{item.label}{item.note && <small>{item.note}</small>}</strong>
-        {item.source_type === "UNAVAILABLE"
-          ? <><em className="kb-cost-na">확인 필요</em><em className="kb-cost-na">확인 필요</em></>
-          : <>
-            <label><span className="sr-only">{item.label} 최소 금액</span><input type="number" min="0" step="100000" inputMode="numeric" value={item.min_krw ?? ""} onChange={(event) => update(item.key, "min_krw", event.target.value)} placeholder="0" /></label>
-            <label><span className="sr-only">{item.label} 최대 금액</span><input type="number" min="0" step="100000" inputMode="numeric" value={item.max_krw ?? ""} onChange={(event) => update(item.key, "max_krw", event.target.value)} placeholder="0" /></label>
-          </>}
-      </div>)}
+    <p className="kb-step-lead">자기자본과 임대 조건으로 조달 가능 범위를 계산합니다. 임대료는 공개 원천이 없어 입력값을 그대로 사용하며, AI는 금액을 만들거나 바꾸지 않습니다.</p>
+
+    <div className="kb-band-form">
+      <span className="kb-band-form-title">필요자금 항목</span>
+      {CAPITAL_FIELDS.map((field) => <label key={field.key} className="kb-field">
+        <span>{field.label}{field.note && <small>{field.note}</small>}</span>
+        <input type="number" min="0" step={field.step} inputMode="numeric" value={numeric(field.key)}
+          onChange={(event) => onField(field.key, event.target.value === "" ? null : Math.max(0, Number(event.target.value)))} placeholder="0" />
+      </label>)}
+      <span className="kb-band-form-title">월 고정지출</span>
+      {MONTHLY_FIELDS.map((field) => <label key={field.key} className="kb-field">
+        <span>{field.label}</span>
+        <input type="number" min="0" step={field.step} inputMode="numeric" value={numeric(field.key)}
+          onChange={(event) => onField(field.key, Math.max(0, Number(event.target.value)))} placeholder="0" />
+      </label>)}
+      <span className="kb-band-form-title">기존 부채</span>
+      <label className="kb-field"><span>기존 대출 잔액</span>
+        <input type="number" min="0" step={1000000} inputMode="numeric" value={numeric("existing_debt_krw")}
+          onChange={(event) => onField("existing_debt_krw", Math.max(0, Number(event.target.value)))} placeholder="0" />
+      </label>
     </div>
-    {issue && <p className="kb-inline-error" role="alert"><Info aria-hidden="true" />{issue}</p>}
-    <button className="kb-primary" onClick={submit} disabled={!filled || busy}>{busy ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}입력값으로 조달 차이 계산</button>
-    <dl className="kb-summary">
-      <div><dt>총예산</dt><dd>{formatKrw(caseData.inputs.budget_krw)}</dd></div>
-      <div><dt>자기자본</dt><dd>{formatKrw(caseData.inputs.equity_krw)}</dd></div>
-      <div><dt>소요자금 범위</dt><dd>{plan ? `${formatKrw(plan.total_min_krw)} ~ ${formatKrw(plan.total_max_krw)}` : "계산 전"}</dd></div>
-      <div className="kb-summary-gap"><dt>조달 차이</dt><dd>{plan ? `${formatKrw(plan.gap_min_krw)} ~ ${formatKrw(plan.gap_max_krw)}` : "—"}</dd></div>
-    </dl>
-    <p className="kb-note"><Info aria-hidden="true" />합계는 입력값의 단순 합산입니다.{plan ? ` 합계에서 제외된 항목: ${plan.items.filter((item) => item.source_type === "UNAVAILABLE").map((item) => item.label).join(", ") || "없음"}.` : " 권리금처럼 확인하지 못한 항목은 합계에 넣지 않습니다."}</p>
+    <button className="kb-primary" onClick={onRecompute} disabled={busy}>{busy ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}입력값으로 다시 계산</button>
+
+    {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />조달 밴드를 계산하고 있습니다.</div>}
+
+    {bands?.status === "integration_pending" && <div className="kb-empty">
+      <Coins aria-hidden="true" />
+      <strong>조달 밴드 계산에 필요한 값이 아직 없습니다</strong>
+      <p>{bands.message}</p>
+      <ul className="kb-missing-params">{bands.missing_params.map((key) => <li key={key}>{key}</li>)}</ul>
+    </div>}
+
+    {bands?.status === "computed" && bands.break_even && <>
+      <dl className="kb-summary">
+        <div><dt>자기자본</dt><dd>{formatKrw(caseData.inputs.equity_krw)}</dd></div>
+        <div><dt>필요자금</dt><dd>{bands.required_capital_krw === null ? "—" : formatKrw(bands.required_capital_krw)}</dd></div>
+        <div><dt>월 고정지출<small>상환 전</small></dt><dd>{formatKrw(bands.break_even.monthly_fixed_cost_krw)}</dd></div>
+        <div className="kb-summary-gap"><dt>공헌이익률</dt><dd>{Math.round(bands.break_even.contribution_margin_ratio * 100)}%</dd></div>
+      </dl>
+      <p className="kb-note"><Info aria-hidden="true" />목표 일매출은 밴드마다 다릅니다. 차입이 늘면 월 상환이 고정지출에 더해져 넘어야 하는 매출도 함께 올라갑니다.</p>
+      <BandTable lines={bands.bands} />
+      {bands.required_capital_band === "OUT_OF_RANGE" && <p className="kb-inline-error" role="alert"><Info aria-hidden="true" />필요자금이 최대 조달선을 넘습니다. 임대 조건을 낮추거나 자기자본을 늘려야 합니다.</p>}
+      <ul className="kb-limitations">{bands.break_even.assumptions.map((item) => <li key={item}>{item}</li>)}</ul>
+      {bands.provenance && <ul className="kb-limitations">{bands.provenance.limitations.map((item) => <li key={item}>{item}</li>)}</ul>}
+    </>}
   </div>;
 }
 

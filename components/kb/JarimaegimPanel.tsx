@@ -7,7 +7,7 @@ import { parseCaseText } from "@/lib/parse-case";
 import type { AnalysisResult, CaseInput } from "@/lib/types";
 import type { FlowStep, Jarimaegim } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
-import { PlanCost, PlanFunding } from "./JarimaegimPlan";
+import { PlanBands, PlanFunding } from "./JarimaegimPlan";
 
 const STEPS: { id: FlowStep; label: string }[] = [
   { id: "ask", label: "상황" }, { id: "recommend", label: "입지" }, { id: "evidence", label: "근거" }, { id: "cost", label: "비용" }, { id: "funding", label: "자금" }
@@ -31,7 +31,7 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "confirm" && <ConfirmStep flow={flow} />}
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
       {flow.step === "evidence" && <EvidenceStep flow={flow} />}
-      {flow.step === "cost" && flow.caseData && <PlanCost caseData={flow.caseData} plan={flow.costPlan} busy={flow.busy === "cost"} onSave={flow.saveCost} />}
+      {flow.step === "cost" && flow.caseData && <PlanBands caseData={flow.caseData} form={flow.bandForm} bands={flow.bands} state={flow.bandState} busy={flow.busy === "bands"} onField={flow.setBandField} onRecompute={flow.recomputeBands} />}
       {flow.step === "funding" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} gapMin={flow.costPlan?.gap_min_krw ?? null} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
       {flow.caseData && flow.step !== "ask" && flow.step !== "confirm" && <StepNav flow={flow} />}
     </div>
