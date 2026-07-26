@@ -658,3 +658,8 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-products>ul>li>a{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;font-size:12px;font-weight:600;color:var(--kb-blue);text-decoration:none}
 .kb-products>ul>li>a svg{width:12px;height:12px}
 .kb-products>button{align-self:flex-start}
+.kb-match-lead{display:flex;gap:7px;margin:0;font-size:12px;font-weight:600;color:var(--kb-ink);line-height:1.5}
+.kb-match-lead svg{width:14px;height:14px;flex:none;margin-top:2px;color:var(--kb-blue)}
+.kb-match-rest{font-weight:500;color:var(--kb-mute);padding-top:6px;border-top:1px solid var(--kb-line)}
+.kb-match-reasons{display:flex;flex-wrap:wrap;gap:4px}
+.kb-match-reasons span{padding:2px 8px;border-radius:50px;background:var(--kb-blue-soft);color:var(--kb-blue);font-size:11px;font-weight:600}

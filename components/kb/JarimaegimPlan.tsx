@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { CircleHelp, Coins, ExternalLink, Info, Landmark, LoaderCircle, LockKeyhole } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CircleHelp, Coins, ExternalLink, Info, Landmark, LoaderCircle, LockKeyhole, Sparkles } from "lucide-react";
 import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
 import type { CaseRecord, CostItem, CostPlan, KbProduct, Program } from "@/lib/types";
+import { matchKbProducts } from "@/lib/kb-match";
 import type { LocationState } from "@/lib/use-jarimaegim";
 
 const BLANK_ITEMS: CostItem[] = [
@@ -69,34 +70,51 @@ function rateLabel(product: KbProduct) {
   return `${product.rate_min ?? "?"}~${product.rate_max ?? "?"}%`;
 }
 
-/** KB국민은행 개인사업자대출 공시. Rates are the disclosed month's range, never an offer. */
-function KbProductSection({ products, state }: { products: KbProduct[]; state: LocationState }) {
+function ProductRow({ product, reasons }: { product: KbProduct; reasons?: string[] }) {
+  return <li>
+    <div className="kb-product-top">
+      <strong>{product.name}</strong>
+      <span className="kb-product-rate">{rateLabel(product)}</span>
+    </div>
+    {reasons && reasons.length > 0 && <div className="kb-match-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
+    <small>{[product.loan_limit && `한도 ${product.loan_limit}`, product.join_way, product.rate_type].filter(Boolean).join(" · ")}</small>
+    <a href={product.official_url} target="_blank" rel="noopener noreferrer">공시 원문 열기 <ExternalLink aria-hidden="true" /></a>
+  </li>;
+}
+
+/** KB국민은행 개인사업자대출 공시. Matched rows lead; rates are the disclosed month's range, never an offer. */
+function KbProductSection({ products, state, inputs, gapKrw }: { products: KbProduct[]; state: LocationState; inputs: CaseRecord["inputs"]; gapKrw: number | null }) {
   const [expanded, setExpanded] = useState(false);
+  const matches = useMemo(() => matchKbProducts(products, inputs, gapKrw), [products, inputs, gapKrw]);
   if (state === "loading") return <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />KB 금융상품 공시를 불러오고 있습니다.</div>;
   if (products.length === 0) return null;
-  const online = products.filter((product) => /인터넷|스마트폰/.test(product.join_way || ""));
-  const shown = expanded ? products : products.slice(0, 6);
+
+  const matchedIds = new Set(matches.map((match) => match.product.id));
+  const rest = products.filter((product) => !matchedIds.has(product.id));
   return <section className="kb-products">
-    <header><Landmark aria-hidden="true" /><div><strong>KB 금융상품</strong><small>개인사업자대출 {products.length}건 · 비대면 가입 {online.length}건 · 기준월 {products[0].source_as_of || "확인 필요"}</small></div></header>
-    <ul>{shown.map((product) => <li key={product.id}>
-      <div className="kb-product-top">
-        <strong>{product.name}</strong>
-        <span className="kb-product-rate">{rateLabel(product)}</span>
-      </div>
-      <small>{[product.loan_limit && `한도 ${product.loan_limit}`, product.join_way, product.rate_type].filter(Boolean).join(" · ")}</small>
-      <a href={product.official_url} target="_blank" rel="noopener noreferrer">공시 원문 열기 <ExternalLink aria-hidden="true" /></a>
-    </li>)}</ul>
-    {products.length > 6 && <button className="kb-ghost" onClick={() => setExpanded(!expanded)}>{expanded ? "접기" : `${products.length - 6}건 더 보기`}</button>}
-    <p className="kb-note"><Info aria-hidden="true" />금융감독원 금융상품 통합 비교공시의 기준월 공시 범위입니다. 실제 승인 금리·한도와 자격은 KB국민은행에서 직접 확인해야 합니다.</p>
+    <header><Landmark aria-hidden="true" /><div><strong>KB 금융상품</strong><small>개인사업자대출 {products.length}건 · 기준월 {products[0].source_as_of || "확인 필요"}</small></div></header>
+
+    {matches.length > 0 ? <>
+      <p className="kb-match-lead"><Sparkles aria-hidden="true" />입력한 조건이 공시 문구와 겹치는 {matches.length}건입니다. 자격이나 승인 가능성을 판단한 것이 아닙니다.</p>
+      <ul>{matches.slice(0, 5).map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} />)}</ul>
+    </> : <p className="kb-note"><Info aria-hidden="true" />현재 조건과 겹치는 공시 문구가 없어 전체 목록만 표시합니다.</p>}
+
+    {expanded && <>
+      <p className="kb-match-lead kb-match-rest">조건과 겹치지 않는 나머지 {rest.length}건</p>
+      <ul>{rest.map((product) => <ProductRow key={product.id} product={product} />)}</ul>
+    </>}
+    {rest.length > 0 && <button className="kb-ghost" onClick={() => setExpanded(!expanded)}>{expanded ? "접기" : `나머지 ${rest.length}건 보기`}</button>}
+
+    <p className="kb-note"><Info aria-hidden="true" />조건 일치는 입력값과 공시 문구의 텍스트 대조입니다. 실제 승인 금리·한도와 자격은 KB국민은행에서 직접 확인해야 합니다.</p>
   </section>;
 }
 
-export function PlanFunding({ programs, state, applicationEnabled, gapMin, kbProducts, kbState }: { programs: Program[]; state: LocationState; applicationEnabled: boolean; gapMin: number | null; kbProducts: KbProduct[]; kbState: LocationState }) {
+export function PlanFunding({ programs, state, applicationEnabled, gapMin, kbProducts, kbState, inputs }: { programs: Program[]; state: LocationState; applicationEnabled: boolean; gapMin: number | null; kbProducts: KbProduct[]; kbState: LocationState; inputs: CaseRecord["inputs"] }) {
   return <div className="kb-step">
     <p className="kb-step-lead">정부지원 → 정책자금 → 지역보증 → 민간금융 순으로 확인합니다. 승인 여부는 단정하지 않습니다.</p>
     {gapMin !== null && gapMin > 0 && <div className="kb-callout"><Coins aria-hidden="true" /><span>비용 단계에서 계산한 부족액은 최소 <strong>{formatKrw(gapMin)}</strong>입니다.</span></div>}
     {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청·상담 연결은 아직 제공하지 않습니다. 공식 원문으로 이동해 직접 확인해 주세요.</span></div>}
-    <KbProductSection products={kbProducts} state={kbState} />
+    <KbProductSection products={kbProducts} state={kbState} inputs={inputs} gapKrw={gapMin} />
     {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />공식 공고를 확인하고 있습니다.</div>}
     {state !== "loading" && programs.length === 0 && <div className="kb-empty">
       <Coins aria-hidden="true" />

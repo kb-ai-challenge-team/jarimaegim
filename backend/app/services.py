@@ -156,8 +156,12 @@ class OfficialSourceService:
                             results.append(normalized)
                 except (httpx.HTTPError, ValueError, TypeError):
                     continue
+        # Providers occasionally repeat the same record across pages or option rows.
+        unique: dict[str, dict[str, Any]] = {}
+        for item in results:
+            unique.setdefault(item["id"], item)
         order = {"GOVERNMENT": 0, "POLICY_FUND": 1, "GUARANTEE": 2, "PRIVATE": 3}
-        return sorted(results, key=lambda item: order[item["category"]])[:50]
+        return sorted(unique.values(), key=lambda item: order[item["category"]])[:50]
 
     # FSS 금융상품 한눈에 공시. The per-API spec pages are still "콘텐츠 준비중", so every endpoint and
     # source page below was confirmed against the live service rather than published documentation.
@@ -294,7 +298,10 @@ class OfficialSourceService:
         organization = self._first(record, ("organization", "agency", "jrsdInsttNm", "insttNm", "pbanc_ntrp_nm", "sprv_inst", "kor_co_nm")) or provider
         period = self._first(record, ("application_period", "period", "reqstBeginEndDe", "pbanc_rcpt_bgng_dt", "pbanc_rcpt_end_dt", "dcls_strt_day", "dcls_end_day"))
         source_date = self._first(record, ("source_as_of", "updated_at", "creatPnttm", "fstm_reg_dt", "anncmnt_dt", "dcls_month", "fin_co_subm_day"))
-        record_id = self._first(record, ("id", "pblancId", "biz_pbanc_sn", "pbanc_sn", "fin_prdt_cd")) or hashlib.sha256(f"{provider}:{title}:{url}".encode()).hexdigest()[:24]
+        # Provider ids are only unique within a provider, and finlife product codes repeat across banks
+        # (WR0002F, for example). Namespace by provider and organisation so list keys stay unique.
+        seed = self._first(record, ("id", "pblancId", "biz_pbanc_sn", "pbanc_sn", "fin_prdt_cd")) or f"{title}:{url}"
+        record_id = hashlib.sha256(f"{provider}:{organization}:{seed}".encode()).hexdigest()[:24]
         return {"id": record_id, "category": category, "title": title, "organization": organization,
                 "status": "UNKNOWN", "application_period": period or None, "matched_conditions": [],
                 "unknown_conditions": ["공식 원문의 지역·업종·업력·제외 조건을 직접 확인해야 합니다."],

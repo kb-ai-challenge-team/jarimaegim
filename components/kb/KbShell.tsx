@@ -1,21 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, ChevronDown, Landmark, Layers, Locate, Minus, Plus, ScrollText, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { Bell, ChevronDown, Landmark, Locate, Minus, Plus, ScrollText, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { useJarimaegim } from "@/lib/use-jarimaegim";
 import { JarimaegimChat } from "./JarimaegimChat";
 import { JarimaegimPanel } from "./JarimaegimPanel";
 import { KbMap } from "./KbMap";
-import { KbIntroPanel } from "./KbIntroPanel";
 import { KbPolicyPanel } from "./KbPolicyPanel";
 import { KbProductPanel } from "./KbProductPanel";
 
 const FILTERS = ["아파트 +2", "매매 · 전세 · 월세", "가격", "면적"];
-type View = "map" | "ai" | "policy" | "product";
+type View = "ai" | "policy" | "product";
 
 export function KbShell() {
   const flow = useJarimaegim();
-  const [view, setView] = useState<View>("map");
+  const [view, setView] = useState<View>("ai");
   const [panelOpen, setPanelOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [toast, setToast] = useState("");
@@ -45,17 +44,14 @@ export function KbShell() {
   return <div className="kb-app" data-ai={aiActive ? "open" : "closed"} data-panel={panelOpen ? "open" : "closed"} data-chat={chatVisible ? "open" : "closed"}>
     <nav className="kb-gnb" aria-label="주요 메뉴">
       <span className="kb-logo" aria-label="KB부동산">KB</span>
-      <button type="button" aria-current={view === "map" && panelOpen ? "page" : undefined} aria-expanded={view === "map" && panelOpen} onClick={() => selectView("map")}>
-        <Layers aria-hidden="true" /><span>지도</span>
+      <button type="button" className="kb-gnb-ai" aria-current={aiActive && panelOpen ? "page" : undefined} aria-expanded={aiActive && panelOpen} onClick={() => selectView("ai")}>
+        <span className="kb-ai-badge" aria-hidden="true">AI</span><span>자리매김</span>
       </button>
       <button type="button" aria-current={view === "policy" && panelOpen ? "page" : undefined} aria-expanded={view === "policy" && panelOpen} onClick={() => selectView("policy")}>
         <ScrollText aria-hidden="true" /><span>정책</span>
       </button>
       <button type="button" aria-current={view === "product" && panelOpen ? "page" : undefined} aria-expanded={view === "product" && panelOpen} onClick={() => selectView("product")}>
         <Landmark aria-hidden="true" /><span>상품</span>
-      </button>
-      <button type="button" className="kb-gnb-ai" aria-current={aiActive && panelOpen ? "page" : undefined} aria-expanded={aiActive && panelOpen} onClick={() => selectView("ai")}>
-        <span className="kb-ai-badge" aria-hidden="true">AI</span><span>자리매김</span>
       </button>
     </nav>
 
@@ -68,7 +64,6 @@ export function KbShell() {
       {aiActive && <JarimaegimPanel flow={flow} onClose={() => setPanelOpen(false)} />}
       {view === "policy" && <KbPolicyPanel flow={flow} />}
       {view === "product" && <KbProductPanel flow={flow} />}
-      {view === "map" && <KbIntroPanel onOpenAi={() => selectView("ai")} />}
     </div>}
 
     <main className="kb-stage" id="main-content">
@@ -86,7 +81,7 @@ export function KbShell() {
         <button aria-label="축소" onClick={() => outOfScope("지도 축소 버튼")}><Minus aria-hidden="true" /></button>
       </div>
 
-      {view === "map" && <div className="kb-stage-notice"><strong>매물·시세 데이터는 표시하지 않습니다</strong><p>KB부동산 API가 연동되지 않아 값을 만들어 채우지 않습니다. 오른쪽 아래 <em>AI</em> 버튼이나 왼쪽 <em>자리매김</em>으로 창업 입지 추천을 확인해 보세요.</p></div>}
+      {flow.candidates.length === 0 && <div className="kb-stage-notice"><strong>매물·시세 데이터는 표시하지 않습니다</strong><p>KB부동산 API가 연동되지 않아 값을 만들어 채우지 않습니다. 왼쪽 <em>자리매김</em>에서 조건을 입력하면 추천 입지가 이 지도에 표시됩니다.</p></div>}
     </main>
 
     {chatVisible && <JarimaegimChat flow={flow} />}
