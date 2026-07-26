@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CircleHelp, Coins, ExternalLink, Info, Landmark, LoaderCircle, LockKeyhole, Sparkles } from "lucide-react";
+import { CircleHelp, Coins, ExternalLink, FileDown, FileText, Info, Landmark, LoaderCircle, LockKeyhole, MapPin, ShieldCheck, Sparkles } from "lucide-react";
 import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
-import type { BandLine, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
+import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
+import { ProvenanceBar } from "../ProvenanceBar";
 import type { BandForm, LocationState } from "@/lib/use-jarimaegim";
 
 const BAND_LABELS: Record<string, string> = { EQUITY_ONLY: "자기자본선", RECOMMENDED: "권장 조달선", MAXIMUM: "최대 조달선", OUT_OF_RANGE: "조달 불가" };
@@ -137,33 +138,73 @@ function KbProductSection({ products, state, inputs, gapKrw }: { products: KbPro
   </section>;
 }
 
-export function PlanFunding({ programs, state, applicationEnabled, bands, kbProducts, kbState, inputs }: {
-  programs: Program[]; state: LocationState; applicationEnabled: boolean; bands: FundingBandResult | null;
-  kbProducts: KbProduct[]; kbState: LocationState; inputs: CaseRecord["inputs"];
+/** 처방 단계. 제안서 6·7단계 — 계획 기준 후보 확정 → 자금조달 레포트 → 문서 초안. */
+export function PlanPrescription({ caseData, committed, programs, state, applicationEnabled, bands, kbProducts, kbState, documents, docBusy, docNotice, onPrepareDocument, onBackToLocation }: {
+  caseData: CaseRecord; committed: Candidate | null; programs: Program[]; state: LocationState;
+  applicationEnabled: boolean; bands: FundingBandResult | null; kbProducts: KbProduct[]; kbState: LocationState;
+  documents: Record<string, string>; docBusy: string; docNotice: string;
+  onPrepareDocument: (template: string) => void; onBackToLocation: () => void;
 }) {
   const recommended = bands?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
   const loanKrw = recommended ? recommended.loan_krw : null;
   return <div className="kb-step">
-    <p className="kb-step-lead">정부지원 → 정책자금 → 지역보증 → 민간금융 순으로 확인합니다. 승인 여부는 단정하지 않습니다.</p>
-    {recommended
-      ? <div className="kb-callout"><Coins aria-hidden="true" /><span>권장 조달선 <strong>{formatKrw(recommended.ceiling_krw)}</strong> 기준 차입 필요액은 <strong>{formatKrw(recommended.loan_krw)}</strong>이며 월 상환은 {formatKrw(recommended.monthly_repayment_krw)}입니다.</span></div>
-      : <div className="kb-callout"><Coins aria-hidden="true" /><span>비용 단계에서 조달 밴드를 계산하면 필요 차입액을 기준으로 상품을 대조합니다.</span></div>}
-    {bands?.status === "computed" && <BandTable lines={bands.bands} />}
-    <p className="kb-note"><Info aria-hidden="true" />지원사업이 조달선을 얼마나 올리는지는 지원사업 endpoint 연동 후 반영됩니다. 현재 밴드에는 지원금이 포함되지 않았습니다.</p>
-    {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청·상담 연결은 아직 제공하지 않습니다. 공식 원문으로 이동해 직접 확인해 주세요.</span></div>}
-    <KbProductSection products={kbProducts} state={kbState} inputs={inputs} gapKrw={loanKrw} />
-    {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />공식 공고를 확인하고 있습니다.</div>}
-    {state !== "loading" && programs.length === 0 && <div className="kb-empty">
-      <Coins aria-hidden="true" />
-      <strong>표시할 수 있는 공식 공고가 없습니다</strong>
-      <p>검증된 공공 API endpoint와 키가 설정되기 전에는 공고를 만들어 표시하지 않습니다. 원문 URL이 확인되지 않은 항목은 공개하지 않습니다.</p>
-    </div>}
-    {programs.length > 0 && <ul className="kb-program-list">{programs.map((program) => <li key={program.id}>
-      <span className="kb-program-tag">{PROGRAM_CATEGORY_LABELS[program.category]}</span>
-      <strong>{program.title}</strong>
-      <small>{program.organization} · {program.application_period || "기간 원문 확인"}</small>
-      {program.unknown_conditions.length > 0 && <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>}
-      <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
-    </li>)}</ul>}
+    <p className="kb-step-lead">계획 기준 후보와 조달 밴드를 하나의 처방으로 모읍니다. 앞 단계에서 산출한 값을 그대로 재사용하며 다시 계산하지 않으므로 화면 간 수치가 어긋나지 않습니다.</p>
+
+    <section className="kb-prescription-block">
+      <h3><span className="kb-prescription-no" aria-hidden="true">1</span>계획 기준 후보</h3>
+      {committed
+        ? <div className="kb-committed"><strong>{committed.name}</strong><small>{committed.road_address || committed.address}</small>
+            <ProvenanceBar data={committed.provenance} /></div>
+        : <div className="kb-empty compact"><MapPin aria-hidden="true" /><strong>계획 기준 후보를 확정하지 않았습니다</strong>
+            <p>입지 단계에서 후보를 하나 확정하면 그 후보를 기준으로 처방을 정리합니다.</p>
+            <button className="kb-ghost" onClick={onBackToLocation}>입지로 돌아가기</button></div>}
+    </section>
+
+    <section className="kb-prescription-block">
+      <h3><span className="kb-prescription-no" aria-hidden="true">2</span>자금조달 레포트</h3>
+      {recommended && bands?.break_even
+        ? <>
+            <dl className="kb-summary">
+              <div><dt>권장 조달선</dt><dd>{formatKrw(recommended.ceiling_krw)}</dd></div>
+              <div><dt>차입 필요액</dt><dd>{formatKrw(recommended.loan_krw)}</dd></div>
+              <div><dt>월 상환</dt><dd>{recommended.monthly_repayment_krw > 0 ? formatKrw(recommended.monthly_repayment_krw) : "0원"}</dd></div>
+              <div className="kb-summary-gap"><dt>넘어야 하는 일매출</dt><dd>{formatKrw(recommended.target_daily_revenue_krw)}</dd></div>
+            </dl>
+            <BandTable lines={bands.bands} />
+          </>
+        : <div className="kb-empty compact"><Coins aria-hidden="true" /><strong>조달 밴드가 아직 계산되지 않았습니다</strong>
+            <p>{bands?.message || "자금 단계에서 필요한 값을 확인할 수 있습니다."}</p></div>}
+      {/* 지원사업 연동 여부는 밴드가 계산됐는지와 무관하게 알려야 한다. 조건 안에 두면 고지가 사라진다. */}
+      <p className="kb-note"><Info aria-hidden="true" />지원사업 endpoint 연동 후 조달선에 반영됩니다. 현재 밴드에는 지원금이 포함되지 않았습니다.</p>
+      {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청과 상담 자동 연결은 제공하지 않습니다. 공식 원문으로 이동해 직접 확인해 주세요.</span></div>}
+      <KbProductSection products={kbProducts} state={kbState} inputs={caseData.inputs} gapKrw={loanKrw} />
+      {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />공식 공고를 확인하고 있습니다.</div>}
+      {state !== "loading" && programs.length === 0 && <div className="kb-empty compact">
+        <Coins aria-hidden="true" />
+        <strong>표시할 수 있는 공식 공고가 없습니다</strong>
+        <p>검증된 공공 API endpoint와 키가 설정되기 전에는 공고를 만들어 표시하지 않습니다.</p>
+      </div>}
+      {programs.length > 0 && <ul className="kb-program-list">{programs.map((program) => <li key={program.id}>
+        <span className="kb-program-tag">{PROGRAM_CATEGORY_LABELS[program.category]}</span>
+        <strong>{program.title}</strong>
+        <small>{program.organization} · {program.application_period || "기간 원문 확인"}</small>
+        {program.unknown_conditions.length > 0 && <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>}
+        <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
+      </li>)}</ul>}
+    </section>
+
+    <section className="kb-prescription-block">
+      <h3><span className="kb-prescription-no" aria-hidden="true">3</span>문서 초안</h3>
+      <p className="kb-note"><FileText aria-hidden="true" />출처와 기준일, 비보장 고지를 포함한 초안입니다. 확인하지 못한 값은 공란으로 남습니다.</p>
+      <div className="kb-doc-actions">
+        {[{ id: "funding", label: "자금조달계획" }, { id: "cost", label: "창업비용" }, { id: "business", label: "사업계획서 초안" }].map((doc) => <button key={doc.id} className="kb-ghost" disabled={Boolean(docBusy)} onClick={() => onPrepareDocument(doc.id)}>
+          {docBusy === doc.id ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : <FileDown aria-hidden="true" />}
+          {documents[doc.id] ? `${doc.label} 내려받기` : `${doc.label} 준비하기`}
+        </button>)}
+      </div>
+      {docNotice && <p className="kb-inline-notice" role="status">{docNotice}</p>}
+      <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>상담 자동 연결은 제공하지 않습니다. <strong>초안을 내려받아 지점 상담에 가져가시면 됩니다.</strong> 초안은 상담의 입력이며 승인을 보장하지 않습니다.</span></div>
+      <p className="kb-note"><ShieldCheck aria-hidden="true" />문서는 비공개 저장소에 보관하며 현재 익명 세션에서만 내려받을 수 있습니다. 세션은 최대 24시간 유지됩니다.</p>
+    </section>
   </div>;
 }

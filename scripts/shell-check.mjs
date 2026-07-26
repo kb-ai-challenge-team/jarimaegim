@@ -59,10 +59,12 @@ const cost = {
   bandTableShown: paramsRegistered ? await panel.locator(".kb-band-table").isVisible() : true
 };
 
-// 입지 — 자금 다음 단계
+// 입지 — 자금 다음 단계. 후보가 있으면 계획 기준으로 확정한다.
 await panel.locator(".kb-stepnav .kb-primary-sm").click();
 await panel.locator(".kb-candidates, .kb-empty").first().waitFor({ timeout: 30000 });
-const location = { rendered: true };
+const candidateCount = await panel.locator(".kb-candidates li").count();
+if (candidateCount > 0) await panel.locator(".kb-candidates li").first().getByRole("button", { name: "계획 기준으로 확정" }).click();
+const location = { rendered: true, candidateCount, committable: candidateCount === 0 || (await panel.locator(".kb-candidates li").first().innerText()).includes("계획 기준") };
 
 // 처방 — 근거를 지나 마지막 단계. 공고 조회 응답을 기다린다.
 const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
@@ -94,7 +96,21 @@ const funding = {
   subsidyGapDisclosed: (await panel.locator(".kb-note").allInnerTexts()).some(text => text.includes("지원사업 endpoint 연동 후"))
 };
 
-const result = { stepper, lease, bands, location, cost, funding, axes, errors };
+// 처방 — 제안서 6·7단계. 계획 기준 후보 · 레포트 · 문서 초안 세 블록.
+const blocks = (await panel.locator(".kb-prescription-block h3").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+const docResponse = page.waitForResponse((r) => r.url().includes("/api/v1/documents") && r.request().method() === "POST", { timeout: 30000 }).catch(() => null);
+await panel.locator(".kb-doc-actions button").first().click();
+const documentResponse = await docResponse;
+await page.waitForTimeout(1200);
+const prescription = {
+  blocks: blocks.length,
+  committedShown: candidateCount === 0 || await panel.locator(".kb-committed").count() > 0,
+  documentCreated: Boolean(documentResponse && documentResponse.status() === 201),
+  // 상담 자동 연결은 게이트가 꺼져 있으므로 그 사실을 고지해야 한다 (부록 A 불변조건 5)
+  consultationDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("상담 자동 연결은 제공하지 않습니다"))
+};
+
+const result = { stepper, lease, bands, location, cost, funding, prescription, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 const expected = ["조건", "자금", "입지", "근거", "처방"];
@@ -102,4 +118,6 @@ const stepperOk = expected.every((label, index) => (stepper.labels[index] || "")
 if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed || !bands.safeState
   || !bands.noInventedTradeAreaCount || !location.rendered || !cost.landsFirst || !cost.bandScreen || !cost.pendingShown
   || !cost.bandTableShown || !funding.safeState || !funding.subsidyGapDisclosed
+  || !location.committable || prescription.blocks !== 3 || !prescription.committedShown
+  || !prescription.documentCreated || !prescription.consultationDisclosed
   || !axes.disabledCarryReason) process.exitCode = 1;

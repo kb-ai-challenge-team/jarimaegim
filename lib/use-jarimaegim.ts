@@ -76,6 +76,10 @@ export function useJarimaegim() {
   const [catalogState, setCatalogState] = useState<LocationState>("idle");
   const [kbProducts, setKbProducts] = useState<KbProduct[]>([]);
   const [kbState, setKbState] = useState<LocationState>("idle");
+  const [committed, setCommitted] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<Record<string, string>>({});
+  const [docBusy, setDocBusy] = useState("");
+  const [docNotice, setDocNotice] = useState("");
   const [bandForm, setBandForm] = useState<BandForm>(DEFAULT_BAND_FORM);
   const [bands, setBands] = useState<FundingBandResult | null>(null);
   const [bandState, setBandState] = useState<LocationState>("idle");
@@ -246,6 +250,41 @@ export function useJarimaegim() {
     } finally { setBusy(""); }
   }, [bandForm, caseData, runBands]);
 
+  /** 계획 기준 후보. 처방 단계가 이 값을 소비한다. */
+  const commitCandidate = useCallback((candidateId: string | null) => {
+    setCommitted(candidateId);
+    setDocuments({}); setDocNotice("");
+  }, []);
+
+  /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다. */
+  const prepareDocument = useCallback(async (template: string) => {
+    if (!caseData) return;
+    setDocBusy(template); setDocNotice("");
+    try {
+      const record = await api.createDocument(caseData.id, template);
+      setDocuments((prev) => ({ ...prev, [template]: record.document_id }));
+      setDocNotice(record.message);
+    } catch (err) {
+      setDocNotice(err instanceof ApiError ? err.message : "문서를 준비하지 못했습니다.");
+    } finally { setDocBusy(""); }
+  }, [caseData]);
+
+  const downloadDocument = useCallback(async (template: string) => {
+    const id = documents[template];
+    if (!id) { await prepareDocument(template); return; }
+    setDocBusy(template);
+    try {
+      const blob = await api.downloadDocument(id);
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url; link.download = `jarimaegim-${template}.pdf`; link.click();
+      URL.revokeObjectURL(url);
+      setDocNotice("PDF 다운로드를 시작했습니다. 현재 익명 세션에서만 내려받을 수 있습니다.");
+    } catch (err) {
+      setDocNotice(err instanceof ApiError ? err.message : "PDF를 내려받지 못했습니다.");
+    } finally { setDocBusy(""); }
+  }, [documents, prepareDocument]);
+
   const loadPrograms = useCallback(async () => {
     if (!caseData || programState === "loading") return;
     setProgramState("loading");
@@ -307,12 +346,14 @@ export function useJarimaegim() {
     setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
     setCandidates([]); setLocationState("idle"); setFocused(null); setAnalysis({});
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
-    setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle"); setTraceOpen(false);
+    setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle");
+    setCommitted(null); setDocuments({}); setDocBusy(""); setDocNotice(""); setTraceOpen(false);
   }, []);
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
     bandForm, setBandField, bands, bandState, recomputeBands,
+    committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
     start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, reset, dismissTrace
   };
