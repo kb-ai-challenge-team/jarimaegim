@@ -51,10 +51,12 @@ await page.waitForFunction(() => {
 const costSummary = await page.locator(".funding-summary").textContent();
 const cost = { calculated: costSummary.includes("소요자금 범위") && costSummary.includes("조달 차이") && !costSummary.includes("계산 전") };
 
+// 공고 조회 응답을 기다린 뒤에 판정한다. 즉시 검사하면 fetch 전의 빈 상태를 보고 통과해 버린다.
+const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
 await page.getByRole("button", { name: "자금", exact: true }).first().click();
 await page.waitForSelector(".plan-page");
-// 공고 조회가 끝난 뒤에 판정한다. 즉시 검사하면 fetch 전의 빈 상태를 보고 통과해 버린다.
-await page.waitForTimeout(5000);
+await programsResponse;
+await page.waitForFunction(() => Boolean(window.document.querySelector(".program-list article, .full-empty")), null, { timeout: 30000 });
 const programItems = await page.locator(".program-list article").all();
 let programsWithSource = 0;
 for (const item of programItems) if (await item.locator('a[href^="http"]').count() > 0) programsWithSource += 1;

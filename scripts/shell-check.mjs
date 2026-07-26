@@ -67,11 +67,18 @@ const cost = {
   bandTableShown: paramsRegistered ? await panel.locator(".kb-band-table").isVisible() : true
 };
 
-// 자금
+// 자금 — 공고 조회 응답을 기다린다. 고정 대기로는 로딩 중에 판정해 양쪽 분기가 모두 어긋난다.
 const next = panel.locator(".kb-stepnav .kb-primary-sm");
+const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
 if (await next.count() > 0) { await next.click(); }
 await panel.locator(".kb-callout").first().waitFor({ timeout: 15000 });
-await page.waitForTimeout(5000);
+await programsResponse;
+await page.waitForFunction(() => {
+  const root = window.document.querySelector(".kb-ai-panel");
+  if (!root || root.querySelector(".kb-loading")) return false;
+  return root.querySelectorAll(".kb-program-list li").length > 0
+    || Array.from(root.querySelectorAll(".kb-empty strong")).some(el => el.textContent?.includes("공식 공고"));
+}, null, { timeout: 30000 });
 const programItems = await panel.locator(".kb-program-list li").all();
 let withSource = 0;
 for (const item of programItems) if (await item.locator('a[href^="http"]').count() > 0) withSource += 1;
