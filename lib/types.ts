@@ -202,8 +202,65 @@ export interface FeatureFlags {
   mydata: boolean;
 }
 
+export interface AnalysisAxis {
+  enabled: boolean;
+  disabled_reason: string | null;
+  note: string | null;
+}
+
 export interface StatusResponse {
   mode: string;
   integrations: IntegrationStatus;
   feature_flags: FeatureFlags;
+  axes: Record<string, AnalysisAxis>;
+}
+
+export type FundingBandKey = "EQUITY_ONLY" | "RECOMMENDED" | "MAXIMUM" | "OUT_OF_RANGE";
+
+export interface FundingBandInput {
+  industry: string;
+  area_pyeong: number;
+  deposit_krw: number;
+  monthly_rent_krw: number;
+  monthly_maintenance_krw: number;
+  key_money_krw: number;
+  fitout_krw: number | null;
+  equity_krw: number;
+  existing_debt_krw: number;
+  other_monthly_fixed_krw: number;
+}
+
+export interface BandLine {
+  band: FundingBandKey;
+  ceiling_krw: number;
+  loan_krw: number;
+  monthly_repayment_krw: number;
+  monthly_fixed_cost_krw: number;
+  target_monthly_revenue_krw: number;
+  target_daily_revenue_krw: number;
+  runway_months: number | null;
+  stress_pass: boolean;
+  repayment_burden_ratio: number;
+  subsidy_uplift_krw: number;
+  is_estimate: boolean;
+  trade_area_count: number | null;
+}
+
+export interface BreakEven {
+  monthly_fixed_cost_krw: number;
+  target_monthly_revenue_krw: number;
+  target_daily_revenue_krw: number;
+  contribution_margin_ratio: number;
+  assumptions: string[];
+}
+
+export interface FundingBandResult {
+  status: "computed" | "integration_pending";
+  required_capital_krw: number | null;
+  required_capital_band: FundingBandKey | null;
+  bands: BandLine[];
+  break_even: BreakEven | null;
+  missing_params: string[];
+  message: string | null;
+  provenance: Provenance | null;
 }
