@@ -124,7 +124,9 @@ function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
 }
 ```
 
-- [ ] **Step 4: 권장 밴드 추출 헬퍼 추가**
+- [ ] **Step 4: 권장 밴드 추출 헬퍼와 입력 가드 추가**
+
+> **실행 중 발견된 편차.** 백엔드 `FundingBandInput.area_pyeong`은 `gt=0`이다. 기본값 0으로 호출하면 400 `VALIDATION_ERROR`가 나고, 그 예외가 `start()`의 catch로 흘러 **입지 검색까지 통째로 중단된다.** 평수 미입력이 후보 찾기를 막아서는 안 되므로, 입력이 부족하면 **서버를 부르지 않고** 명시적 대기 상태를 반환한다(스펙 §3.7 패턴).
 
 `gradeNote` 함수 **아래**에 추가한다.
 
@@ -132,6 +134,23 @@ function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
 /** 권장 조달선. 밴드는 항상 자기자본선·권장·최대 순서로 오지만 순서에 의존하지 않는다. */
 export function recommendedLine(result: FundingBandResult | null): BandLine | null {
   return result?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
+}
+
+/** 밴드 계산에 필요한 임대 조건이 채워졌는지. 비면 서버를 부르지 않고 대기 상태로 둔다. */
+function missingBandInputs(input: BandForm): string[] {
+  const gaps: string[] = [];
+  if (input.area_pyeong <= 0) gaps.push("희망 평수");
+  if (input.deposit_krw <= 0) gaps.push("희망 보증금");
+  if (input.monthly_rent_krw <= 0) gaps.push("희망 월세");
+  return gaps;
+}
+
+function inputPending(gaps: string[]): FundingBandResult {
+  return {
+    status: "integration_pending", required_capital_krw: null, required_capital_band: null,
+    bands: [], break_even: null, missing_params: gaps,
+    message: `${gaps.join(" · ")}을 입력하면 조달 밴드를 계산합니다. 입력 전에는 값을 추정하지 않습니다.`, provenance: null
+  };
 }
 ```
 
@@ -160,6 +179,12 @@ export function recommendedLine(result: FundingBandResult | null): BandLine | nu
 ```typescript
   /** 조달 밴드 산출. 후보와 무관하게 사용자 조건만으로 계산되므로 입지 조회보다 먼저 실행한다. */
   const runBands = useCallback(async (record: CaseRecord, input: BandForm) => {
+    const gaps = missingBandInputs(input);
+    if (gaps.length > 0) {
+      const pending = inputPending(gaps);
+      setBands(pending); setBandState("integration_pending");
+      return pending;
+    }
     setBandState("loading");
     const result = await api.fundingBands(record.id, {
       industry: record.inputs.industry, equity_krw: record.inputs.equity_krw, ...input
