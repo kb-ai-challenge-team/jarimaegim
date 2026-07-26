@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, LoaderCircle, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
-import type { AnalysisResult, CaseInput } from "@/lib/types";
+import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
 import type { FlowStep, Jarimaegim } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
 import { PlanBands, PlanFunding } from "./JarimaegimPlan";
@@ -82,14 +82,31 @@ function ChipRow({ label, value, options, onSelect, mark }: { label: string; val
   return <div className="kb-chiprow" data-mark={mark}><span>{label}</span><div>{Object.entries(options).map(([key, text]) => <button key={key} type="button" aria-pressed={value === key} onClick={() => onSelect(key)}>{text}</button>)}</div></div>;
 }
 
+/** 확장·축소를 같은 비중으로 보여준다. 한쪽만 노출하면 대출 권유가 된다. */
+function BandBanner({ bands }: { bands: FundingBandResult }) {
+  const equity = bands.bands.find((line) => line.band === "EQUITY_ONLY");
+  const recommended = bands.bands.find((line) => line.band === "RECOMMENDED");
+  const maximum = bands.bands.find((line) => line.band === "MAXIMUM");
+  if (!equity || !recommended || !maximum) return null;
+  const describe = (line: typeof equity) => `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)} · 소진 ${line.runway_months === null ? "조달 부족" : `${line.runway_months}개월`}`;
+  return <div className="kb-band-banner">
+    <div className="kb-band-banner-row"><span><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</span><span>{describe(recommended)}</span></div>
+    <div className="kb-band-banner-row"><span>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</span><span>{describe(equity)}</span></div>
+    <div className="kb-band-banner-row"><span>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</span><span>{describe(maximum)}{maximum.stress_pass ? "" : " · 스트레스 실패"}</span></div>
+    <p className="kb-band-banner-note">밴드에 따라 열리는 상권 수는 상권 임대 수준 데이터 연동 후 제공됩니다. 지금 후보 목록은 밴드로 걸러지지 않았습니다.</p>
+  </div>;
+}
+
 function RecommendStep({ flow }: { flow: Jarimaegim }) {
-  const { candidates, locationState, focused, caseData, trace } = flow;
+  const { candidates, locationState, focused, caseData, trace, bands } = flow;
   const conditions = `${flow.form.district} ${flow.form.industry}`.trim();
   return <div className="kb-step">
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{trace.state === "running"
       ? `${conditions} 조건으로 공식 장소 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
       : caseData ? `${caseData.inputs.district} ${caseData.inputs.industry} 조건으로 공식 장소 데이터를 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+    {bands?.status === "computed" && <BandBanner bands={bands} />}
+    {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />조달 밴드는 아직 계산되지 않았습니다. 비용 단계에서 무엇이 비어 있는지 확인할 수 있습니다.</p>}
     {locationState === "loading" && <div className="kb-skeletons">{[0, 1, 2].map((row) => <div key={row} className="kb-skeleton" />)}</div>}
     {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />

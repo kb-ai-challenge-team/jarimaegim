@@ -202,8 +202,8 @@ export function useJarimaegim() {
       const band = await runBands(record, bandForm);
       const line = recommendedLine(band);
       settleStep("bands", band.status === "computed" ? "done" : "skipped",
-        line && band.break_even
-          ? `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(band.break_even.target_daily_revenue_krw)}`
+        line
+          ? `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`
           : band.message || "제도 파라미터 등록 대기");
       await runSearch(record);
       await handoff();
