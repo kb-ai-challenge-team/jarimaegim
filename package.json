@@ -19,7 +19,8 @@
     "config:update-kakao-map-key": "node scripts/update-kakao-map-key.mjs",
     "check:kakao-sdk": "node scripts/check-kakao-sdk.mjs sdk",
     "check:kakao-build-assets": "node scripts/check-kakao-sdk.mjs assets",
-    "check:shell": "node scripts/shell-check.mjs"
+    "check:shell": "node scripts/shell-check.mjs",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "lucide-react": "1.25.0",
