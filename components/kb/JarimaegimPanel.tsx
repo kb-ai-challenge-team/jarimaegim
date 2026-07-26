@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, ExternalLink, LoaderCircle, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, LoaderCircle, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
 import type { AnalysisResult, CaseInput } from "@/lib/types";
@@ -35,7 +35,6 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "funding" && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} gapMin={flow.costPlan?.gap_min_krw ?? null} />}
       {flow.caseData && flow.step !== "ask" && flow.step !== "confirm" && <StepNav flow={flow} />}
     </div>
-    <ChatDock flow={flow} />
   </div>;
 }
 
@@ -148,33 +147,5 @@ function StepNav({ flow }: { flow: Jarimaegim }) {
   return <div className="kb-stepnav">
     {previous ? <button className="kb-ghost" onClick={() => flow.setStep(previous)}>← {labels[previous]}</button> : <button className="kb-ghost" onClick={flow.reset}><RotateCcw aria-hidden="true" /> 조건 다시 입력</button>}
     {next && <button className="kb-primary kb-primary-sm" onClick={() => flow.setStep(next)}>{labels[next]}로 <ArrowRight aria-hidden="true" /></button>}
-  </div>;
-}
-
-function ChatDock({ flow }: { flow: Jarimaegim }) {
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const logRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (open && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [open, flow.messages, flow.chatBusy]);
-  const send = (event: React.FormEvent) => { event.preventDefault(); const value = text.trim(); if (!value) return; setText(""); setOpen(true); void flow.sendChat(value); };
-  const history = flow.messages.slice(1);
-  return <div className={`kb-chat ${open ? "kb-chat-open" : ""}`}>
-    <button className="kb-chat-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
-      <span className="kb-ai-dot" aria-hidden="true" />대화 기록 {history.length > 0 && <em>{history.length}</em>}
-    </button>
-    {open && <div className="kb-chat-log" ref={logRef} role="log" aria-live="polite">
-      {history.length === 0 && <p className="kb-note">아직 주고받은 대화가 없습니다.</p>}
-      {history.map((message, index) => <div key={index} className={`kb-chat-message kb-chat-${message.role}`}>
-        <p>{message.text}</p>
-        {message.citation && <a href={message.citation} target="_blank" rel="noopener noreferrer">근거 원문 <ExternalLink aria-hidden="true" /></a>}
-      </div>)}
-      {flow.chatBusy && <div className="kb-chat-message kb-chat-assistant"><LoaderCircle className="kb-spin" aria-hidden="true" /> 공식 근거를 확인하고 있습니다.</div>}
-    </div>}
-    <form onSubmit={send}>
-      <label className="sr-only" htmlFor="kb-chat-input">자리매김 AI에게 질문하기</label>
-      <input id="kb-chat-input" value={text} onChange={(event) => setText(event.target.value)} placeholder={flow.status?.integrations.openai ? "이 후보에 대해 물어보세요" : "AI 키 연결 후 답변이 제공됩니다"} />
-      <button disabled={!text.trim() || flow.chatBusy} aria-label="보내기"><Send aria-hidden="true" /></button>
-    </form>
-    <small className="kb-chat-guard">AI는 설명만 합니다. 조건과 계산값은 바꾸지 않습니다.</small>
   </div>;
 }

@@ -23,6 +23,8 @@ export function useJarimaegim() {
   const [analysis, setAnalysis] = useState<Record<string, AnalysisResult>>({});
   const [programs, setPrograms] = useState<Program[]>([]);
   const [programState, setProgramState] = useState<LocationState>("idle");
+  const [catalog, setCatalog] = useState<Program[]>([]);
+  const [catalogState, setCatalogState] = useState<LocationState>("idle");
   const [costPlan, setCostPlan] = useState<CostPlan | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([INTRO]);
@@ -122,6 +124,20 @@ export function useJarimaegim() {
 
   useEffect(() => { if (step === "funding" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
 
+  /** The 정책 tab reads the same official notices without needing a case. */
+  const loadCatalog = useCallback(async () => {
+    setCatalogState((current) => current === "loading" ? current : "loading");
+    try {
+      await ensureSession();
+      const result = await api.getProgramCatalog();
+      setCatalog(result.items);
+      setCatalogState(result.items.length > 0 ? "success" : "integration_pending");
+    } catch (err) {
+      setCatalogState("error");
+      setError(err instanceof ApiError ? err.message : "공식 공고를 불러오지 못했습니다.");
+    }
+  }, [ensureSession]);
+
   const sendChat = useCallback(async (text: string) => {
     if (!text.trim() || chatBusy) return;
     setMessages((prev) => [...prev, { role: "user", text }]);
@@ -144,8 +160,8 @@ export function useJarimaegim() {
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
-    analysis, programs, programState, costPlan, status, messages, busy, chatBusy, error, setError,
-    start, retrySearch, runAnalysis, saveCost, sendChat, reset
+    analysis, programs, programState, catalog, catalogState, costPlan, status, messages, busy, chatBusy, error, setError,
+    start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, reset
   };
 }
 

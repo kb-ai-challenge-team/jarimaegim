@@ -9,9 +9,9 @@ const HIGHLIGHTS = [
   { icon: Coins, title: "자금조달까지 연결", copy: "입력한 비용으로 조달 차이를 계산하고 공식 공고 원문으로 이어집니다." }
 ];
 
-export function KbTodayPanel({ onOpenAi }: { onOpenAi: () => void }) {
+export function KbIntroPanel({ onOpenAi }: { onOpenAi: () => void }) {
   return <div className="kb-today">
-    <div className="kb-today-date"><strong>오늘</strong><span>서울 창업 입지</span></div>
+    <div className="kb-today-date"><strong>서울 창업 입지</strong><span>KB부동산 데모</span></div>
     <button className="kb-ai-cta" onClick={onOpenAi}>
       <span className="kb-ai-badge" aria-hidden="true">AI</span>
       <span className="kb-ai-cta-body">

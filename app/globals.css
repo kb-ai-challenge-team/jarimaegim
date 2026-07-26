@@ -336,6 +336,10 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-gnb button:hover{background:var(--kb-fill);color:var(--kb-ink)}
 .kb-gnb button[aria-current=page]{color:var(--kb-ink)}
 .kb-gnb button[aria-current=page] svg{stroke-width:2.4}
+.kb-gnb-ai{color:var(--kb-blue)!important;font-weight:700!important}
+.kb-gnb-ai .kb-ai-badge{width:24px;height:24px;border-radius:7px;font-size:10px}
+.kb-gnb-ai[aria-current=page]{background:var(--kb-blue-soft)}
+.kb-gnb-ai[aria-current=page] .kb-ai-badge{box-shadow:0 0 0 3px rgba(27,100,218,.16)}
 
 /* --- left panel --- */
 .kb-panel{width:424px;flex:none;display:flex;flex-direction:column;min-height:0;background:#fff;box-shadow:var(--kb-shadow-lg);z-index:20}
@@ -514,23 +518,50 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-stepnav{display:flex;justify-content:space-between;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--kb-line)}
 
 /* chat dock */
-.kb-chat{flex:none;border-top:1px solid var(--kb-line);background:#fff;padding:10px 16px 12px;display:flex;flex-direction:column;gap:8px}
-.kb-chat-toggle{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:0;font-size:12px;font-weight:600;color:var(--kb-sub)}
-.kb-chat-toggle em{font-style:normal;padding:1px 6px;border-radius:50px;background:var(--kb-fill);font-size:11px}
-.kb-chat-log{max-height:190px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0}
+.kb-chat-rail{width:330px;flex:none;display:flex;flex-direction:column;min-height:0;background:#fff;border-left:1px solid var(--kb-line);box-shadow:-6px 0 16px rgba(0,0,0,.06);z-index:15}
+.kb-chat-rail>header{flex:none;display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--kb-line)}
+.kb-chat-rail>header strong{display:block;font-size:14px;color:var(--kb-ink)}
+.kb-chat-rail>header small{display:block;font-size:11.5px;color:var(--kb-mute)}
+.kb-chat-rail>form{flex:none;display:flex;gap:7px;padding:0 16px}
+.kb-chat-rail .kb-chat-guard{flex:none;padding:8px 16px 14px;font-size:11px;color:var(--kb-mute)}
+.kb-chat-log{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding:14px 16px}
+.kb-chat-quick{flex:none;display:flex;flex-wrap:wrap;gap:5px;padding:0 16px 10px}
+.kb-chat-quick button{padding:5px 10px;border:1px solid var(--kb-line-2);border-radius:50px;background:#fff;font-size:11.5px;color:var(--kb-sub)}
+.kb-chat-quick button:hover{border-color:var(--kb-blue);color:var(--kb-blue)}
+.kb-chat-pending{display:flex;align-items:center;gap:7px;color:var(--kb-sub)}
 .kb-chat-message{max-width:88%;padding:9px 11px;border-radius:12px;font-size:12.5px;line-height:1.55}
 .kb-chat-message p{margin:0}
 .kb-chat-assistant{align-self:flex-start;background:var(--kb-fill);color:var(--kb-ink);border-top-left-radius:4px}
 .kb-chat-user{align-self:flex-end;background:var(--kb-blue);color:#fff;border-top-right-radius:4px}
 .kb-chat-message a{display:inline-flex;align-items:center;gap:4px;margin-top:5px;font-size:11.5px;font-weight:600;color:var(--kb-blue)}
 .kb-chat-message a svg{width:12px;height:12px}
-.kb-chat form{display:flex;gap:7px}
-.kb-chat input{flex:1;min-width:0;min-height:40px;padding:0 12px;border:1px solid var(--kb-line-2);border-radius:9px;font-size:13px;color:var(--kb-ink)}
-.kb-chat input:focus{border-color:var(--kb-blue);outline:none}
-.kb-chat form button{width:40px;height:40px;flex:none;display:grid;place-items:center;border:0;border-radius:9px;background:var(--kb-navy);color:#fff}
-.kb-chat form button:disabled{background:var(--kb-line);color:var(--kb-mute)}
-.kb-chat form button svg{width:16px;height:16px}
-.kb-chat-guard{font-size:11px;color:var(--kb-mute)}
+.kb-chat-rail input{flex:1;min-width:0;min-height:40px;padding:0 12px;border:1px solid var(--kb-line-2);border-radius:9px;font-size:13px;color:var(--kb-ink)}
+.kb-chat-rail input:focus{border-color:var(--kb-blue);outline:none}
+.kb-chat-rail form button{width:40px;height:40px;flex:none;display:grid;place-items:center;border:0;border-radius:9px;background:var(--kb-navy);color:#fff}
+.kb-chat-rail form button:disabled{background:var(--kb-line);color:var(--kb-mute)}
+.kb-chat-rail form button svg{width:16px;height:16px}
+
+/* --- 정책 원문 tab --- */
+.kb-policy{flex:1;min-height:0;display:flex;flex-direction:column}
+.kb-policy-head{flex:none;padding:16px 18px 12px}
+.kb-policy-head>div{display:flex;align-items:center;gap:8px}
+.kb-policy-head svg{width:18px;height:18px;color:var(--kb-blue)}
+.kb-policy-head strong{font-size:16px;color:var(--kb-ink);letter-spacing:-.03em}
+.kb-policy-head p{margin:7px 0 0;font-size:12.5px;color:var(--kb-sub);line-height:1.55}
+.kb-policy-search{flex:none;display:flex;align-items:center;gap:8px;margin:0 18px;padding:0 11px;border:1px solid var(--kb-line-2);border-radius:9px}
+.kb-policy-search svg{width:16px;height:16px;flex:none;color:var(--kb-mute)}
+.kb-policy-search input{flex:1;min-width:0;min-height:40px;border:0;background:none;font-size:13px;color:var(--kb-ink);outline:none}
+.kb-policy-filters{flex:none;display:flex;flex-wrap:wrap;gap:6px;padding:12px 18px}
+.kb-policy-filters button{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1px solid var(--kb-line-2);border-radius:50px;background:#fff;font-size:12.5px;font-weight:500;color:var(--kb-sub)}
+.kb-policy-filters button em{font-style:normal;font-size:11px;color:var(--kb-mute)}
+.kb-policy-filters button[aria-pressed=true]{border-color:var(--kb-navy);background:var(--kb-navy);color:#fff;font-weight:600}
+.kb-policy-filters button[aria-pressed=true] em{color:rgba(255,255,255,.75)}
+.kb-policy-filters button:disabled{opacity:.4;cursor:not-allowed}
+.kb-policy-body{flex:1;min-height:0;overflow-y:auto;padding:0 18px 8px}
+.kb-policy-count{margin:0 0 10px;font-size:12px;color:var(--kb-mute)}
+.kb-policy-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.kb-policy-foot small{font-size:11.5px;color:var(--kb-mute)}
+.kb-policy-legal{flex:none;padding:12px 18px 16px;border-top:1px solid var(--kb-line)}
 
 /* --- map stage --- */
 .kb-stage{flex:1;min-width:0;position:relative;background:#e8ecef}
@@ -554,34 +585,40 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-marker[data-focused=true] .kb-marker-value{background:#3c2f00}
 
 /* map chrome */
-.kb-filters{position:absolute;top:14px;left:16px;right:74px;display:flex;flex-wrap:wrap;gap:6px;z-index:10}
+.kb-filters{position:absolute;top:14px;left:16px;right:16px;display:flex;flex-wrap:wrap;gap:6px;z-index:10}
 .kb-filter,.kb-filter-icon{min-height:36px;display:inline-flex;align-items:center;gap:5px;padding:0 14px;border:1px solid var(--kb-line-2);border-radius:50px;background:#fff;font-size:14px;font-weight:500;color:var(--kb-sub);box-shadow:0 1px 2px rgba(0,0,0,.06)}
 .kb-filter svg{width:14px;height:14px}
 .kb-filter-icon{width:36px;padding:0;justify-content:center}
 .kb-filter-icon svg{width:16px;height:16px}
 .kb-filter:hover,.kb-filter-icon:hover{border-color:var(--kb-sub);color:var(--kb-ink)}
-.kb-tools{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:11}
-.kb-tools button{width:44px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:0;border-radius:8px;background:#fff;box-shadow:var(--kb-shadow);color:var(--kb-ink);font-size:12px;font-weight:500;line-height:1.15;white-space:pre-line}
-.kb-tools button svg{width:15px;height:15px;color:var(--kb-sub)}
-.kb-tools button:hover{background:var(--kb-fill)}
-.kb-tool-ai{gap:3px!important;font-weight:700!important;color:var(--kb-blue)!important}
-.kb-tool-ai>span:not(.kb-ai-badge){font-size:9.5px;letter-spacing:-.06em;white-space:nowrap}
-.kb-tool-ai .kb-ai-badge{width:17px;height:17px;border-radius:5px;font-size:9px}
-.kb-tool-ai[aria-pressed=true]{background:var(--kb-navy)!important;color:#fff!important;box-shadow:0 0 0 3px rgba(63,69,81,.18)}
 .kb-map-controls{position:absolute;right:14px;bottom:26px;display:flex;flex-direction:column;gap:6px;z-index:10}
 .kb-map-controls button{width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:#fff;box-shadow:var(--kb-shadow);color:var(--kb-sub)}
 .kb-map-controls button svg{width:16px;height:16px}
-.kb-stage-notice{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);max-width:440px;padding:14px 18px;border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 6px 20px rgba(0,0,0,.14);text-align:center;z-index:9}
+.kb-stage-notice{position:absolute;left:50%;bottom:26px;max-width:440px;transform:translateX(-50%);max-width:440px;padding:14px 18px;border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 6px 20px rgba(0,0,0,.14);text-align:center;z-index:9}
 .kb-stage-notice strong{display:block;font-size:13.5px;color:var(--kb-ink)}
 .kb-stage-notice p{margin:5px 0 0;font-size:12.5px;color:var(--kb-sub);line-height:1.55}
 .kb-stage-notice em{font-style:normal;font-weight:700;color:var(--kb-blue)}
+/* Bottom-right AI entry: toggles the conversation rail from anywhere in the shell. */
+.kb-fab{position:fixed;right:22px;bottom:22px;z-index:60;min-width:58px;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0 12px;border:0;border-radius:29px;background:linear-gradient(135deg,#7b5cff 0%,#3d8bff 55%,#22c9d9 100%);color:#fff;box-shadow:0 8px 22px rgba(41,88,190,.34)}
+.kb-fab:hover{filter:brightness(1.06);box-shadow:0 10px 26px rgba(41,88,190,.42)}
+.kb-fab svg{width:22px;height:22px}
+.kb-fab-badge{font-size:12px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.kb-fab-label{font-size:10px;font-weight:600;line-height:1}
+.kb-app[data-chat=open] .kb-fab{background:var(--kb-navy);box-shadow:0 8px 22px rgba(0,0,0,.28)}
+.kb-app[data-chat=open] .kb-chat-rail .kb-chat-guard{padding-bottom:78px}
+.kb-app[data-chat=closed] .kb-map-controls{bottom:92px}
 .kb-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:80;padding:11px 18px;border-radius:50px;background:rgba(34,34,34,.9);color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.24)}
 
 /* --- responsive --- */
-@media(max-width:1180px){
-  .kb-panel{width:360px}
-  .kb-app[data-ai=open] .kb-panel{width:400px}
+@media(max-width:1400px){
+  .kb-panel{width:380px}
+  .kb-app[data-ai=open] .kb-panel{width:420px}
+  .kb-chat-rail{width:290px}
   .kb-form{grid-template-columns:1fr}
+}
+@media(max-width:1150px){
+  .kb-panel,.kb-app[data-ai=open] .kb-panel{width:340px}
+  .kb-chat-rail{width:260px}
 }
 @media(max-width:900px){
   .kb-app{flex-direction:column}
@@ -591,19 +628,16 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
   .kb-gnb button svg{width:19px;height:19px}
   .kb-panel,.kb-app[data-ai=open] .kb-panel{width:100%;order:2;flex:1 1 58%;min-height:0;box-shadow:0 -6px 16px rgba(0,0,0,.12)}
   .kb-stage{order:1;flex:1 1 42%;min-height:200px}
-  .kb-filters{right:66px;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .kb-filters{right:14px;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
   .kb-filters::-webkit-scrollbar{display:none}
   .kb-filter,.kb-filter-icon{flex:none}
   .kb-filter{font-size:12.5px;min-height:32px;padding:0 11px}
   .kb-filter-icon{width:32px;min-height:32px}
-  /* The stage is short on phones — keep the rail inside it and float the AI entry to the top. */
-  .kb-tools{max-height:calc(100% - 76px);overflow-y:auto;scrollbar-width:none;gap:5px}
-  .kb-tools::-webkit-scrollbar{display:none}
-  .kb-tools button{width:38px;height:38px;flex:none;font-size:10px}
-  .kb-tools button svg{width:13px;height:13px}
-  .kb-tool-ai{order:-1;position:sticky;top:0}
-  .kb-tool-ai>span:not(.kb-ai-badge){font-size:8px}
-  .kb-tool-ai .kb-ai-badge{width:14px;height:14px;font-size:8px}
+  .kb-chat-rail{width:100%;order:4;flex:none;max-height:44vh;border-left:0;border-top:1px solid var(--kb-line);box-shadow:none}
+  .kb-chat-rail .kb-chat-log{max-height:26vh}
+  .kb-fab{right:14px;bottom:70px;min-width:50px;height:50px;padding:0 10px}
+  .kb-fab svg{width:19px;height:19px}
+  .kb-app[data-chat=closed] .kb-map-controls{bottom:14px}
   .kb-map-controls{bottom:14px;right:10px}
   .kb-map-controls button{width:32px;height:32px}
   .kb-stage-notice{max-width:none;left:14px;right:14px;transform:none;bottom:14px;padding:11px 14px}

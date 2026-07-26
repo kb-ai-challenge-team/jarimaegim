@@ -200,6 +200,13 @@ async def list_programs(case_id: UUID = Query(), session_id: UUID = Depends(curr
     return {"items": items, "status": "success" if items else "integration_pending", "message": None if items else "검증된 공식 API endpoint와 키가 설정되면 공고를 표시합니다."}
 
 
+@app.get("/api/v1/programs/catalog")
+async def list_program_catalog(session_id: UUID = Depends(current_session)):
+    """Case-independent view of the same official notices — the 정책 tab browses them without a case."""
+    items = await official_sources.programs()
+    return {"items": items, "status": "success" if items else "integration_pending", "message": None if items else "검증된 공식 API endpoint와 키가 설정되면 공고를 표시합니다."}
+
+
 @app.get("/api/v1/products")
 async def list_products(case_id: UUID = Query(), session_id: UUID = Depends(current_session)):
     owned_case(session_id, case_id)
