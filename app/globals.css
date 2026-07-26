@@ -785,3 +785,18 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-band-banner-row strong{font-weight:700}
 .kb-band-banner-note{font-size:10.5px;color:var(--muted,#6b7280);margin:0}
 .kb-summary dt small{display:block;font-weight:400;font-size:9.5px;color:var(--muted,#6b7280)}
+.kb-prescription-block{border-top:1px solid var(--line,#e5e7eb);padding-top:12px;margin-top:14px}
+.kb-prescription-block:first-of-type{border-top:none;padding-top:0;margin-top:6px}
+.kb-prescription-block h3{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;letter-spacing:-.02em;margin:0 0 8px}
+.kb-prescription-no{display:inline-flex;width:18px;height:18px;border-radius:50%;background:#1c1a17;color:#fff;align-items:center;justify-content:center;font-size:10.5px;font-weight:800}
+.kb-committed{border:1.4px solid var(--kb,#ffbc00);border-radius:8px;padding:10px;background:#fffdf5}
+.kb-committed strong{display:block;font-size:13px}
+.kb-committed small{display:block;font-size:11px;color:var(--muted,#6b7280);margin-bottom:6px}
+.kb-empty.compact{padding:14px 12px}
+.kb-empty.compact strong{font-size:12.5px}
+.kb-empty.compact p{font-size:11.5px}
+.kb-candidate-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.kb-candidate-actions button{flex:1;justify-content:center;min-width:44%}
+.kb-doc-actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.kb-doc-actions button{flex:1;min-width:46%;justify-content:center}
+.kb-inline-notice{font-size:11.5px;color:var(--ok,#2a7355);background:#e7f3ec;border-radius:6px;padding:7px 9px;margin:6px 0}

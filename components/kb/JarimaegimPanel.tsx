@@ -7,7 +7,7 @@ import { parseCaseText } from "@/lib/parse-case";
 import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
 import type { FlowStep, Jarimaegim } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
-import { PlanBands, PlanFunding } from "./JarimaegimPlan";
+import { PlanBands, PlanPrescription } from "./JarimaegimPlan";
 
 const STEPS: { id: FlowStep; label: string }[] = [
   { id: "ask", label: "조건" }, { id: "bands", label: "자금" }, { id: "recommend", label: "입지" },
@@ -33,7 +33,14 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
       {flow.step === "evidence" && <EvidenceStep flow={flow} />}
       {flow.step === "bands" && flow.caseData && <PlanBands caseData={flow.caseData} form={flow.bandForm} bands={flow.bands} state={flow.bandState} busy={flow.busy === "bands"} onField={flow.setBandField} onRecompute={flow.recomputeBands} />}
-      {flow.step === "prescribe" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
+      {flow.step === "prescribe" && flow.caseData && <PlanPrescription caseData={flow.caseData}
+        committed={flow.candidates.find((item) => item.id === flow.committed) || null}
+        programs={flow.programs} state={flow.programState}
+        applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands}
+        kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState}
+        documents={flow.documents} docBusy={flow.docBusy} docNotice={flow.docNotice}
+        onPrepareDocument={(template) => flow.documents[template] ? flow.downloadDocument(template) : flow.prepareDocument(template)}
+        onBackToLocation={() => flow.setStep("recommend")} />}
       {flow.caseData && flow.step !== "ask" && flow.step !== "confirm" && <StepNav flow={flow} />}
     </div>
   </div>;
@@ -127,7 +134,12 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
           </span>
         </button>
         <ProvenanceBar data={candidate.provenance} />
-        <button className="kb-ghost kb-candidate-cta" onClick={() => flow.runAnalysis(candidate.id)}>근거 자세히 보기 <ArrowRight aria-hidden="true" /></button>
+        <div className="kb-candidate-actions">
+          <button className="kb-ghost" onClick={() => flow.runAnalysis(candidate.id)}>근거 자세히 보기 <ArrowRight aria-hidden="true" /></button>
+          {flow.committed === candidate.id
+            ? <button className="kb-primary kb-primary-sm" onClick={() => flow.commitCandidate(null)}><Check aria-hidden="true" /> 계획 기준</button>
+            : <button className="kb-ghost" onClick={() => flow.commitCandidate(candidate.id)}>계획 기준으로 확정</button>}
+        </div>
       </li>)}</ul>
     </>}
   </div>;
