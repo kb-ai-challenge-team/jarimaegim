@@ -1,0 +1,181 @@
+name: Deploy
+
+# 단일 EC2에 rsync + systemd로 올린다. 서버에는 git이 설치돼 있지 않고 .git도 없으므로
+# 커밋 트리를 git archive로 떠서 통째로 동기화한다(작업트리가 아니라 커밋이 진실이다).
+# 명세 §13.6의 SSM Run Command 대신 SSH를 쓰는 이유는 README 참고 — 전환 시 sync/remote 단계만 바뀐다.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_verify:
+        description: '검증 생략 (긴급 롤포워드 전용)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# 배포는 절대 겹치면 안 된다. 진행 중인 배포를 취소하면 서버가 반쯤 동기화된 상태로 남는다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: ${{ !inputs.skip_verify }}
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: verify
+    # verify를 건너뛰면 needs가 skipped가 되므로 always()로 받고 실패만 걸러낸다.
+    if: ${{ always() && needs.verify.result != 'failure' && needs.verify.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production   # 승인 게이트는 GitHub Environment의 required reviewer로 건다 (명세 §13.6)
+    env:
+      REMOTE_HOST: ${{ vars.DEPLOY_HOST }}
+      REMOTE_USER: ${{ vars.DEPLOY_USER }}
+      APP_DIR: ${{ vars.DEPLOY_PATH }}
+      PUBLIC_URL: ${{ vars.DEPLOY_PUBLIC_URL }}
+      SSH_OPTS: -i ~/.ssh/deploy.key -o BatchMode=yes -o ConnectTimeout=15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: SSH 자격 준비
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy.key
+          chmod 600 ~/.ssh/deploy.key
+          # 호스트키를 고정한다. StrictHostKeyChecking=no는 MITM을 그냥 통과시킨다.
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: 릴리스 트리 생성 + 체크섬 매니페스트
+        id: release
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          git archive HEAD | tar -x -C release
+          ( cd release && find . -type f -print0 | sort -z | xargs -0 sha256sum ) > release-manifest.txt
+          echo "manifest=$(sha256sum release-manifest.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "파일 $(wc -l < release-manifest.txt)개 / 커밋 $(git rev-parse --short HEAD)"
+
+      - name: 배포 전 서버 상태 기록
+        id: before
+        run: |
+          set -euo pipefail
+          read -r LOCK REQS <<< "$(ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "
+            cd '$APP_DIR'
+            echo \"\$(sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo none) \$(sha256sum backend/requirements.txt 2>/dev/null | cut -d' ' -f1 || echo none)\"
+          ")"
+          echo "lock=$LOCK" >> "$GITHUB_OUTPUT"
+          echo "reqs=$REQS" >> "$GITHUB_OUTPUT"
+
+      - name: 롤백용 빌드 스냅샷
+        run: |
+          ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "
+            set -euo pipefail
+            cd '$APP_DIR'
+            rm -rf .next.prev
+            cp -a .next .next.prev
+            du -sh .next.prev
+          "
+
+      # --delete로 서버를 커밋과 정확히 일치시킨다. 제외 경로는 rsync가 삭제 대상에서도 빼준다.
+      # DOCUMENT_STORAGE_DIR(/var/lib/ter-doctor/documents)은 앱 디렉터리 밖이라 영향 없다.
+      - name: 소스 동기화
+        run: |
+          set -euo pipefail
+          rsync -rlzc --delete \
+            -e "ssh $SSH_OPTS" \
+            --exclude '.env' \
+            --exclude 'node_modules/' \
+            --exclude '.next/' \
+            --exclude '.next.prev/' \
+            --exclude 'backend/.venv/' \
+            --itemize-changes \
+            release/ "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/"
+
+      - name: 의존성 설치 · 빌드 · 재시작
+        env:
+          LOCK_BEFORE: ${{ steps.before.outputs.lock }}
+          REQS_BEFORE: ${{ steps.before.outputs.reqs }}
+        run: |
+          set -euo pipefail
+          LOCK_AFTER=$(sha256sum release/package-lock.json | cut -d' ' -f1)
+          REQS_AFTER=$(sha256sum release/backend/requirements.txt | cut -d' ' -f1)
+          NPM_CHANGED=$([ "$LOCK_BEFORE" = "$LOCK_AFTER" ] && echo 0 || echo 1)
+          PIP_CHANGED=$([ "$REQS_BEFORE" = "$REQS_AFTER" ] && echo 0 || echo 1)
+          echo "package-lock 변경: $NPM_CHANGED / requirements 변경: $PIP_CHANGED"
+
+          ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "
+            set -euo pipefail
+            cd '$APP_DIR'
+
+            if [ '$NPM_CHANGED' = '1' ]; then echo '>> npm ci'; npm ci; else echo '>> npm 의존성 변경 없음'; fi
+            if [ '$PIP_CHANGED' = '1' ]; then echo '>> pip install'; backend/.venv/bin/pip install -q -r backend/requirements.txt; fi
+
+            echo '>> next build'
+            npm run build
+
+            echo '>> restart web'
+            sudo systemctl restart ter-doctor-web
+            # 백엔드는 실제로 바뀐 경우에만 건드린다. 불필요한 재시작은 진행 중인 요청을 끊는다.
+            if [ '$PIP_CHANGED' = '1' ]; then echo '>> restart api'; sudo systemctl restart ter-doctor-api; fi
+          "
+
+      - name: 헬스 스모크
+        run: |
+          set -euo pipefail
+          echo '>> 서비스 상태'
+          ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "systemctl is-active ter-doctor-web ter-doctor-api nginx"
+
+          echo '>> 로컬 엔드포인트 (재시도 6회)'
+          ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "
+            for i in \$(seq 1 6); do
+              WEB=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4173/ || true)
+              API=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/healthz || true)
+              echo \"try \$i: web=\$WEB api=\$API\"
+              [ \"\$WEB\" = '200' ] && [ \"\$API\" = '200' ] && exit 0
+              sleep 5
+            done
+            exit 1
+          "
+
+          echo '>> 공개 URL'
+          curl -fsS -o /dev/null -w 'public root: %{http_code}\n' "$PUBLIC_URL/"
+          curl -fsS -o /dev/null -w 'public status: %{http_code}\n' "$PUBLIC_URL/api/v1/status"
+
+      # 실패 지점이 빌드든 스모크든, 마지막으로 정상 서빙하던 빌드로 되돌린다.
+      # 소스는 이미 새 커밋이므로 다음 배포에서 재빌드된다 — 되돌리는 건 서빙 아티팩트뿐이다.
+      - name: 실패 시 이전 빌드로 롤백
+        if: failure()
+        run: |
+          ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "
+            set -euo pipefail
+            cd '$APP_DIR'
+            if [ -d .next.prev ]; then
+              rm -rf .next.failed && mv .next .next.failed && mv .next.prev .next
+              sudo systemctl restart ter-doctor-web
+              sleep 5
+              echo \"rollback: \$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4173/)\"
+            else
+              echo '스냅샷이 없어 자동 롤백을 건너뜁니다. 수동 확인이 필요합니다.'
+            fi
+          "
+
+      - name: 배포 요약
+        if: always()
+        run: |
+          {
+            echo "### 배포 결과: ${{ job.status }}"
+            echo ""
+            echo "| 항목 | 값 |"
+            echo "| --- | --- |"
+            echo "| 커밋 | \`${{ github.sha }}\` |"
+            echo "| 매니페스트 체크섬 | \`${{ steps.release.outputs.manifest }}\` |"
+            echo "| 대상 | \`${{ vars.DEPLOY_HOST }}:${{ vars.DEPLOY_PATH }}\` |"
+            echo "| 공개 URL | ${{ vars.DEPLOY_PUBLIC_URL }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
