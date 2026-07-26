@@ -663,3 +663,106 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-match-rest{font-weight:500;color:var(--kb-mute);padding-top:6px;border-top:1px solid var(--kb-line)}
 .kb-match-reasons{display:flex;flex-wrap:wrap;gap:4px}
 .kb-match-reasons span{padding:2px 8px;border-radius:50px;background:var(--kb-blue-soft);color:var(--kb-blue);font-size:11px;font-weight:600}
+
+
+
+
+
+/* 상황 → 입지 인터스티셜 — 좌측 패널만 덮고 에이전트 실행 과정을 보여준 뒤 입지 화면으로 넘긴다 */
+.kb-panel{position:relative}
+.kb-run{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;overflow:hidden auto;padding:24px 18px 18px;background:linear-gradient(180deg,#fff 0%,#fff 60%,var(--kb-fill) 100%);animation:kb-run-in .24s cubic-bezier(.2,.7,.3,1)}
+@keyframes kb-run-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* 배경 오로라 — 실행 중에만 천천히 흐르고, 결과가 나오면 색만 남는다 */
+.kb-run:before,.kb-run:after{content:"";position:absolute;z-index:0;border-radius:50%;filter:blur(46px);pointer-events:none;opacity:.55}
+.kb-run:before{top:-140px;left:-90px;width:320px;height:320px;background:radial-gradient(circle,#3d8bff 0%,rgba(61,139,255,0) 70%);animation:kb-aurora-a 11s ease-in-out infinite alternate}
+.kb-run:after{top:-70px;right:-120px;width:280px;height:280px;background:radial-gradient(circle,#7b5cff 0%,rgba(123,92,255,0) 70%);animation:kb-aurora-b 9s ease-in-out infinite alternate}
+.kb-run[data-state=done]:before{background:radial-gradient(circle,#ffcc00 0%,rgba(255,204,0,0) 70%)}
+.kb-run[data-state=done]:after{background:radial-gradient(circle,#f0a500 0%,rgba(240,165,0,0) 70%)}
+.kb-run[data-state=failed]:before{background:radial-gradient(circle,#e05252 0%,rgba(224,82,82,0) 70%)}
+.kb-run[data-state=failed]:after{background:radial-gradient(circle,#c82323 0%,rgba(200,35,35,0) 70%)}
+.kb-run-card:before{content:"";position:absolute;z-index:-1;left:-70px;bottom:-60px;width:260px;height:260px;border-radius:50%;filter:blur(50px);opacity:.34;background:radial-gradient(circle,#22c9d9 0%,rgba(34,201,217,0) 70%);animation:kb-aurora-b 13s ease-in-out infinite alternate;pointer-events:none}
+.kb-run[data-state=done] .kb-run-card:before{background:radial-gradient(circle,#ffcc00 0%,rgba(255,204,0,0) 70%)}
+.kb-run[data-state=failed] .kb-run-card:before{background:radial-gradient(circle,#e05252 0%,rgba(224,82,82,0) 70%)}
+@keyframes kb-aurora-a{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(38px,26px,0) scale(1.18)}}
+@keyframes kb-aurora-b{from{transform:translate3d(0,0,0) scale(1.1)}to{transform:translate3d(-30px,34px,0) scale(.92)}}
+.kb-run-card{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;gap:14px}
+
+/* AI 마크 */
+.kb-mark{flex:none;color:var(--kb-blue)}
+.kb-mark-ring{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;opacity:.5;transform-origin:28px 28px}
+.kb-mark-ring-a{stroke-dasharray:6 10;animation:kb-mark-spin 7s linear infinite}
+.kb-mark-ring-b{stroke-dasharray:3 8;animation:kb-mark-spin 4.4s linear infinite reverse}
+.kb-mark-orbit{transform-origin:28px 28px;animation:kb-mark-spin 3.1s linear infinite}
+.kb-mark-sat{fill:var(--kb-yellow)}
+.kb-mark-pin{fill:url(#kbMarkCore);transform-origin:28px 28px;animation:kb-mark-beat 2.4s ease-in-out infinite}
+.kb-mark-glow{animation:kb-mark-glow 2.8s ease-in-out infinite}
+.kb-mark[data-state=done]{color:var(--kb-yellow-deep)}
+.kb-mark[data-state=done] .kb-mark-pin{fill:url(#kbMarkDone);animation:kb-mark-pop .5s cubic-bezier(.2,1.5,.4,1)}
+.kb-mark[data-state=failed]{color:var(--kb-red)}
+.kb-mark[data-state=failed] .kb-mark-pin{fill:url(#kbMarkFail);animation:none}
+.kb-mark:not([data-state=running]) .kb-mark-ring,.kb-mark:not([data-state=running]) .kb-mark-orbit,.kb-mark:not([data-state=running]) .kb-mark-glow{animation:none}
+.kb-mark:not([data-state=running]) .kb-mark-sat{opacity:0}
+@keyframes kb-mark-spin{to{transform:rotate(360deg)}}
+@keyframes kb-mark-beat{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+@keyframes kb-mark-pop{0%{transform:scale(.72)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes kb-mark-glow{0%,100%{opacity:.45}50%{opacity:1}}
+
+.kb-run-head{display:flex;align-items:center;gap:12px}
+.kb-run-head>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.kb-run-head small{font-size:11.5px;font-weight:700;color:var(--kb-blue);letter-spacing:.01em}
+.kb-run-head strong{font-size:17px;font-weight:800;color:var(--kb-ink);letter-spacing:-.03em;line-height:1.4;word-break:keep-all;animation:kb-head-in .34s cubic-bezier(.2,.7,.3,1)}
+@keyframes kb-head-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+.kb-run[data-state=done] .kb-run-head small{color:#8a5a00}
+.kb-run[data-state=failed] .kb-run-head small{color:var(--kb-red)}
+
+.kb-run-terms{list-style:none;display:flex;flex-wrap:wrap;gap:5px;margin:0;padding:0}
+.kb-run-terms li{padding:4px 11px;border-radius:50px;background:rgba(255,255,255,.75);box-shadow:inset 0 0 0 1px var(--kb-line);backdrop-filter:blur(6px);color:var(--kb-sub);font-size:12px;font-weight:600;animation:kb-chip-in .4s cubic-bezier(.2,.7,.3,1) backwards;animation-delay:calc(var(--i,0) * 70ms + 90ms)}
+@keyframes kb-chip-in{from{opacity:0;transform:translateY(6px) scale(.94)}to{opacity:1;transform:none}}
+.kb-run-lead{margin:0;font-size:12.5px;color:var(--kb-sub);line-height:1.6;word-break:keep-all}
+
+.kb-run-bar{position:relative;height:5px;border-radius:5px;background:rgba(255,255,255,.85);box-shadow:inset 0 0 0 1px var(--kb-line);overflow:hidden}
+.kb-run-bar span{position:relative;display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#7b5cff,#3d8bff 60%,#22c9d9);transition:width .45s cubic-bezier(.2,.7,.3,1);overflow:hidden}
+.kb-run[data-state=running] .kb-run-bar:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(61,139,255,.35),transparent);animation:kb-sheen 1.5s linear infinite}
+@keyframes kb-sheen{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.kb-run[data-state=failed] .kb-run-bar span{background:var(--kb-red)}
+.kb-run[data-state=done] .kb-run-bar span{background:linear-gradient(90deg,var(--kb-yellow),var(--kb-yellow-deep))}
+
+.kb-run-steps{list-style:none;margin:0;padding:6px 0 0}
+.kb-run-steps li{position:relative;display:flex;align-items:flex-start;gap:11px;padding:0 0 18px;animation:kb-step-in .42s cubic-bezier(.2,.7,.3,1) backwards;animation-delay:calc(var(--i,0) * 80ms + 140ms)}
+@keyframes kb-step-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* 회색 트랙(before) 위로 파란 진행선(after)이 그려진다 */
+.kb-run-steps li:before,.kb-run-steps li:after{content:"";position:absolute;left:11px;top:26px;bottom:2px;width:2px;border-radius:2px}
+.kb-run-steps li:before{background:var(--kb-line)}
+.kb-run-steps li:after{background:linear-gradient(180deg,var(--kb-blue),color-mix(in srgb,var(--kb-blue) 45%,#fff));transform:scaleY(0);transform-origin:top;transition:transform .55s cubic-bezier(.2,.7,.3,1)}
+.kb-run-steps li[data-status=done]:after,.kb-run-steps li[data-status=active]:after{transform:scaleY(1)}
+.kb-run-steps li:last-child{padding-bottom:4px}
+.kb-run-steps li:last-child:before,.kb-run-steps li:last-child:after{display:none}
+.kb-run-dot{position:relative;z-index:1;flex:none;width:24px;height:24px;display:grid;place-items:center;border-radius:50%;background:#fff;border:2px solid var(--kb-line);color:transparent;transition:background .3s ease,border-color .3s ease,color .3s ease,box-shadow .3s ease}
+.kb-run-dot svg{width:13px;height:13px}
+.kb-run-steps li[data-status=done] .kb-run-dot{background:var(--kb-blue);border-color:var(--kb-blue);color:#fff;animation:kb-dot-pop .42s cubic-bezier(.2,1.5,.4,1)}
+@keyframes kb-dot-pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+.kb-run-steps li[data-status=active] .kb-run-dot{border-color:var(--kb-blue);color:var(--kb-blue)}
+.kb-run-steps li[data-status=active] .kb-run-dot:after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--kb-blue);animation:kb-halo 1.7s cubic-bezier(.2,.7,.3,1) infinite}
+@keyframes kb-halo{0%{transform:scale(1);opacity:.6}100%{transform:scale(2);opacity:0}}
+.kb-run-steps li[data-status=failed] .kb-run-dot{background:var(--kb-red);border-color:var(--kb-red);color:#fff;animation:kb-shake .4s ease}
+@keyframes kb-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.kb-run-steps li[data-status=skipped] .kb-run-dot{color:var(--kb-mute);border-style:dashed}
+.kb-run-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding-top:1px}
+.kb-run-body strong{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:700;color:var(--kb-mute);letter-spacing:-.02em;transition:color .3s ease}
+.kb-run-steps li[data-status=active] .kb-run-body strong,.kb-run-steps li[data-status=done] .kb-run-body strong{color:var(--kb-ink)}
+.kb-run-body strong em{flex:none;padding:2px 7px;border-radius:50px;background:var(--kb-fill);color:var(--kb-mute);font-style:normal;font-size:10.5px;font-weight:600;transition:background .3s ease,color .3s ease}
+.kb-run-steps li[data-status=active] .kb-run-body strong em,.kb-run-steps li[data-status=done] .kb-run-body strong em{background:var(--kb-blue-soft);color:var(--kb-blue)}
+.kb-run-steps li[data-status=failed] .kb-run-body strong{color:var(--kb-red)}
+.kb-run-steps li[data-status=failed] .kb-run-body strong em{background:#fdecec;color:var(--kb-red)}
+.kb-run-body small{font-size:12px;color:var(--kb-mute);line-height:1.55;word-break:keep-all}
+.kb-run-steps li[data-status=failed] .kb-run-body small{color:var(--kb-red)}
+.kb-run-ms{flex:none;padding-top:4px;font-size:11px;color:var(--kb-mute);font-variant-numeric:tabular-nums;animation:kb-ms-in .3s ease backwards}
+@keyframes kb-ms-in{from{opacity:0}to{opacity:1}}
+
+.kb-run-actions{display:flex;flex-wrap:wrap;gap:8px}
+.kb-run-foot{display:flex;gap:7px;margin:auto 0 0;padding-top:14px;border-top:1px solid var(--kb-line);font-size:11px;color:var(--kb-mute);line-height:1.55;word-break:keep-all}
+.kb-run-foot svg{width:13px;height:13px;flex:none;margin-top:2px}
+
+/* 모션을 끈 사용자도 배지 텍스트로 같은 상태를 읽는다 — 스피너가 상태를 혼자 지지 않는다 */
+@media(prefers-reduced-motion:reduce){.kb-run:before,.kb-run:after{animation:none}.kb-run-steps li:after{transition:none}}

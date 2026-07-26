@@ -79,11 +79,15 @@ function ChipRow({ label, value, options, onSelect, mark }: { label: string; val
 }
 
 function RecommendStep({ flow }: { flow: Jarimaegim }) {
-  const { candidates, locationState, focused, caseData } = flow;
+  const { candidates, locationState, focused, caseData, trace } = flow;
+  const conditions = `${flow.form.district} ${flow.form.industry}`.trim();
   return <div className="kb-step">
-    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{caseData ? `${caseData.inputs.district} ${caseData.inputs.industry} 조건으로 공식 장소 데이터를 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{trace.state === "running"
+      ? `${conditions} 조건으로 공식 장소 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
+      : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
+      : caseData ? `${caseData.inputs.district} ${caseData.inputs.industry} 조건으로 공식 장소 데이터를 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
     {locationState === "loading" && <div className="kb-skeletons">{[0, 1, 2].map((row) => <div key={row} className="kb-skeleton" />)}</div>}
-    {locationState !== "loading" && candidates.length === 0 && <div className="kb-empty">
+    {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />
       <strong>{locationState === "integration_pending" ? "공식 위치 API 연결을 기다리고 있습니다" : "현재 조건에서 표시할 후보가 없습니다"}</strong>
       <p>{locationState === "integration_pending" ? "Kakao Local REST 키가 설정되면 실제 장소를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "업종 이름이나 자치구를 바꿔 다시 확인해 주세요."}</p>

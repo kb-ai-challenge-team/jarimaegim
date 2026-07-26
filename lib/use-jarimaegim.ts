@@ -9,7 +9,31 @@ export type FlowStep = "ask" | "confirm" | "recommend" | "evidence" | "cost" | "
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
 export interface ChatMessage { role: "assistant" | "user"; text: string; citation?: string }
 
+export type TraceStatus = "idle" | "active" | "done" | "skipped" | "failed";
+export interface TraceStep { id: string; label: string; detail: string; status: TraceStatus; note?: string; ms?: number }
+export interface TraceRun { steps: TraceStep[]; state: "idle" | "running" | "done" | "failed"; totalMs: number | null }
+
 const INTRO: ChatMessage = { role: "assistant", text: "어떤 업종으로, 서울 어디에 자리를 잡을지 알려주세요. 예산까지 함께 말씀해 주시면 공식 데이터로 확인 가능한 범위를 찾아드립니다." };
+const EMPTY_TRACE: TraceRun = { steps: [], state: "idle", totalMs: null };
+const HANDOFF_MS = 900;
+
+/** The trace mirrors the real awaits in `start()` — one step per network boundary, nothing scripted. */
+function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
+  const steps: TraceStep[] = [
+    { id: "session", label: "익명 세션 확인", detail: "계정 없이 익명 세션으로 진행합니다. 조건은 최대 24시간만 보관합니다.", status: "idle" },
+    { id: "case", label: "입력 조건 확정", detail: "서울 25개 자치구 범위인지 서버에서 검증하고 케이스로 저장합니다.", status: "idle" },
+    { id: "search", label: "공식 장소 데이터 조회", detail: `Kakao Local 장소 검색 · 질의어 "서울 ${inputs.district} ${inputs.industry}" · 정확도순 최대 12곳`, status: "idle" },
+    { id: "grade", label: "근거 등급·출처 정리", detail: "후보마다 확인 가능한 근거 등급과 출처만 붙입니다. 없는 근거는 만들지 않습니다.", status: "idle" }
+  ];
+  return leg === "full" ? steps : steps.slice(2);
+}
+
+function gradeNote(candidates: Candidate[]) {
+  if (candidates.length === 0) return "등급을 매길 후보가 없습니다.";
+  const tally = new Map<string, number>();
+  for (const candidate of candidates) tally.set(candidate.evidence_grade, (tally.get(candidate.evidence_grade) ?? 0) + 1);
+  return `${candidates.length}곳 · ${[...tally].map(([grade, count]) => `근거 ${grade} ${count}곳`).join(" · ")}`;
+}
 
 /** Owns the whole 자리매김 flow so the panel renders it and the map visualises it from one source. */
 export function useJarimaegim() {
@@ -33,7 +57,11 @@ export function useJarimaegim() {
   const [busy, setBusy] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [error, setError] = useState("");
+  const [trace, setTrace] = useState<TraceRun>(EMPTY_TRACE);
+  const [traceOpen, setTraceOpen] = useState(false);
   const sessionReady = useRef<Promise<void> | null>(null);
+  const traceMark = useRef<Record<string, number>>({});
+  const traceOrigin = useRef(0);
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
 
@@ -61,35 +89,83 @@ export function useJarimaegim() {
     setParsedKeys((prev) => { const next = new Set(prev); next.delete(key); return next; });
   }, []);
 
-  const searchCandidates = useCallback(async (record: CaseRecord) => {
-    setLocationState("loading"); setCandidates([]); setFocused(null);
-    try {
-      const result = await api.searchLocations(record.id, record.inputs);
-      setCandidates(result.candidates);
-      setLocationState(result.status);
-      setFocused(result.candidates[0]?.id ?? null);
-      if (result.message) setError(result.message);
-    } catch (err) {
-      setLocationState("error");
-      setError(err instanceof ApiError ? err.message : "공식 위치 정보를 불러오지 못했습니다.");
-    }
+  const beginTrace = useCallback((steps: TraceStep[]) => {
+    const now = performance.now();
+    traceOrigin.current = now; traceMark.current = { [steps[0].id]: now };
+    setTrace({ steps: steps.map((step, index) => index === 0 ? { ...step, status: "active" } : step), state: "running", totalMs: null });
+    setTraceOpen(true);
   }, []);
 
+  const dismissTrace = useCallback(() => setTraceOpen(false), []);
+
+  /** Purely presentational dwell so the finished run is readable before the overlay hands off to 입지. */
+  const handoff = useCallback(async () => {
+    await new Promise((resolve) => setTimeout(resolve, HANDOFF_MS));
+    setTraceOpen(false);
+  }, []);
+
+  /** Settles the named step with its measured duration and promotes the next one. */
+  const settleStep = useCallback((id: string, status: "done" | "skipped", note?: string) => setTrace((prev) => {
+    const index = prev.steps.findIndex((step) => step.id === id);
+    if (index < 0 || prev.state !== "running") return prev;
+    const now = performance.now();
+    const steps = prev.steps.map((step, position) => position === index ? { ...step, status, note, ms: Math.round(now - (traceMark.current[id] ?? now)) } : step);
+    const next = steps[index + 1];
+    if (next) { steps[index + 1] = { ...next, status: "active" }; traceMark.current[next.id] = now; }
+    return { steps, state: next ? "running" : "done", totalMs: next ? null : Math.round(now - traceOrigin.current) };
+  }), []);
+
+  /** Failure stops the run where it actually stopped — later steps are marked as not run, never silently green. */
+  const failTrace = useCallback((message: string) => setTrace((prev) => {
+    if (prev.state !== "running") return prev;
+    const index = prev.steps.findIndex((step) => step.status === "active");
+    const now = performance.now();
+    return {
+      steps: prev.steps.map((step, position) => position === index ? { ...step, status: "failed" as const, note: message, ms: Math.round(now - (traceMark.current[step.id] ?? now)) }
+        : position > index ? { ...step, status: "skipped" as const, note: "앞 단계가 끝나지 않아 진행하지 않았습니다." } : step),
+      state: "failed", totalMs: Math.round(now - traceOrigin.current)
+    };
+  }), []);
+
+  /** Shared 입지 조회 leg. Emits the search/grade steps and rethrows so the caller owns the failure. */
+  const runSearch = useCallback(async (record: CaseRecord) => {
+    setLocationState("loading"); setCandidates([]); setFocused(null);
+    const result = await api.searchLocations(record.id, record.inputs);
+    settleStep("search", "done", result.status === "success" ? `응답 ${result.candidates.length}건` : result.message || "조건에 맞는 공식 장소가 없습니다.");
+    setCandidates(result.candidates);
+    setLocationState(result.status);
+    setFocused(result.candidates[0]?.id ?? null);
+    if (result.message) setError(result.message);
+    settleStep("grade", result.candidates.length > 0 ? "done" : "skipped", gradeNote(result.candidates));
+  }, [settleStep]);
+
   const start = useCallback(async () => {
-    setError(""); setBusy("case");
+    setError(""); setBusy("case"); setStep("recommend");
+    beginTrace(planTrace(form, "full"));
     try {
       await ensureSession();
+      settleStep("session", "done", "익명 세션 확인됨");
       const title = `${form.district} ${form.industry}`.trim() || "새 케이스";
       const record = await api.createCase(form, title);
       setCaseData(record);
-      setStep("recommend");
-      await searchCandidates(record);
+      settleStep("case", "done", `케이스 저장됨 · 버전 ${record.version}`);
+      await runSearch(record);
+      await handoff();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.");
+      const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
+      failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [ensureSession, form, searchCandidates]);
+  }, [beginTrace, ensureSession, failTrace, form, handoff, runSearch, settleStep]);
 
-  const retrySearch = useCallback(() => { if (caseData) void searchCandidates(caseData); }, [caseData, searchCandidates]);
+  const retrySearch = useCallback(async () => {
+    if (!caseData || trace.state === "running") return;
+    setError(""); beginTrace(planTrace(caseData.inputs, "search"));
+    try { await runSearch(caseData); await handoff(); }
+    catch (err) {
+      const message = err instanceof ApiError ? err.message : "공식 위치 정보를 불러오지 못했습니다.";
+      failTrace(message); setLocationState("error"); setError(message);
+    }
+  }, [beginTrace, caseData, failTrace, handoff, runSearch, trace.state]);
 
   const runAnalysis = useCallback(async (candidateId: string) => {
     setFocused(candidateId); setStep("evidence");
@@ -171,13 +247,13 @@ export function useJarimaegim() {
   const reset = useCallback(() => {
     setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
     setCandidates([]); setLocationState("idle"); setFocused(null); setAnalysis({});
-    setPrograms([]); setProgramState("idle"); setCostPlan(null); setMessages([INTRO]); setError("");
+    setPrograms([]); setProgramState("idle"); setCostPlan(null); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE); setTraceOpen(false);
   }, []);
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
-    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, costPlan, status, messages, busy, chatBusy, error, setError,
-    start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, loadKbProducts, reset
+    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, costPlan, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
+    start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, loadKbProducts, reset, dismissTrace
   };
 }
 

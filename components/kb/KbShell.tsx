@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, ChevronDown, Landmark, Locate, Minus, Plus, ScrollText, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { useJarimaegim } from "@/lib/use-jarimaegim";
+import { AgentRunOverlay } from "./AgentRunOverlay";
 import { JarimaegimChat } from "./JarimaegimChat";
 import { JarimaegimPanel } from "./JarimaegimPanel";
 import { KbMap } from "./KbMap";
@@ -64,6 +65,8 @@ export function KbShell() {
       {aiActive && <JarimaegimPanel flow={flow} onClose={() => setPanelOpen(false)} />}
       {view === "policy" && <KbPolicyPanel flow={flow} />}
       {view === "product" && <KbProductPanel flow={flow} />}
+      {aiActive && flow.traceOpen && <AgentRunOverlay trace={flow.trace} inputs={flow.form} onRetry={flow.retrySearch} onDismiss={flow.dismissTrace}
+        onEditConditions={() => { flow.dismissTrace(); flow.setStep("confirm"); }} />}
     </div>}
 
     <main className="kb-stage" id="main-content">
@@ -81,7 +84,7 @@ export function KbShell() {
         <button aria-label="축소" onClick={() => outOfScope("지도 축소 버튼")}><Minus aria-hidden="true" /></button>
       </div>
 
-      {flow.candidates.length === 0 && <div className="kb-stage-notice"><strong>매물·시세 데이터는 표시하지 않습니다</strong><p>KB부동산 API가 연동되지 않아 값을 만들어 채우지 않습니다. 왼쪽 <em>자리매김</em>에서 조건을 입력하면 추천 입지가 이 지도에 표시됩니다.</p></div>}
+      {flow.candidates.length === 0 && flow.trace.state !== "running" && <div className="kb-stage-notice"><strong>매물·시세 데이터는 표시하지 않습니다</strong><p>KB부동산 API가 연동되지 않아 값을 만들어 채우지 않습니다. 왼쪽 <em>자리매김</em>에서 조건을 입력하면 추천 입지가 이 지도에 표시됩니다.</p></div>}
     </main>
 
     {chatVisible && <JarimaegimChat flow={flow} />}
