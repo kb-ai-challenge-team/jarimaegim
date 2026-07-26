@@ -11,8 +11,8 @@ page.on("console", message => {
 });
 page.on("response", response => {
   if (response.status() < 400) return;
-  const expectedAuthGate = response.status() === 401 && response.url().includes("/api/v1/documents");
-  if (!expectedAuthGate) errors.push(`http:${response.status()}:${response.url()}`);
+  // 로그인이 제거되고 익명 세션으로 문서를 만들 수 있게 되었으므로 /documents 의 401 은 더 이상 정상이 아니다.
+  errors.push(`http:${response.status()}:${response.url()}`);
 });
 
 // 랜딩(/)은 KB 셸로 교체되었으므로 조건 입력 흐름의 실제 진입점인 /start에서 시작한다.
@@ -70,16 +70,34 @@ const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis =>
 await page.getByRole("button", { name: "계획" }).hover();
 await page.getByRole("button", { name: "문서", exact: true }).click();
 await page.getByRole("button", { name: "PDF 준비하기" }).first().click();
-await page.waitForSelector(".toast");
-const document = { authGate: (await page.locator(".toast").textContent()).includes("로그인") };
+// 이전 단계의 토스트가 남아 있을 수 있으므로 요소 존재가 아니라 문서 응답 문구를 기다린다.
+await page.waitForFunction(() => {
+  const toast = window.document.querySelector(".toast");
+  return Boolean(toast?.textContent?.includes("PDF"));
+}, null, { timeout: 15000 });
+// 로그인은 제거되었다. 지켜야 하는 규칙은 "문서가 익명 세션에 비공개로 생성된다"는 것이다.
+const documentToast = (await page.locator(".toast").textContent()) || "";
+const documentResult = { sessionScoped: documentToast.includes("익명 세션") };
+
+const aiConfigured = Boolean(statusBody.integrations.openai);
+const caseBefore = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
 
 const chat = page.locator("#chat");
 await chat.fill("공식 출처를 알려줘");
 await page.locator(".chat-composer button").click();
-await page.waitForFunction(() => document.querySelectorAll(".chat-message").length >= 3);
-const copilot = { noKeyFallback: (await page.locator(".chat-message").last().textContent()).includes("키") };
+await page.waitForFunction(() => window.document.querySelectorAll(".chat-message").length >= 3);
+const reply = (await page.locator(".chat-message").last().textContent()) || "";
+const caseAfter = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
+const copilot = {
+  aiConfigured,
+  // 키가 없으면 폴백 고지가, 있으면 실제 답변이 와야 한다. 둘 다 정상 상태다.
+  safeState: aiConfigured ? reply.trim().length > 0 : reply.includes("키"),
+  // 부록 A 불변조건 4 — 대화는 케이스 조건을 바꿀 수 없다. 키 유무와 무관하게 항상 성립해야 한다.
+  caseUnchanged: caseAfter.version === caseBefore.version
+    && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs)
+};
 
-const result = { onboarding, cost, funding, bands, axes, document, copilot, errors };
+const result = { onboarding, cost, funding, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.emptySafeState || !bands.pendingSafeState || !axes.disabledCarryReason || !document.authGate || !copilot.noKeyFallback) process.exitCode = 1;
+if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.emptySafeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;
