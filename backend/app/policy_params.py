@@ -20,6 +20,9 @@ class PolicyParams:
     @classmethod
     def load(cls, path: str | Path) -> PolicyParams:
         target = Path(path)
+        if not target.is_absolute() and not target.exists():
+            # uvicorn은 저장소 루트에서, pytest는 backend/에서 실행되므로 루트 기준으로도 찾는다.
+            target = Path(__file__).resolve().parents[2] / target
         if not target.exists():
             return cls({})
         return cls(json.loads(target.read_text(encoding="utf-8")))

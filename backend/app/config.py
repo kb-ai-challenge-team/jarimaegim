@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     anon_token_pepper: str = "development-only-change-before-deploy"
     anonymous_session_hours: int = 24
     document_storage_dir: str = ".data/documents"
+    policy_params_path: str = "config/policy-params.json"
 
     kakao_rest_api_key: str = ""
     openai_api_key: str = ""
