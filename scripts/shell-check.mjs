@@ -107,7 +107,13 @@ const prescription = {
   committedShown: candidateCount === 0 || await panel.locator(".kb-committed").count() > 0,
   documentCreated: Boolean(documentResponse && documentResponse.status() === 201),
   // 상담 자동 연결은 게이트가 꺼져 있으므로 그 사실을 고지해야 한다 (부록 A 불변조건 5)
-  consultationDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("상담 자동 연결은 제공하지 않습니다"))
+  consultationDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("상담 자동 연결은 제공하지 않습니다")),
+  // 초안 설명은 render_case_pdf 가 실제로 담는 것만 말해야 한다. 문서에 없는 것을 약속하면 안 된다.
+  documentCopyHonest: await (async () => {
+    const notes = (await panel.locator(".kb-prescription-block").last().locator(".kb-note").allInnerTexts()).join(" ");
+    const promisesProvenance = notes.includes("출처와 기준일") && !notes.includes("포함되지 않습니다");
+    return notes.includes("확정한 조건") && notes.includes("포함되지 않습니다") && !promisesProvenance;
+  })()
 };
 
 const result = { stepper, lease, bands, location, cost, funding, prescription, axes, errors };
@@ -120,4 +126,5 @@ if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed |
   || !cost.bandTableShown || !funding.safeState || !funding.subsidyGapDisclosed
   || !location.committable || prescription.blocks !== 3 || !prescription.committedShown
   || !prescription.documentCreated || !prescription.consultationDisclosed
+  || !prescription.documentCopyHonest
   || !axes.disabledCarryReason) process.exitCode = 1;
