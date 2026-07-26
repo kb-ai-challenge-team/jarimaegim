@@ -82,12 +82,9 @@ jobs:
       - run: npm ci
 
       # 운영에 실제로 실려 나가는 의존성만 본다. dev 전용(eslint 계열 등)은 배포 위험이 아니다.
-      #
-      # continue-on-error인 이유: 작성 시점에 next@16.2.10이 high 3건(Middleware/Proxy bypass,
-      # postcss XSS, sharp/libvips)을 물고 있고 next@16.2.12로 모두 해소된다. 패치를 올리면
-      # 이 줄을 지워 차단 게이트로 되돌릴 것. 그때까지는 배포를 막는 대신 눈에 띄게 남긴다.
+      # high 이상이면 파이프라인을 세운다 — 현재 운영 의존성 취약점은 0건이므로 지킬 수 있는 기준이다.
+      # 깨지면 낮추지 말고 원인을 고칠 것. 게이트를 낮추는 순간 이 잡은 의미가 없어진다.
       - name: npm audit (production)
-        continue-on-error: true
         run: npm audit --omit=dev --audit-level=high
 
       - name: 결과 요약
