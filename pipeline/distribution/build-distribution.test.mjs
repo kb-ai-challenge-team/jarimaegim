@@ -37,12 +37,19 @@ test("표본 5건 미만 구간은 상위 구간으로 병합한다", () => {
 });
 
 test("모든 구간이 5건 미만이면 구 전체를 하나로 합친다", () => {
-  const result = buildDistribution(priceRows(3, { area: 34 }));
-  assert.equal(Object.keys(result.districts["강남구"].bands).length, 1);
+  const rows = [...priceRows(3, { area: 34 }), ...priceRows(3, { area: 100 })];
+  const result = buildDistribution(rows);
+  const bands = result.districts["강남구"].bands;
+  assert.equal(Object.keys(bands).length, 1);
+  assert.equal(Object.values(bands)[0].n, 6);
 });
 
 test("가격 행이 없으면 거부한다", () => {
   assert.throws(() => buildDistribution([]), /empty/);
+});
+
+test("구 표본이 5건 미만이면 거부한다", () => {
+  assert.throws(() => buildDistribution(priceRows(4, { area: 34 })), /at least 5/);
 });
 
 test("월세가 0인 행은 거부한다", () => {

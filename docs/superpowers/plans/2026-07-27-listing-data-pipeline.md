@@ -807,12 +807,24 @@ test("표본 5건 미만 구간은 상위 구간으로 병합한다", () => {
 });
 
 test("모든 구간이 5건 미만이면 구 전체를 하나로 합친다", () => {
-  const result = buildDistribution(priceRows(3, { area: 34 }));
-  assert.equal(Object.keys(result.districts["강남구"].bands).length, 1);
+  const rows = [...priceRows(3, { area: 34 }), ...priceRows(3, { area: 100 })];
+  const result = buildDistribution(rows);
+  const bands = result.districts["강남구"].bands;
+  assert.equal(Object.keys(bands).length, 1);
+  assert.equal(Object.values(bands)[0].n, 6);
 });
 
 test("가격 행이 없으면 거부한다", () => {
-  assert.throws(() => buildDistribution([]), /가격 표본/);
+  assert.throws(() => buildDistribution([]), /empty/);
+});
+
+test("구 표본이 5건 미만이면 거부한다", () => {
+  assert.throws(() => buildDistribution(priceRows(4, { area: 34 })), /at least 5/);
+});
+
+test("월세가 0인 행은 거부한다", () => {
+  const rows = [...priceRows(20, { area: 34 }), { sigungu: "강남구", area_m2: 40, monthly_rent_krw: 0, deposit_krw: 10_000_000 }];
+  assert.throws(() => buildDistribution(rows), /monthly_rent_krw/);
 });
 ```
 
@@ -837,20 +849,32 @@ const RAW_DIR = join(ROOT, "pipeline", "raw");
 const OUTPUT = join(ROOT, "data", "rent-distribution.seoul.json");
 
 /**
- * Produces per-district area quantiles and per-band rent/deposit-multiple quantiles from price samples.
- * Bands with fewer samples than MIN_BAND_SAMPLES are merged into the adjacent band, recorded in merges.
+ * Reduce price samples to per-district area quantiles and per-band rent and
+ * deposit-multiple quantiles. Bands below MIN_BAND_SAMPLES are folded into an
+ * adjacent band and every fold is recorded in `merges`.
  */
 export function buildDistribution(rows) {
-  if (rows.length === 0) throw new Error("가격 표본이 비어 있습니다");
+  if (rows.length === 0) throw new Error("price sample is empty");
+  for (const row of rows) {
+    if (!Number.isFinite(row.monthly_rent_krw) || row.monthly_rent_krw <= 0) {
+      throw new Error(`monthly_rent_krw must be greater than 0: ${row.monthly_rent_krw}`);
+    }
+    if (!Number.isFinite(row.deposit_krw) || row.deposit_krw < 0) {
+      throw new Error(`deposit_krw must be zero or greater: ${row.deposit_krw}`);
+    }
+  }
   const districts = {};
   const merges = [];
 
   for (const district of new Set(rows.map((row) => row.sigungu))) {
     const districtRows = rows.filter((row) => row.sigungu === district);
+    if (districtRows.length < MIN_BAND_SAMPLES) {
+      throw new Error(`${district} has only ${districtRows.length} price samples, needs at least ${MIN_BAND_SAMPLES}`);
+    }
     const grouped = new Map(AREA_BANDS.map((band) => [band.key, []]));
     for (const row of districtRows) grouped.get(bandForArea(row.area_m2).key).push(row);
 
-    // Fold small bands into the next-lower adjacent band, in order XL → L → M → S.
+    // Fold a small band into the next band down: XL into L, L into M, M into S.
     const order = [...AREA_BANDS].reverse();
     for (let index = 0; index < order.length - 1; index += 1) {
       const current = order[index], next = order[index + 1];
@@ -861,7 +885,7 @@ export function buildDistribution(rows) {
         merges.push({ district, from: current.key, into: next.key, moved: bucket.length });
       }
     }
-    // If the smallest remaining band is still under the threshold after folding, merge the whole district into one.
+    // If the smallest surviving band is still short, collapse the district into one band.
     const surviving = AREA_BANDS.filter((band) => grouped.get(band.key).length > 0);
     if (surviving.length > 0 && grouped.get(surviving[0].key).length < MIN_BAND_SAMPLES) {
       const all = surviving.flatMap((band) => grouped.get(band.key));
@@ -917,7 +941,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
 - [ ] **Step 4: 통과 확인**
 
 Run: `node --test pipeline/distribution/build-distribution.test.mjs`
-Expected: PASS, 6 tests
+Expected: PASS, 8 tests
 
 - [ ] **Step 5: 실제 분포 생성**
 
@@ -1478,7 +1502,7 @@ git commit -m "feat(pipeline): synthesize labelled demo listings from the rent d
 - [ ] **Step 1: 전체 테스트 실행**
 
 Run: `npm run test:pipeline`
-Expected: PASS — quantile 13 + rng 7 + raw-record 7 + distribution 6 + synthesize 12 = 45 tests
+Expected: PASS — quantile 13 + rng 7 + raw-record 7 + distribution 8 + synthesize 12 = 47 tests
 
 - [ ] **Step 2: 파이썬 테스트 실행**
 
@@ -1540,7 +1564,7 @@ git commit -m "docs(pipeline): record the one-shot collection run"
 
 - `data/listings.seoul.json`에 5개 구 × 55건 = 275건이 있고 모든 행에 `listing_kind: "DEMO_SYNTHETIC"`이 있다
 - `npm run pipeline:verify`가 종료 코드 0으로 통과한다
-- `npm run test:pipeline`이 45개 테스트를 통과한다
+- `npm run test:pipeline`이 47개 테스트를 통과한다
 - `pipeline/raw/`가 git에 올라가지 않았다
 - 어떤 결과 행도 좌표가 원본에서 갖고 있던 면적을 그대로 쓰지 않는다 (테스트로 고정)
 

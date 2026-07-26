@@ -28,6 +28,9 @@ export function buildDistribution(rows) {
 
   for (const district of new Set(rows.map((row) => row.sigungu))) {
     const districtRows = rows.filter((row) => row.sigungu === district);
+    if (districtRows.length < MIN_BAND_SAMPLES) {
+      throw new Error(`${district} has only ${districtRows.length} price samples, needs at least ${MIN_BAND_SAMPLES}`);
+    }
     const grouped = new Map(AREA_BANDS.map((band) => [band.key, []]));
     for (const row of districtRows) grouped.get(bandForArea(row.area_m2).key).push(row);
 
