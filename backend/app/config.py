@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     bizinfo_api_url: str = ""
     kstartup_api_url: str = ""
     finlife_api_url: str = ""
+    finlife_api_base_url: str = ""
 
     privacy_rights_email: str = ""
     financial_application_enabled: bool = False

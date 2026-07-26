@@ -159,6 +159,105 @@ class OfficialSourceService:
         order = {"GOVERNMENT": 0, "POLICY_FUND": 1, "GUARANTEE": 2, "PRIVATE": 3}
         return sorted(results, key=lambda item: order[item["category"]])[:50]
 
+    # FSS 금융상품 한눈에 공시. The per-API spec pages are still "콘텐츠 준비중", so every endpoint and
+    # source page below was confirmed against the live service rather than published documentation.
+    # Treat a shape change as expected: each category fails closed to nothing rather than guessing.
+    KB_FIN_CO_NO = "0010927"
+    KB_MAX_PAGES = 5
+    KB_CATEGORIES = (
+        ("BUSINESS_LOAN", "개인사업자대출", "busiLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/indvlBusi/list.do?menuNo=700072"),
+        ("CREDIT_LOAN", "개인신용대출", "creditLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/indvCrdt/list.do?menuNo=700009"),
+        ("MORTGAGE_LOAN", "주택담보대출", "mortgageLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/houseMortgage/list.do?menuNo=700007"),
+        ("RENT_LOAN", "전세자금대출", "rentHouseLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/rentHouse/list.do?menuNo=700008"),
+        ("DEPOSIT", "정기예금", "depositProductsSearch", "SAVING", "https://finlife.fss.or.kr/finlife/svings/fxdDpst/list.do?menuNo=700002"),
+        ("SAVING", "적금", "savingProductsSearch", "SAVING", "https://finlife.fss.or.kr/finlife/svings/instsav/list.do?menuNo=700003"),
+    )
+
+    async def kb_products(self) -> list[dict[str, Any]]:
+        """Every KB국민은행 product the FSS discloses. Returns [] when the base URL or key is unset."""
+        base = self.settings.finlife_api_base_url.rstrip("/")
+        key = self.settings.finlife_api_key
+        if not base or not key or not base.startswith("https://"):
+            return []
+        results: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0), follow_redirects=False) as client:
+            for category, label, endpoint, kind, source_url in self.KB_CATEGORIES:
+                try:
+                    records, options = await self._fetch_kb_category(client, f"{base}/{endpoint}.json?auth={quote(key, safe='')}&topFinGrpNo=020000")
+                except (httpx.HTTPError, ValueError, TypeError):
+                    continue
+                rates: dict[str, dict[str, Any]] = {}
+                for option in options:
+                    code = str(option.get("fin_prdt_cd") or "")
+                    if code and code not in rates:
+                        rates[code] = option
+                for record in records:
+                    if str(record.get("fin_co_no") or "") != self.KB_FIN_CO_NO:
+                        continue
+                    item = self._normalize_kb_product(record, rates, category, label, kind, source_url)
+                    if item:
+                        results.append(item)
+        return results
+
+    async def _fetch_kb_category(self, client: httpx.AsyncClient, url: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        records: list[dict[str, Any]] = []
+        options: list[dict[str, Any]] = []
+        for page in range(1, self.KB_MAX_PAGES + 1):
+            response = await client.get(f"{url}&pageNo={page}", headers={"Accept": "application/json"})
+            response.raise_for_status()
+            result = (self._response_payload(response) or {}).get("result") or {}
+            if str(result.get("err_cd") or "000") != "000":
+                break
+            records.extend(item for item in (result.get("baseList") or []) if isinstance(item, dict))
+            options.extend(item for item in (result.get("optionList") or []) if isinstance(item, dict))
+            if page >= int(result.get("max_page_no") or page):
+                break
+        return records, options
+
+    @staticmethod
+    def _rate(option: dict[str, Any], *fields: str) -> float | None:
+        for field in fields:
+            value = option.get(field)
+            if value in (None, "", "-"):
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _normalize_kb_product(self, record: dict[str, Any], rates: dict[str, dict[str, Any]], category: str, label: str, kind: str, source_url: str) -> dict[str, Any] | None:
+        name = self._first(record, ("fin_prdt_nm",))
+        code = self._first(record, ("fin_prdt_cd",))
+        if not name or not code:
+            return None
+        option = rates.get(code, {})
+        if kind == "LOAN":
+            rate_min = self._rate(option, "lend_rate_min")
+            rate_max = self._rate(option, "lend_rate_max")
+            rate_avg = self._rate(option, "lend_rate_avg", "crdt_grad_avg")
+            rate_kind = "대출금리"
+            limit = self._first(record, ("loan_limit",))
+        else:
+            rate_min = self._rate(option, "intr_rate")
+            rate_max = self._rate(option, "intr_rate2")
+            rate_avg = None
+            rate_kind = "저축금리"
+            limit = self._first(record, ("max_limit",))
+        return {
+            "id": f"kb-{category.lower()}-{code}", "name": name, "category": category, "category_label": label,
+            "organization": self._first(record, ("kor_co_nm",)) or "KB국민은행",
+            "product_type": self._first(record, ("fin_prdt_type_nm",)) or None,
+            "rate_kind": rate_kind, "rate_min": rate_min, "rate_max": rate_max, "rate_avg": rate_avg,
+            "rate_type": self._first(record, ("lend_rate_type", "intr_rate_type_nm")) or None,
+            "loan_limit": None if limit in ("", "기타", "0") else limit,
+            "join_way": self._first(record, ("join_way",)) or None,
+            "repay_type": self._first(record, ("rpay_type",)) or None,
+            "source_as_of": self._first(record, ("dcls_month",)) or None,
+            "official_url": source_url,
+            "unknown_conditions": ["공시 금리는 기준월 범위이며 실제 적용 금리·한도가 아닙니다.", "자격과 심사 결과는 KB국민은행에서 직접 확인해야 합니다."]
+        }
+
     @staticmethod
     def _extract_records(payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, list):

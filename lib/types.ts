@@ -136,6 +136,27 @@ export interface Program {
   source_as_of?: string;
 }
 
+/** KB국민은행 개인사업자대출 공시 (FSS 금융상품 한눈에). Rates are disclosure-month averages, not offers. */
+export interface KbProduct {
+  id: string;
+  name: string;
+  category: "BUSINESS_LOAN" | "CREDIT_LOAN" | "MORTGAGE_LOAN" | "RENT_LOAN" | "DEPOSIT" | "SAVING";
+  category_label: string;
+  rate_kind: string;
+  organization: string;
+  product_type?: string | null;
+  rate_min: number | null;
+  rate_max: number | null;
+  rate_avg: number | null;
+  rate_type?: string | null;
+  loan_limit?: string | null;
+  join_way?: string | null;
+  repay_type?: string | null;
+  source_as_of?: string | null;
+  official_url: string;
+  unknown_conditions: string[];
+}
+
 export interface CostItem {
   key: string;
   label: string;

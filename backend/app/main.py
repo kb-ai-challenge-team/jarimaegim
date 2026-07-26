@@ -207,6 +207,13 @@ async def list_program_catalog(session_id: UUID = Depends(current_session)):
     return {"items": items, "status": "success" if items else "integration_pending", "message": None if items else "검증된 공식 API endpoint와 키가 설정되면 공고를 표시합니다."}
 
 
+@app.get("/api/v1/products/kb")
+async def list_kb_products(session_id: UUID = Depends(current_session)):
+    items = await official_sources.kb_products()
+    return {"items": items, "status": "success" if items else "integration_pending",
+            "message": None if items else "KB 금융상품 공시를 불러오지 못했습니다. 공시 endpoint 연결 상태를 확인해 주세요."}
+
+
 @app.get("/api/v1/products")
 async def list_products(case_id: UUID = Query(), session_id: UUID = Depends(current_session)):
     owned_case(session_id, case_id)

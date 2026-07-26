@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, ChevronDown, Layers, Locate, Minus, Plus, ScrollText, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { Bell, ChevronDown, Landmark, Layers, Locate, Minus, Plus, ScrollText, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { useJarimaegim } from "@/lib/use-jarimaegim";
 import { JarimaegimChat } from "./JarimaegimChat";
 import { JarimaegimPanel } from "./JarimaegimPanel";
 import { KbMap } from "./KbMap";
 import { KbIntroPanel } from "./KbIntroPanel";
 import { KbPolicyPanel } from "./KbPolicyPanel";
+import { KbProductPanel } from "./KbProductPanel";
 
 const FILTERS = ["아파트 +2", "매매 · 전세 · 월세", "가격", "면적"];
-type View = "map" | "ai" | "policy";
+type View = "map" | "ai" | "policy" | "product";
 
 export function KbShell() {
   const flow = useJarimaegim();
@@ -50,6 +51,9 @@ export function KbShell() {
       <button type="button" aria-current={view === "policy" && panelOpen ? "page" : undefined} aria-expanded={view === "policy" && panelOpen} onClick={() => selectView("policy")}>
         <ScrollText aria-hidden="true" /><span>정책</span>
       </button>
+      <button type="button" aria-current={view === "product" && panelOpen ? "page" : undefined} aria-expanded={view === "product" && panelOpen} onClick={() => selectView("product")}>
+        <Landmark aria-hidden="true" /><span>상품</span>
+      </button>
       <button type="button" className="kb-gnb-ai" aria-current={aiActive && panelOpen ? "page" : undefined} aria-expanded={aiActive && panelOpen} onClick={() => selectView("ai")}>
         <span className="kb-ai-badge" aria-hidden="true">AI</span><span>자리매김</span>
       </button>
@@ -63,6 +67,7 @@ export function KbShell() {
       </div>
       {aiActive && <JarimaegimPanel flow={flow} onClose={() => setPanelOpen(false)} />}
       {view === "policy" && <KbPolicyPanel flow={flow} />}
+      {view === "product" && <KbProductPanel flow={flow} />}
       {view === "map" && <KbIntroPanel onOpenAi={() => selectView("ai")} />}
     </div>}
 

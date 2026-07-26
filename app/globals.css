@@ -642,3 +642,19 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
   .kb-map-controls button{width:32px;height:32px}
   .kb-stage-notice{max-width:none;left:14px;right:14px;transform:none;bottom:14px;padding:11px 14px}
 }
+
+/* KB 금융상품 섹션 (자금 단계) */
+.kb-products{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--kb-line-2);border-radius:12px;background:linear-gradient(180deg,#fffdf5 0%,#fff 60%)}
+.kb-products>header{display:flex;align-items:flex-start;gap:9px}
+.kb-products>header svg{width:18px;height:18px;flex:none;margin-top:1px;color:var(--kb-yellow-deep)}
+.kb-products>header strong{display:block;font-size:14px;color:var(--kb-ink);letter-spacing:-.02em}
+.kb-products>header small{display:block;margin-top:2px;font-size:11.5px;color:var(--kb-sub)}
+.kb-products>ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.kb-products>ul>li{padding:11px 12px;border:1px solid var(--kb-line);border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:5px}
+.kb-product-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.kb-product-top strong{font-size:13.5px;color:var(--kb-ink);letter-spacing:-.02em}
+.kb-product-rate{flex:none;padding:2px 9px;border-radius:50px;background:#fff6e0;color:#8a5a00;font-size:12px;font-weight:700;white-space:nowrap}
+.kb-products>ul>li>small{font-size:11.5px;color:var(--kb-mute);line-height:1.5}
+.kb-products>ul>li>a{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;font-size:12px;font-weight:600;color:var(--kb-blue);text-decoration:none}
+.kb-products>ul>li>a svg{width:12px;height:12px}
+.kb-products>button{align-self:flex-start}

@@ -8,8 +8,7 @@ import type { Jarimaegim } from "@/lib/use-jarimaegim";
 
 type Filter = "ALL" | Program["category"];
 const FILTERS: { id: Filter; label: string }[] = [
-  { id: "ALL", label: "전체" }, { id: "GOVERNMENT", label: "정부지원" }, { id: "POLICY_FUND", label: "정책자금" },
-  { id: "GUARANTEE", label: "지역보증" }, { id: "PRIVATE", label: "민간금융" }
+  { id: "ALL", label: "전체" }, { id: "GOVERNMENT", label: "정부지원" }, { id: "PRIVATE", label: "민간금융" }
 ];
 
 /** Browses the official notices as source documents — every row links to its verified 원문 URL. */

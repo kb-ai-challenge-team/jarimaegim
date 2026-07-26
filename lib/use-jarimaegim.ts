@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_CASE } from "./constants";
-import type { AnalysisResult, Candidate, CaseInput, CaseRecord, CostItem, CostPlan, Program, StatusResponse } from "./types";
+import type { AnalysisResult, Candidate, CaseInput, CaseRecord, CostItem, CostPlan, KbProduct, Program, StatusResponse } from "./types";
 
 export type FlowStep = "ask" | "confirm" | "recommend" | "evidence" | "cost" | "funding";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
@@ -25,6 +25,8 @@ export function useJarimaegim() {
   const [programState, setProgramState] = useState<LocationState>("idle");
   const [catalog, setCatalog] = useState<Program[]>([]);
   const [catalogState, setCatalogState] = useState<LocationState>("idle");
+  const [kbProducts, setKbProducts] = useState<KbProduct[]>([]);
+  const [kbState, setKbState] = useState<LocationState>("idle");
   const [costPlan, setCostPlan] = useState<CostPlan | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([INTRO]);
@@ -122,7 +124,21 @@ export function useJarimaegim() {
     }
   }, [caseData, programState]);
 
+  /** KB 개인사업자대출 공시 — same official notices path, no case required. */
+  const loadKbProducts = useCallback(async () => {
+    setKbState("loading");
+    try {
+      await ensureSession();
+      const result = await api.getKbProducts();
+      setKbProducts(result.items);
+      setKbState(result.items.length > 0 ? "success" : "integration_pending");
+    } catch {
+      setKbState("error");
+    }
+  }, [ensureSession]);
+
   useEffect(() => { if (step === "funding" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
+  useEffect(() => { if (step === "funding" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
 
   /** The 정책 tab reads the same official notices without needing a case. */
   const loadCatalog = useCallback(async () => {
@@ -160,8 +176,8 @@ export function useJarimaegim() {
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
-    analysis, programs, programState, catalog, catalogState, costPlan, status, messages, busy, chatBusy, error, setError,
-    start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, reset
+    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, costPlan, status, messages, busy, chatBusy, error, setError,
+    start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, loadKbProducts, reset
   };
 }
 
