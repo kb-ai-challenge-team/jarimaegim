@@ -1,0 +1,15 @@
+import { chromium } from "playwright-core";
+const base = "http://127.0.0.1:4173";
+const browser = await chromium.launch({ headless: true, executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const page = await context.newPage();
+const s = await context.request.post(base + "/api/v1/sessions/anonymous", { data: { retention_notice_accepted: true } });
+console.log("session", s.status(), await s.text());
+const created = await context.request.post(base + "/api/v1/cases", { data: { title: "마포구 카페 처음 창업", inputs: { industry: "카페", district: "마포구", budget_krw: 100000000, equity_krw: 70000000, business_stage: "PRE_OPEN", startup_type: "INDEPENDENT", priority: "STABILITY" } } });
+console.log("case", created.status(), await created.text());
+const record = await created.json();
+await page.goto(`${base}/cases/${record.id}/explore`, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(6000);
+console.log("url", page.url());
+console.log("body", (await page.locator("body").innerText()).slice(0, 600));
+await browser.close();

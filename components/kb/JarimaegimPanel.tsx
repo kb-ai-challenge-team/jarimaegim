@@ -10,7 +10,8 @@ import { ProvenanceBar } from "../ProvenanceBar";
 import { PlanBands, PlanFunding } from "./JarimaegimPlan";
 
 const STEPS: { id: FlowStep; label: string }[] = [
-  { id: "ask", label: "상황" }, { id: "recommend", label: "입지" }, { id: "evidence", label: "근거" }, { id: "cost", label: "비용" }, { id: "funding", label: "자금" }
+  { id: "ask", label: "조건" }, { id: "bands", label: "자금" }, { id: "recommend", label: "입지" },
+  { id: "evidence", label: "근거" }, { id: "prescribe", label: "처방" }
 ];
 const EXAMPLES = ["마포구에서 카페 창업하려는데 예산 1억, 자기자본 4천만이에요", "성동구에 2호점 낼 자리 찾고 있어요. 안정성이 제일 중요해요", "관악구 분식점, 총예산 8천만원으로 알아보는 중이에요"];
 
@@ -31,8 +32,8 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "confirm" && <ConfirmStep flow={flow} />}
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
       {flow.step === "evidence" && <EvidenceStep flow={flow} />}
-      {flow.step === "cost" && flow.caseData && <PlanBands caseData={flow.caseData} form={flow.bandForm} bands={flow.bands} state={flow.bandState} busy={flow.busy === "bands"} onField={flow.setBandField} onRecompute={flow.recomputeBands} />}
-      {flow.step === "funding" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
+      {flow.step === "bands" && flow.caseData && <PlanBands caseData={flow.caseData} form={flow.bandForm} bands={flow.bands} state={flow.bandState} busy={flow.busy === "bands"} onField={flow.setBandField} onRecompute={flow.recomputeBands} />}
+      {flow.step === "prescribe" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
       {flow.caseData && flow.step !== "ask" && flow.step !== "confirm" && <StepNav flow={flow} />}
     </div>
   </div>;
@@ -106,7 +107,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
       : caseData ? `${caseData.inputs.district} ${caseData.inputs.industry} 조건으로 공식 장소 데이터를 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
     {bands?.status === "computed" && <BandBanner bands={bands} />}
-    {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />조달 밴드는 아직 계산되지 않았습니다. 비용 단계에서 무엇이 비어 있는지 확인할 수 있습니다.</p>}
+    {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />조달 밴드는 아직 계산되지 않았습니다. 자금 단계에서 무엇이 비어 있는지 확인할 수 있습니다.</p>}
     {locationState === "loading" && <div className="kb-skeletons">{[0, 1, 2].map((row) => <div key={row} className="kb-skeleton" />)}</div>}
     {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />
@@ -164,11 +165,11 @@ function EvidenceContract({ result }: { result: AnalysisResult }) {
 function assertNever(value: never): never { throw new Error(`Unexpected contract: ${String(value)}`); }
 
 function StepNav({ flow }: { flow: Jarimaegim }) {
-  const order: FlowStep[] = ["recommend", "evidence", "cost", "funding"];
+  const order: FlowStep[] = ["bands", "recommend", "evidence", "prescribe"];
   const index = order.indexOf(flow.step);
   const next = order[index + 1];
   const previous = order[index - 1];
-  const labels: Record<string, string> = { recommend: "입지", evidence: "근거", cost: "비용", funding: "자금" };
+  const labels: Record<string, string> = { bands: "자금", recommend: "입지", evidence: "근거", prescribe: "처방" };
   return <div className="kb-stepnav">
     {previous ? <button className="kb-ghost" onClick={() => flow.setStep(previous)}>← {labels[previous]}</button> : <button className="kb-ghost" onClick={flow.reset}><RotateCcw aria-hidden="true" /> 조건 다시 입력</button>}
     {next && <button className="kb-primary kb-primary-sm" onClick={() => flow.setStep(next)}>{labels[next]}로 <ArrowRight aria-hidden="true" /></button>}
