@@ -195,12 +195,13 @@ export function PlanPrescription({ caseData, committed, programs, state, applica
 
     <section className="kb-prescription-block">
       <h3><span className="kb-prescription-no" aria-hidden="true">3</span>문서 초안</h3>
-      <p className="kb-note"><FileText aria-hidden="true" />출처와 기준일, 비보장 고지를 포함한 초안입니다. 확인하지 못한 값은 공란으로 남습니다.</p>
+      {/* 문구는 render_case_pdf 가 실제로 담는 것만 말한다. 지금은 조건과 비보장 고지뿐이다. */}
+      <p className="kb-note"><FileText aria-hidden="true" />현재 초안은 <strong>확정한 조건과 비보장 고지</strong>를 담습니다. 조달 밴드와 출처·기준일은 아직 문서에 포함되지 않습니다.</p>
       <div className="kb-doc-actions">
-        {[{ id: "funding", label: "자금조달계획" }, { id: "cost", label: "창업비용" }, { id: "business", label: "사업계획서 초안" }].map((doc) => <button key={doc.id} className="kb-ghost" disabled={Boolean(docBusy)} onClick={() => onPrepareDocument(doc.id)}>
-          {docBusy === doc.id ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : <FileDown aria-hidden="true" />}
-          {documents[doc.id] ? `${doc.label} 내려받기` : `${doc.label} 준비하기`}
-        </button>)}
+        <button className="kb-ghost" disabled={Boolean(docBusy)} onClick={() => onPrepareDocument("funding")}>
+          {docBusy === "funding" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : <FileDown aria-hidden="true" />}
+          {documents.funding ? "확정 조건 초안 내려받기" : "확정 조건 초안 준비하기"}
+        </button>
       </div>
       {docNotice && <p className="kb-inline-notice" role="status">{docNotice}</p>}
       <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>상담 자동 연결은 제공하지 않습니다. <strong>초안을 내려받아 지점 상담에 가져가시면 됩니다.</strong> 초안은 상담의 입력이며 승인을 보장하지 않습니다.</span></div>
