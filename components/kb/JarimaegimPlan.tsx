@@ -137,12 +137,21 @@ function KbProductSection({ products, state, inputs, gapKrw }: { products: KbPro
   </section>;
 }
 
-export function PlanFunding({ programs, state, applicationEnabled, gapMin, kbProducts, kbState, inputs }: { programs: Program[]; state: LocationState; applicationEnabled: boolean; gapMin: number | null; kbProducts: KbProduct[]; kbState: LocationState; inputs: CaseRecord["inputs"] }) {
+export function PlanFunding({ programs, state, applicationEnabled, bands, kbProducts, kbState, inputs }: {
+  programs: Program[]; state: LocationState; applicationEnabled: boolean; bands: FundingBandResult | null;
+  kbProducts: KbProduct[]; kbState: LocationState; inputs: CaseRecord["inputs"];
+}) {
+  const recommended = bands?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
+  const loanKrw = recommended ? recommended.loan_krw : null;
   return <div className="kb-step">
     <p className="kb-step-lead">정부지원 → 정책자금 → 지역보증 → 민간금융 순으로 확인합니다. 승인 여부는 단정하지 않습니다.</p>
-    {gapMin !== null && gapMin > 0 && <div className="kb-callout"><Coins aria-hidden="true" /><span>비용 단계에서 계산한 부족액은 최소 <strong>{formatKrw(gapMin)}</strong>입니다.</span></div>}
+    {recommended
+      ? <div className="kb-callout"><Coins aria-hidden="true" /><span>권장 조달선 <strong>{formatKrw(recommended.ceiling_krw)}</strong> 기준 차입 필요액은 <strong>{formatKrw(recommended.loan_krw)}</strong>이며 월 상환은 {formatKrw(recommended.monthly_repayment_krw)}입니다.</span></div>
+      : <div className="kb-callout"><Coins aria-hidden="true" /><span>비용 단계에서 조달 밴드를 계산하면 필요 차입액을 기준으로 상품을 대조합니다.</span></div>}
+    {bands?.status === "computed" && <BandTable lines={bands.bands} />}
+    <p className="kb-note"><Info aria-hidden="true" />지원사업이 조달선을 얼마나 올리는지는 지원사업 endpoint 연동 후 반영됩니다. 현재 밴드에는 지원금이 포함되지 않았습니다.</p>
     {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청·상담 연결은 아직 제공하지 않습니다. 공식 원문으로 이동해 직접 확인해 주세요.</span></div>}
-    <KbProductSection products={kbProducts} state={kbState} inputs={inputs} gapKrw={gapMin} />
+    <KbProductSection products={kbProducts} state={kbState} inputs={inputs} gapKrw={loanKrw} />
     {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />공식 공고를 확인하고 있습니다.</div>}
     {state !== "loading" && programs.length === 0 && <div className="kb-empty">
       <Coins aria-hidden="true" />

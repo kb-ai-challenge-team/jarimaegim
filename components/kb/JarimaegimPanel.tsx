@@ -32,7 +32,7 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
       {flow.step === "evidence" && <EvidenceStep flow={flow} />}
       {flow.step === "cost" && flow.caseData && <PlanBands caseData={flow.caseData} form={flow.bandForm} bands={flow.bands} state={flow.bandState} busy={flow.busy === "bands"} onField={flow.setBandField} onRecompute={flow.recomputeBands} />}
-      {flow.step === "funding" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} gapMin={flow.costPlan?.gap_min_krw ?? null} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
+      {flow.step === "funding" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
       {flow.caseData && flow.step !== "ask" && flow.step !== "confirm" && <StepNav flow={flow} />}
     </div>
   </div>;
