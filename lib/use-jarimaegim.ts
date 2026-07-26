@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { DEFAULT_CASE } from "./constants";
-import type { AnalysisResult, Candidate, CaseInput, CaseRecord, CostItem, CostPlan, KbProduct, Program, StatusResponse } from "./types";
+import { DEFAULT_BAND_FORM, DEFAULT_CASE, formatKrw } from "./constants";
+import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, CostItem, CostPlan, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
 export type FlowStep = "ask" | "confirm" | "recommend" | "evidence" | "cost" | "funding";
+export type BandForm = typeof DEFAULT_BAND_FORM;
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
 export interface ChatMessage { role: "assistant" | "user"; text: string; citation?: string }
 
@@ -22,10 +23,11 @@ function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
   const steps: TraceStep[] = [
     { id: "session", label: "익명 세션 확인", detail: "계정 없이 익명 세션으로 진행합니다. 조건은 최대 24시간만 보관합니다.", status: "idle" },
     { id: "case", label: "입력 조건 확정", detail: "서울 25개 자치구 범위인지 서버에서 검증하고 케이스로 저장합니다.", status: "idle" },
+    { id: "bands", label: "조달 밴드 산출", detail: "자기자본과 임대 조건으로 자기자본선·권장 조달선·최대 조달선과 손익분기선을 계산합니다. 외부 데이터는 쓰지 않습니다.", status: "idle" },
     { id: "search", label: "공식 장소 데이터 조회", detail: `Kakao Local 장소 검색 · 질의어 "서울 ${inputs.district} ${inputs.industry}" · 정확도순 최대 12곳`, status: "idle" },
     { id: "grade", label: "근거 등급·출처 정리", detail: "후보마다 확인 가능한 근거 등급과 출처만 붙입니다. 없는 근거는 만들지 않습니다.", status: "idle" }
   ];
-  return leg === "full" ? steps : steps.slice(2);
+  return leg === "full" ? steps : steps.slice(3);
 }
 
 function gradeNote(candidates: Candidate[]) {
@@ -33,6 +35,28 @@ function gradeNote(candidates: Candidate[]) {
   const tally = new Map<string, number>();
   for (const candidate of candidates) tally.set(candidate.evidence_grade, (tally.get(candidate.evidence_grade) ?? 0) + 1);
   return `${candidates.length}곳 · ${[...tally].map(([grade, count]) => `근거 ${grade} ${count}곳`).join(" · ")}`;
+}
+
+/** 권장 조달선. 밴드는 항상 자기자본선·권장·최대 순서로 오지만 순서에 의존하지 않는다. */
+export function recommendedLine(result: FundingBandResult | null): BandLine | null {
+  return result?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
+}
+
+/** 밴드 계산에 필요한 임대 조건이 채워졌는지. 비면 서버를 부르지 않고 대기 상태로 둔다. */
+function missingBandInputs(input: BandForm): string[] {
+  const gaps: string[] = [];
+  if (input.area_pyeong <= 0) gaps.push("희망 평수");
+  if (input.deposit_krw <= 0) gaps.push("희망 보증금");
+  if (input.monthly_rent_krw <= 0) gaps.push("희망 월세");
+  return gaps;
+}
+
+function inputPending(gaps: string[]): FundingBandResult {
+  return {
+    status: "integration_pending", required_capital_krw: null, required_capital_band: null,
+    bands: [], break_even: null, missing_params: gaps,
+    message: `${gaps.join(" · ")}을 입력하면 조달 밴드를 계산합니다. 입력 전에는 값을 추정하지 않습니다.`, provenance: null
+  };
 }
 
 /** Owns the whole 자리매김 flow so the panel renders it and the map visualises it from one source. */
@@ -52,6 +76,9 @@ export function useJarimaegim() {
   const [kbProducts, setKbProducts] = useState<KbProduct[]>([]);
   const [kbState, setKbState] = useState<LocationState>("idle");
   const [costPlan, setCostPlan] = useState<CostPlan | null>(null);
+  const [bandForm, setBandForm] = useState<BandForm>(DEFAULT_BAND_FORM);
+  const [bands, setBands] = useState<FundingBandResult | null>(null);
+  const [bandState, setBandState] = useState<LocationState>("idle");
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([INTRO]);
   const [busy, setBusy] = useState("");
@@ -87,6 +114,12 @@ export function useJarimaegim() {
   const setField = useCallback(<K extends keyof CaseInput>(key: K, value: CaseInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setParsedKeys((prev) => { const next = new Set(prev); next.delete(key); return next; });
+  }, []);
+
+  /** 모든 BandForm 값이 number 또는 number|null 이므로 단일 시그니처로 둔다.
+   *  제네릭으로 두면 컴포넌트 prop 으로 넘길 때 반공변 위치에서 타입이 어긋난다. */
+  const setBandField = useCallback((key: keyof BandForm, value: number | null) => {
+    setBandForm((prev) => ({ ...prev, [key]: value } as BandForm));
   }, []);
 
   const beginTrace = useCallback((steps: TraceStep[]) => {
@@ -139,6 +172,23 @@ export function useJarimaegim() {
     settleStep("grade", result.candidates.length > 0 ? "done" : "skipped", gradeNote(result.candidates));
   }, [settleStep]);
 
+  /** 조달 밴드 산출. 후보와 무관하게 사용자 조건만으로 계산되므로 입지 조회보다 먼저 실행한다. */
+  const runBands = useCallback(async (record: CaseRecord, input: BandForm) => {
+    const gaps = missingBandInputs(input);
+    if (gaps.length > 0) {
+      const pending = inputPending(gaps);
+      setBands(pending); setBandState("integration_pending");
+      return pending;
+    }
+    setBandState("loading");
+    const result = await api.fundingBands(record.id, {
+      industry: record.inputs.industry, equity_krw: record.inputs.equity_krw, ...input
+    });
+    setBands(result);
+    setBandState(result.status === "computed" ? "success" : "integration_pending");
+    return result;
+  }, []);
+
   const start = useCallback(async () => {
     setError(""); setBusy("case"); setStep("recommend");
     beginTrace(planTrace(form, "full"));
@@ -149,13 +199,19 @@ export function useJarimaegim() {
       const record = await api.createCase(form, title);
       setCaseData(record);
       settleStep("case", "done", `케이스 저장됨 · 버전 ${record.version}`);
+      const band = await runBands(record, bandForm);
+      const line = recommendedLine(band);
+      settleStep("bands", band.status === "computed" ? "done" : "skipped",
+        line
+          ? `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`
+          : band.message || "제도 파라미터 등록 대기");
       await runSearch(record);
       await handoff();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [beginTrace, ensureSession, failTrace, form, handoff, runSearch, settleStep]);
+  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, runBands, runSearch, settleStep]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -186,6 +242,17 @@ export function useJarimaegim() {
     catch (err) { setError(err instanceof ApiError ? err.message : "비용을 계산하지 못했습니다."); }
     finally { setBusy(""); }
   }, [caseData]);
+
+  /** 비용 단계에서 필요자금 내역을 고친 뒤 다시 계산한다. */
+  const recomputeBands = useCallback(async () => {
+    if (!caseData) return;
+    setBusy("bands"); setError("");
+    try { await runBands(caseData, bandForm); }
+    catch (err) {
+      setBandState("error");
+      setError(err instanceof ApiError ? err.message : "조달 밴드를 계산하지 못했습니다.");
+    } finally { setBusy(""); }
+  }, [bandForm, caseData, runBands]);
 
   const loadPrograms = useCallback(async () => {
     if (!caseData || programState === "loading") return;
@@ -247,11 +314,13 @@ export function useJarimaegim() {
   const reset = useCallback(() => {
     setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
     setCandidates([]); setLocationState("idle"); setFocused(null); setAnalysis({});
-    setPrograms([]); setProgramState("idle"); setCostPlan(null); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE); setTraceOpen(false);
+    setPrograms([]); setProgramState("idle"); setCostPlan(null); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
+    setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle"); setTraceOpen(false);
   }, []);
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
+    bandForm, setBandField, bands, bandState, recomputeBands,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, costPlan, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
     start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, loadKbProducts, reset, dismissTrace
   };

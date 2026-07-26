@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, LoaderCircle, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, LoaderCircle, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
-import type { AnalysisResult, CaseInput } from "@/lib/types";
+import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
 import type { FlowStep, Jarimaegim } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
-import { PlanCost, PlanFunding } from "./JarimaegimPlan";
+import { PlanBands, PlanFunding } from "./JarimaegimPlan";
 
 const STEPS: { id: FlowStep; label: string }[] = [
   { id: "ask", label: "상황" }, { id: "recommend", label: "입지" }, { id: "evidence", label: "근거" }, { id: "cost", label: "비용" }, { id: "funding", label: "자금" }
@@ -31,8 +31,8 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "confirm" && <ConfirmStep flow={flow} />}
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
       {flow.step === "evidence" && <EvidenceStep flow={flow} />}
-      {flow.step === "cost" && flow.caseData && <PlanCost caseData={flow.caseData} plan={flow.costPlan} busy={flow.busy === "cost"} onSave={flow.saveCost} />}
-      {flow.step === "funding" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} gapMin={flow.costPlan?.gap_min_krw ?? null} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
+      {flow.step === "cost" && flow.caseData && <PlanBands caseData={flow.caseData} form={flow.bandForm} bands={flow.bands} state={flow.bandState} busy={flow.busy === "bands"} onField={flow.setBandField} onRecompute={flow.recomputeBands} />}
+      {flow.step === "funding" && flow.caseData && <PlanFunding programs={flow.programs} state={flow.programState} applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands} kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState} inputs={flow.caseData.inputs} />}
       {flow.caseData && flow.step !== "ask" && flow.step !== "confirm" && <StepNav flow={flow} />}
     </div>
   </div>;
@@ -55,7 +55,7 @@ function AskStep({ flow }: { flow: Jarimaegim }) {
 }
 
 function ConfirmStep({ flow }: { flow: Jarimaegim }) {
-  const { form, parsedKeys, setField } = flow;
+  const { form, bandForm, parsedKeys, setField, setBandField } = flow;
   const ready = Boolean(form.industry.trim()) && form.budget_krw > 0 && form.equity_krw >= 0;
   const mark = (key: keyof CaseInput) => parsedKeys.has(key) ? "parsed" : undefined;
   return <div className="kb-step">
@@ -65,12 +65,16 @@ function ConfirmStep({ flow }: { flow: Jarimaegim }) {
       <label className="kb-field" data-mark={mark("district")}><span>자치구</span><select value={form.district} onChange={(event) => setField("district", event.target.value)}>{SEOUL_DISTRICTS.map((district) => <option key={district} value={district}>{district}</option>)}</select></label>
       <label className="kb-field" data-mark={mark("budget_krw")}><span>총예산</span><input type="number" min="0" step="1000000" inputMode="numeric" value={form.budget_krw || ""} onChange={(event) => setField("budget_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{form.budget_krw > 0 ? formatKrw(form.budget_krw) : "원"}</em></label>
       <label className="kb-field" data-mark={mark("equity_krw")}><span>자기자본</span><input type="number" min="0" step="1000000" inputMode="numeric" value={form.equity_krw || ""} onChange={(event) => setField("equity_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{form.equity_krw > 0 ? formatKrw(form.equity_krw) : "원"}</em></label>
+      <label className="kb-field"><span>희망 평수</span><input type="number" min="0" step="1" inputMode="numeric" value={bandForm.area_pyeong || ""} onChange={(event) => setBandField("area_pyeong", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{bandForm.area_pyeong > 0 ? `${bandForm.area_pyeong}평` : "평"}</em></label>
+      <label className="kb-field"><span>희망 보증금</span><input type="number" min="0" step="1000000" inputMode="numeric" value={bandForm.deposit_krw || ""} onChange={(event) => setBandField("deposit_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{bandForm.deposit_krw > 0 ? formatKrw(bandForm.deposit_krw) : "원"}</em></label>
+      <label className="kb-field"><span>희망 월세</span><input type="number" min="0" step="100000" inputMode="numeric" value={bandForm.monthly_rent_krw || ""} onChange={(event) => setBandField("monthly_rent_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{bandForm.monthly_rent_krw > 0 ? formatKrw(bandForm.monthly_rent_krw) : "원"}</em></label>
     </div>
     <ChipRow label="사업단계" mark={mark("business_stage")} value={form.business_stage} options={STAGE_LABELS} onSelect={(value) => setField("business_stage", value as CaseInput["business_stage"])} />
     <ChipRow label="창업형태" mark={mark("startup_type")} value={form.startup_type} options={TYPE_LABELS} onSelect={(value) => setField("startup_type", value as CaseInput["startup_type"])} />
     <ChipRow label="우선순위" mark={mark("priority")} value={form.priority} options={PRIORITY_LABELS} onSelect={(value) => setField("priority", value as CaseInput["priority"])} />
     <button className="kb-primary" onClick={flow.start} disabled={!ready || flow.busy === "case"}>{flow.busy === "case" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}이 조건으로 입지 찾기</button>
     {!ready && <p className="kb-note"><CircleHelp aria-hidden="true" />업종과 총예산을 채워야 시작할 수 있습니다.</p>}
+    <p className="kb-note"><Info aria-hidden="true" />임대 조건은 상업용 임대료 공개 원천이 없어 직접 입력받습니다. 비우면 조달 밴드를 계산하지 않고 대기 상태로 둡니다.</p>
   </div>;
 }
 
@@ -78,14 +82,31 @@ function ChipRow({ label, value, options, onSelect, mark }: { label: string; val
   return <div className="kb-chiprow" data-mark={mark}><span>{label}</span><div>{Object.entries(options).map(([key, text]) => <button key={key} type="button" aria-pressed={value === key} onClick={() => onSelect(key)}>{text}</button>)}</div></div>;
 }
 
+/** 확장·축소를 같은 비중으로 보여준다. 한쪽만 노출하면 대출 권유가 된다. */
+function BandBanner({ bands }: { bands: FundingBandResult }) {
+  const equity = bands.bands.find((line) => line.band === "EQUITY_ONLY");
+  const recommended = bands.bands.find((line) => line.band === "RECOMMENDED");
+  const maximum = bands.bands.find((line) => line.band === "MAXIMUM");
+  if (!equity || !recommended || !maximum) return null;
+  const describe = (line: typeof equity) => `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)} · 소진 ${line.runway_months === null ? "조달 부족" : `${line.runway_months}개월`}`;
+  return <div className="kb-band-banner">
+    <div className="kb-band-banner-row"><span><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</span><span>{describe(recommended)}</span></div>
+    <div className="kb-band-banner-row"><span>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</span><span>{describe(equity)}</span></div>
+    <div className="kb-band-banner-row"><span>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</span><span>{describe(maximum)}{maximum.stress_pass ? "" : " · 스트레스 실패"}</span></div>
+    <p className="kb-band-banner-note">밴드에 따라 열리는 상권 수는 상권 임대 수준 데이터 연동 후 제공됩니다. 지금 후보 목록은 밴드로 걸러지지 않았습니다.</p>
+  </div>;
+}
+
 function RecommendStep({ flow }: { flow: Jarimaegim }) {
-  const { candidates, locationState, focused, caseData, trace } = flow;
+  const { candidates, locationState, focused, caseData, trace, bands } = flow;
   const conditions = `${flow.form.district} ${flow.form.industry}`.trim();
   return <div className="kb-step">
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{trace.state === "running"
       ? `${conditions} 조건으로 공식 장소 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
       : caseData ? `${caseData.inputs.district} ${caseData.inputs.industry} 조건으로 공식 장소 데이터를 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+    {bands?.status === "computed" && <BandBanner bands={bands} />}
+    {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />조달 밴드는 아직 계산되지 않았습니다. 비용 단계에서 무엇이 비어 있는지 확인할 수 있습니다.</p>}
     {locationState === "loading" && <div className="kb-skeletons">{[0, 1, 2].map((row) => <div key={row} className="kb-skeleton" />)}</div>}
     {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />

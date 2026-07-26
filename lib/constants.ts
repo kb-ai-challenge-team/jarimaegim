@@ -16,6 +16,17 @@ export const DEFAULT_CASE: CaseInput = {
   priority: "STABILITY"
 };
 
+export const DEFAULT_BAND_FORM = {
+  area_pyeong: 0,
+  deposit_krw: 0,
+  monthly_rent_krw: 0,
+  monthly_maintenance_krw: 0,
+  key_money_krw: 0,
+  fitout_krw: null as number | null,
+  existing_debt_krw: 0,
+  other_monthly_fixed_krw: 0
+};
+
 export const STAGE_LABELS = {
   PRE_OPEN: "처음 창업",
   RELOCATING: "운영 중 이전",
