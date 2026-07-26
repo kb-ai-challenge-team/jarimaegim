@@ -18,3 +18,4 @@ artifacts/
 tsconfig.tsbuildinfo
 *.pem
 *.pfx
+scripts/.tmp-*
