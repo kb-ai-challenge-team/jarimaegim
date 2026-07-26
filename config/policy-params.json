@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "updated_at": null,
+  "note": "값은 출처와 기준일을 확인한 뒤 등록한다. null인 항목은 계산에 사용되지 않고 integration_pending을 유발한다.",
+  "entries": {
+    "loan.annual_rate_percent": { "value": null, "unit": "PERCENT", "source": null, "as_of": null },
+    "loan.term_months": { "value": null, "unit": "MONTHS", "source": null, "as_of": null },
+    "loan.guarantee_ceiling_krw": { "value": null, "unit": "KRW", "source": null, "as_of": null },
+    "loan.policy_fund_ceiling_krw": { "value": null, "unit": "KRW", "source": null, "as_of": null },
+    "stress.revenue_drop_ratio": { "value": null, "unit": "RATIO", "source": null, "as_of": null },
+    "stress.repayment_burden_cap_ratio": { "value": null, "unit": "RATIO", "source": null, "as_of": null },
+    "working_capital.months": { "value": null, "unit": "MONTHS", "source": null, "as_of": null }
+  },
+  "industries": {}
+}
