@@ -168,7 +168,7 @@ test("quantile은 양 끝을 clamp한다", () => {
 });
 
 test("quantile은 빈 배열을 거부한다", () => {
-  assert.throws(() => quantile([], 0.5), /최소 한 개/);
+  assert.throws(() => quantile([], 0.5), /at least one/);
 });
 
 test("quantileSet은 P10~P90 다섯 개를 낸다", () => {
@@ -205,6 +205,23 @@ test("sampleFromQuantiles는 u=0에서 P10, u=1에서 P90을 낸다", () => {
 test("QUANTILE_KNOTS는 P10부터 P90까지 오름차순이다", () => {
   assert.deepEqual(QUANTILE_KNOTS, [0.1, 0.25, 0.5, 0.75, 0.9]);
 });
+
+test("quantileSet은 NaN을 거부한다", () => {
+  assert.throws(() => quantileSet([5, 2, NaN, 9]), /finite/);
+});
+
+test("quantileSet은 Infinity를 거부한다", () => {
+  assert.throws(() => quantileSet([1, 2, Infinity]), /finite/);
+});
+
+test("sampleFromQuantiles는 비단조 분위수 집합을 거부한다", () => {
+  assert.throws(() => sampleFromQuantiles({ p10: 100, p25: 50, p50: 200, p75: 300, p90: 500, n: 5 }, () => 0.1), /non-decreasing/);
+});
+
+test("sampleFromQuantiles는 모든 knot이 같으면 그 값을 낸다", () => {
+  const flat = { p10: 42, p25: 42, p50: 42, p75: 42, p90: 42, n: 9 };
+  for (const u of [0, 0.3, 0.7, 1]) assert.equal(sampleFromQuantiles(flat, () => u), 42);
+});
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -217,12 +234,12 @@ Expected: FAIL — `Cannot find module ... quantile.mjs`
 `pipeline/lib/quantile.mjs`:
 
 ```js
-/** Quantile knots used for inverse-transform sampling. Only P10~P90 is used, so tail outliers don't leak into the result. */
+/** Quantile knots used for inverse-transform sampling. Restricting to P10-P90 keeps tail outliers out of the result. */
 export const QUANTILE_KNOTS = [0.1, 0.25, 0.5, 0.75, 0.9];
 
-/** Computes the p-quantile of a sorted numeric array by linear interpolation. */
+/** Linear-interpolated p-quantile of an already-sorted numeric array. */
 export function quantile(sorted, p) {
-  if (sorted.length === 0) throw new Error("분위수는 최소 한 개의 값이 필요합니다");
+  if (sorted.length === 0) throw new Error("quantile requires at least one value");
   if (p <= 0) return sorted[0];
   if (p >= 1) return sorted[sorted.length - 1];
   const position = (sorted.length - 1) * p;
@@ -232,36 +249,46 @@ export function quantile(sorted, p) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
-/** Produces the P10~P90 set and sample count from an unsorted value array. */
+/** Reduce an unsorted sample to the P10-P90 knots plus the sample size. */
 export function quantileSet(values) {
+  for (const value of values) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error(`quantileSet requires finite numbers, received ${value}`);
+    }
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const [p10, p25, p50, p75, p90] = QUANTILE_KNOTS.map((knot) => quantile(sorted, knot));
   return { p10, p25, p50, p75, p90, n: sorted.length };
 }
 
 /**
- * Treats the quantile set as a piecewise-linear CDF and does inverse-transform sampling.
- * If rng() returns [0,1], the result is always within [p10, p90].
+ * Inverse-transform sampling over the piecewise-linear CDF the knots describe.
+ * Given rng() in [0,1], the result always lands within [p10, p90].
  */
 export function sampleFromQuantiles(set, rng) {
   const values = [set.p10, set.p25, set.p50, set.p75, set.p90];
+  for (let index = 0; index < values.length; index += 1) {
+    if (!Number.isFinite(values[index])) throw new Error(`quantile knot ${QUANTILE_KNOTS[index]} is not finite: ${values[index]}`);
+    if (index > 0 && values[index] < values[index - 1]) throw new Error("quantile knots must be non-decreasing");
+  }
+  const clamp = (value) => Math.min(Math.max(value, set.p10), set.p90);
   const span = QUANTILE_KNOTS[QUANTILE_KNOTS.length - 1] - QUANTILE_KNOTS[0];
   const u = QUANTILE_KNOTS[0] + rng() * span;
   for (let index = 1; index < QUANTILE_KNOTS.length; index += 1) {
     if (u <= QUANTILE_KNOTS[index]) {
       const width = QUANTILE_KNOTS[index] - QUANTILE_KNOTS[index - 1];
       const ratio = width === 0 ? 0 : (u - QUANTILE_KNOTS[index - 1]) / width;
-      return values[index - 1] + (values[index] - values[index - 1]) * ratio;
+      return clamp(values[index - 1] + (values[index] - values[index - 1]) * ratio);
     }
   }
-  return values[values.length - 1];
+  return clamp(values[values.length - 1]);
 }
 ```
 
 - [ ] **Step 4: 통과 확인**
 
 Run: `node --test pipeline/lib/quantile.test.mjs`
-Expected: PASS, 8 tests
+Expected: PASS, 13 tests
 
 - [ ] **Step 5: 커밋**
 

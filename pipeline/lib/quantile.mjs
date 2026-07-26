@@ -15,6 +15,11 @@ export function quantile(sorted, p) {
 
 /** Reduce an unsorted sample to the P10-P90 knots plus the sample size. */
 export function quantileSet(values) {
+  for (const value of values) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error(`quantileSet requires finite numbers, received ${value}`);
+    }
+  }
   const sorted = [...values].sort((a, b) => a - b);
   const [p10, p25, p50, p75, p90] = QUANTILE_KNOTS.map((knot) => quantile(sorted, knot));
   return { p10, p25, p50, p75, p90, n: sorted.length };
@@ -26,14 +31,19 @@ export function quantileSet(values) {
  */
 export function sampleFromQuantiles(set, rng) {
   const values = [set.p10, set.p25, set.p50, set.p75, set.p90];
+  for (let index = 0; index < values.length; index += 1) {
+    if (!Number.isFinite(values[index])) throw new Error(`quantile knot ${QUANTILE_KNOTS[index]} is not finite: ${values[index]}`);
+    if (index > 0 && values[index] < values[index - 1]) throw new Error("quantile knots must be non-decreasing");
+  }
+  const clamp = (value) => Math.min(Math.max(value, set.p10), set.p90);
   const span = QUANTILE_KNOTS[QUANTILE_KNOTS.length - 1] - QUANTILE_KNOTS[0];
   const u = QUANTILE_KNOTS[0] + rng() * span;
   for (let index = 1; index < QUANTILE_KNOTS.length; index += 1) {
     if (u <= QUANTILE_KNOTS[index]) {
       const width = QUANTILE_KNOTS[index] - QUANTILE_KNOTS[index - 1];
       const ratio = width === 0 ? 0 : (u - QUANTILE_KNOTS[index - 1]) / width;
-      return values[index - 1] + (values[index] - values[index - 1]) * ratio;
+      return clamp(values[index - 1] + (values[index] - values[index - 1]) * ratio);
     }
   }
-  return values[values.length - 1];
+  return clamp(values[values.length - 1]);
 }
