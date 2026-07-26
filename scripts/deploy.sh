@@ -95,17 +95,27 @@ ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "set -euo pipefail
   df -h / | tail -1 | awk '{print \"  디스크 여유 \"\$4}'"
 
 # ── 6. 동기화 ───────────────────────────────────────────────────────────────
+# 백엔드는 설정을 모듈 import 시점에 읽는다(policy_params 등). backend/ 또는 config/ 가
+# 바뀌면 웹만 재시작해서는 반영되지 않으므로 API 도 함께 재시작해야 한다.
+api_fingerprint() {
+  ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" \
+    "cd '$APP_DIR' 2>/dev/null && find backend/app config backend/requirements.txt -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1 || echo none"
+}
 say "동기화"
 LOCK_BEFORE="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "md5sum '$APP_DIR/package-lock.json' 2>/dev/null | cut -d' ' -f1 || echo none")"
+API_BEFORE="$(api_fingerprint)"
 rsync -rlzc --delete -e "ssh ${SSH_OPTS[*]}" "${EXCLUDES[@]}" \
   "$STAGE"/ "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/"
 LOCK_AFTER="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "md5sum '$APP_DIR/package-lock.json' | cut -d' ' -f1")"
+API_AFTER="$(api_fingerprint)"
 
 # ── 7. 의존성·재시작 ────────────────────────────────────────────────────────
 say "의존성 · 재시작"
 LOCK_CHANGED=0
 [ "$LOCK_BEFORE" != "$LOCK_AFTER" ] && LOCK_CHANGED=1
-echo "  package-lock 변경: $LOCK_CHANGED"
+API_CHANGED=0
+[ "$API_BEFORE" != "$API_AFTER" ] && API_CHANGED=1
+echo "  package-lock 변경: $LOCK_CHANGED · backend·config 변경: $API_CHANGED"
 ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "set -euo pipefail
   cd '$APP_DIR'
   if [ '$LOCK_CHANGED' = '1' ]; then
@@ -113,6 +123,13 @@ ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "set -euo pipefail
     npm ci --no-audit --no-fund
   else
     echo '  package-lock 동일 — npm ci 생략'
+  fi
+  if [ '$API_CHANGED' = '1' ]; then
+    echo '  restart api (backend·config 변경 — 설정을 import 시점에 읽는다)'
+    sudo systemctl restart ter-doctor-api
+    sleep 3
+  else
+    echo '  backend·config 동일 — api 재시작 생략'
   fi
   sudo systemctl restart ter-doctor-web
   sleep 4
