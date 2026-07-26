@@ -50,10 +50,10 @@
 `pipeline/lib/constants.mjs`:
 
 ```js
-/** 시연용 매물 데이터의 대상 자치구. 설계 문서 §2 참조. */
+/** Target districts for the demo listing data. See design doc §2. */
 export const TARGET_DISTRICTS = ["강남구", "마포구", "서초구", "성동구", "영등포구"];
 
-/** 면적구간. 소규모 상가 임대 시장의 실제 구획과 맞춘 4구간. 설계 문서 §3 Stage 1. */
+/** Area bands. 4 bands matched to the real segmentation of the small commercial rental market. See design doc §3 Stage 1. */
 export const AREA_BANDS = [
   { key: "S", label: "~33㎡", min: 0, max: 33 },
   { key: "M", label: "33~66㎡", min: 33, max: 66 },
@@ -61,13 +61,13 @@ export const AREA_BANDS = [
   { key: "XL", label: "99㎡~", min: 99, max: Infinity },
 ];
 
-/** 이보다 표본이 적은 구간은 상위 구간으로 병합한다. */
+/** Bands with fewer samples than this are merged into the next larger band. */
 export const MIN_BAND_SAMPLES = 5;
 
-/** 합성 재현성을 위한 고정 시드. 절대 바꾸지 않는다. */
+/** Fixed seed for reproducible synthesis. Never change this. */
 export const SYNTHESIS_SEED = 20260727;
 
-/** 구당 생성할 매물 수. */
+/** Number of listings to generate per district. */
 export const LISTINGS_PER_DISTRICT = 55;
 
 export function bandForArea(areaM2) {
@@ -217,10 +217,10 @@ Expected: FAIL — `Cannot find module ... quantile.mjs`
 `pipeline/lib/quantile.mjs`:
 
 ```js
-/** 역변환 샘플링에 쓰는 분위수 knot. P10~P90만 쓰므로 꼬리 이상치가 결과에 새지 않는다. */
+/** Quantile knots used for inverse-transform sampling. Only P10~P90 is used, so tail outliers don't leak into the result. */
 export const QUANTILE_KNOTS = [0.1, 0.25, 0.5, 0.75, 0.9];
 
-/** 정렬된 숫자 배열의 p분위수를 선형 보간으로 구한다. */
+/** Computes the p-quantile of a sorted numeric array by linear interpolation. */
 export function quantile(sorted, p) {
   if (sorted.length === 0) throw new Error("분위수는 최소 한 개의 값이 필요합니다");
   if (p <= 0) return sorted[0];
@@ -232,7 +232,7 @@ export function quantile(sorted, p) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
-/** 정렬되지 않은 값 배열에서 P10~P90 묶음과 표본 수를 낸다. */
+/** Produces the P10~P90 set and sample count from an unsorted value array. */
 export function quantileSet(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const [p10, p25, p50, p75, p90] = QUANTILE_KNOTS.map((knot) => quantile(sorted, knot));
@@ -240,8 +240,8 @@ export function quantileSet(values) {
 }
 
 /**
- * 분위수 묶음을 조각별 선형 CDF로 보고 역변환 샘플링한다.
- * rng()가 [0,1]을 내면 결과는 반드시 [p10, p90] 안에 있다.
+ * Treats the quantile set as a piecewise-linear CDF and does inverse-transform sampling.
+ * If rng() returns [0,1], the result is always within [p10, p90].
  */
 export function sampleFromQuantiles(set, rng) {
   const values = [set.p10, set.p25, set.p50, set.p75, set.p90];
@@ -346,8 +346,8 @@ Expected: FAIL — `Cannot find module ... rng.mjs`
 
 ```js
 /**
- * mulberry32. 시드 하나로 완전히 결정되는 PRNG라 파이프라인 재현성이 보장된다.
- * 암호학적 용도가 아니며 시연 데이터 생성에만 쓴다.
+ * mulberry32. A PRNG fully determined by a single seed, so pipeline runs are reproducible.
+ * Not for cryptographic use — only for generating demo data.
  */
 export function createRng(seed) {
   let state = seed >>> 0;
@@ -360,7 +360,7 @@ export function createRng(seed) {
   };
 }
 
-/** Fisher-Yates. 원본을 건드리지 않고 새 배열을 낸다. */
+/** Fisher-Yates. Leaves the original array untouched and returns a new one. */
 export function shuffle(items, rng) {
   const result = [...items];
   for (let index = result.length - 1; index > 0; index -= 1) {
@@ -448,12 +448,13 @@ Expected: FAIL — `Cannot find module ... raw-record.mjs`
 
 ```js
 /**
- * 설계 문서 §2.1 수집 필드 화이트리스트.
- * 매물번호·중개사·상호·사진·설명문·원본 URL·가격은 여기 없으므로 디스크에 남지 않는다.
+ * Collection field whitelist from design doc §2.1.
+ * Listing number, broker, business name, photos, description, source URL, and price are
+ * not in here, so they never land on disk.
  */
 export const RAW_FIELDS = ["lat", "lng", "sido", "sigungu", "dong", "floor", "area_m2"];
 
-/** 서울 행정구역을 넉넉히 감싸는 경계. 좌표 파싱 사고를 잡는 용도다. */
+/** A generous bounding box around Seoul's administrative area. Used to catch coordinate-parsing mistakes. */
 const SEOUL_BOUNDS = { minLat: 37.41, maxLat: 37.72, minLng: 126.76, maxLng: 127.19 };
 
 function requireNumber(source, field) {
@@ -472,7 +473,7 @@ function requireText(source, field) {
   return value.trim();
 }
 
-/** 화이트리스트 필드만 뽑아 검증한다. 통과하지 못한 레코드는 예외를 던진다. */
+/** Picks and validates only whitelisted fields. Records that fail validation throw. */
 export function pickRawFields(source) {
   const lat = requireNumber(source, "lat");
   const lng = requireNumber(source, "lng");
@@ -532,7 +533,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RAW_DIR = join(ROOT, "raw");
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-/** 설계 문서 부록: 실측 검증된 딥링크 파라미터. a=SG 상가, b=B2 월세, e=RETAIL */
+/** Design doc appendix: empirically verified deep-link parameters. a=SG (commercial), b=B2 (monthly rent), e=RETAIL */
 const DISTRICT_CENTERS = {
   "강남구": { lat: 37.5172, lng: 127.0473 },
   "마포구": { lat: 37.5637, lng: 126.9084 },
@@ -556,7 +557,7 @@ async function confirmOneShot() {
   if (answer.trim() !== "yes") { console.log("중단했습니다."); process.exit(0); }
 }
 
-/** 관찰 모드: 매물 목록 응답 한 건을 그대로 덤프해 스키마를 확인한다. */
+/** Observation mode: dumps one raw listing-list response to inspect its schema. */
 async function observe() {
   const browser = await chromium.launch({ executablePath: CHROME, headless: false });
   const page = await browser.newPage();
@@ -564,7 +565,7 @@ async function observe() {
   page.on("response", async (response) => {
     const url = response.url();
     if (!url.includes("/api/articles")) return;
-    try { samples.push({ url, body: await response.json() }); } catch { /* JSON 아닌 응답은 무시 */ }
+    try { samples.push({ url, body: await response.json() }); } catch { /* Ignore non-JSON responses */ }
   });
   await page.goto(districtUrl("강남구"), { waitUntil: "networkidle" });
   await fs.mkdir(RAW_DIR, { recursive: true });
@@ -608,7 +609,7 @@ Step 2에서 확인한 필드 이름으로 아래 코드의 `<...>` 자리를 �
 `pipeline/crawl/collect-coords.mjs`의 `observe()` 아래에 추가:
 
 ```js
-/** Step 2에서 관찰한 응답 스키마를 화이트리스트 레코드로 옮긴다. */
+/** Maps the response schema observed in Step 2 into a whitelisted record. */
 function toRawRecord(article, district) {
   return pickRawFields({
     lat: Number(article.<좌표필드_위도>),
@@ -622,8 +623,8 @@ function toRawRecord(article, district) {
 }
 
 /**
- * 가격 표본. Step 2에서 단위가 만원으로 확인되면 UNIT을 10000으로 둔다.
- * 이 단위를 틀리면 Stage 2 교차검증이 배수 100× 로 실패하므로 거기서 잡힌다.
+ * Price samples. If Step 2 confirms the unit is 10k-won, set UNIT to 10000.
+ * Getting this unit wrong makes Stage 2 cross-check fail by a 100x ratio, so it's caught there.
  */
 const PRICE_UNIT = 10000;
 
@@ -647,13 +648,13 @@ async function collectDistrict(page, district) {
       try {
         const record = toRawRecord(article, district);
         coords.set(`${record.lat},${record.lng},${record.area_m2},${record.floor}`, record);
-      } catch { continue; } // 화이트리스트 검증 실패 레코드는 버린다
+      } catch { continue; } // Drop records that fail whitelist validation
       const price = toPriceRow(article, district);
       if (price) prices.push(price);
     }
   });
   await page.goto(districtUrl(district), { waitUntil: "networkidle" });
-  // 목록 패널을 끝까지 스크롤해 추가 페이지를 불러온다.
+  // Scroll the listing panel to the end to load additional pages.
   for (let round = 0; round < 12 && coords.size < 120; round += 1) {
     await page.mouse.wheel(0, 4000);
     await page.waitForTimeout(1200);
@@ -676,7 +677,7 @@ async function collect() {
     await writeJsonl(join(RAW_DIR, `coords.${district}.jsonl`), records);
     await writeJsonl(join(RAW_DIR, `prices.${district}.jsonl`), prices);
     console.log(`${district}: 좌표 ${records.length}건, 가격 ${prices.length}건`);
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // 구 사이 간격
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // Pause between districts
   }
   await browser.close();
 }
@@ -809,8 +810,8 @@ const RAW_DIR = join(ROOT, "pipeline", "raw");
 const OUTPUT = join(ROOT, "data", "rent-distribution.seoul.json");
 
 /**
- * 가격 표본에서 구별 면적 분위수와 구간별 월세·보증금배수 분위수를 낸다.
- * 표본이 MIN_BAND_SAMPLES 미만인 구간은 인접 구간으로 병합하고 그 사실을 merges에 남긴다.
+ * Produces per-district area quantiles and per-band rent/deposit-multiple quantiles from price samples.
+ * Bands with fewer samples than MIN_BAND_SAMPLES are merged into the adjacent band, recorded in merges.
  */
 export function buildDistribution(rows) {
   if (rows.length === 0) throw new Error("가격 표본이 비어 있습니다");
@@ -822,7 +823,7 @@ export function buildDistribution(rows) {
     const grouped = new Map(AREA_BANDS.map((band) => [band.key, []]));
     for (const row of districtRows) grouped.get(bandForArea(row.area_m2).key).push(row);
 
-    // 작은 구간을 바로 아래 인접 구간으로 접는다. XL → L → M → S 순서.
+    // Fold small bands into the next-lower adjacent band, in order XL → L → M → S.
     const order = [...AREA_BANDS].reverse();
     for (let index = 0; index < order.length - 1; index += 1) {
       const current = order[index], next = order[index + 1];
@@ -833,7 +834,7 @@ export function buildDistribution(rows) {
         merges.push({ district, from: current.key, into: next.key, moved: bucket.length });
       }
     }
-    // 접고도 남은 가장 작은 구간이 미달이면 구 전체를 하나로 합친다.
+    // If the smallest remaining band is still under the threshold after folding, merge the whole district into one.
     const surviving = AREA_BANDS.filter((band) => grouped.get(band.key).length > 0);
     if (surviving.length > 0 && grouped.get(surviving[0].key).length < MIN_BAND_SAMPLES) {
       const all = surviving.flatMap((band) => grouped.get(band.key));
@@ -942,7 +943,7 @@ def test_ratio_window_matches_the_design():
 
 
 def test_a_plausible_district_passes():
-    # 50㎡ × 98,770원/㎡ ≈ 494만원. 그대로면 배수 1.0
+    # 50㎡ × 98,770 won/㎡ ≈ 4.94M won. Ratio should be exactly 1.0
     result = evaluate_district("강남구", district(4_938_500))
     assert result["ok"] is True
     assert result["ratio"] == pytest.approx(1.0, abs=0.01)
@@ -982,12 +983,13 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'cross_check'`
 `pipeline/verify/cross_check.py`:
 
 ```python
-"""Stage 2 — 크롤 분포를 공공데이터 기준선과 대조하는 게이트.
+"""Stage 2 — a gate that checks the crawled distribution against a public-data baseline.
 
-기준선은 서울교통공사 지하상가 임대정보(OA-12927, 기준일 2025-12-31)의
-㎡당 월임대료 중앙값이다. 지하상가와 지상 1층은 시세대가 다르므로
-허용 범위를 넓게 잡는다. 이 게이트는 자릿수 오류를 잡는 안전망이지
-시세의 정확성을 보증하지 않는다.
+The baseline is the median monthly rent per m² from Seoul Metro's underground
+shopping-arcade rental data (OA-12927, as of 2025-12-31). Underground arcades and
+ground-floor storefronts have different market rates, so the tolerance is set wide.
+This gate is a safety net for order-of-magnitude errors, not a guarantee that the
+market rate itself is accurate.
 """
 from __future__ import annotations
 
@@ -1005,7 +1007,7 @@ REPORT_PATH = ROOT / "data" / "rent-distribution.verification.md"
 
 
 def evaluate_district(name: str, payload: dict) -> dict:
-    """구의 대표 ㎡당 월세를 기준선과 비교한다."""
+    """Compares a district's representative rent per m² against the baseline."""
     area_p50 = payload["area"]["p50"]
     bands = payload["bands"]
     largest = max(bands.values(), key=lambda band: band["n"])
@@ -1075,10 +1077,11 @@ Expected: PASS, 7 tests
 `pipeline/verify/fetch_subway_rents.py`:
 
 ```python
-"""서울교통공사 지하상가 임대정보(OA-12927) CSV를 내려받아 ㎡당 월임대료 중앙값을 낸다.
+"""Downloads Seoul Metro's underground shopping-arcade rental data (OA-12927) CSV and
+computes the median monthly rent per m².
 
-Open API가 아니라 파일데이터라서 POST 폼 요청으로 받는다. 인코딩은 EUC-KR이다.
-cross_check.BASELINE_KRW_PER_M2 를 갱신해야 할 때만 실행한다.
+It's file data rather than an Open API, so it's fetched via a POST form request.
+The encoding is EUC-KR. Run this only when cross_check.BASELINE_KRW_PER_M2 needs updating.
 """
 from __future__ import annotations
 
@@ -1219,7 +1222,7 @@ test("어떤 행도 좌표가 원본에서 갖고 있던 면적을 그대로 쓰
 });
 
 test("좌표와 면적이 모두 충돌해도 재샘플링으로 벗어난다", () => {
-  // 면적 분포를 한 점으로 눌러 충돌을 강제한다.
+  // Collapse the area distribution to a single point to force a collision.
   const pinned = { districts: { "강남구": { ...DISTRIBUTION.districts["강남구"], area: { p10: 40, p25: 40, p50: 40, p75: 40, p90: 40, n: 50 } } } };
   const source = [{ lat: 37.5, lng: 127.03, sido: "서울특별시", sigungu: "강남구", dong: "역삼동", floor: 1, area_m2: 40 }];
   const listings = buildListings({ distribution: pinned, coordsByDistrict: { "강남구": source }, perDistrict: 1 });
@@ -1298,9 +1301,11 @@ const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
 const roundTo = (value, unit) => Math.round(value / unit) * unit;
 
 /**
- * unit 배수로 반올림하되 결과가 [low, high]를 벗어나지 않게 한다.
- * clamp 후 round 순서로 하면 반올림이 상한을 넘길 수 있으므로 경계 자체를 unit에 맞춰 좁힌다.
- * 구간 폭이 unit보다 좁으면 하한 쪽에 붙인다(실 임대료 구간은 백만원대라 이 경우는 나오지 않는다).
+ * Rounds to a multiple of unit without letting the result fall outside [low, high].
+ * Clamping then rounding could push the result past the upper bound, so the bounds
+ * themselves are narrowed to unit first.
+ * If the range is narrower than unit, it snaps to the lower bound (real rent bands are
+ * in the millions of won, so this case doesn't come up).
  */
 function roundWithin(value, unit, low, high) {
   const lowUnit = Math.ceil(low / unit) * unit;
@@ -1310,21 +1315,21 @@ function roundWithin(value, unit, low, high) {
 }
 
 /**
- * 구 면적 분포에서 면적을 뽑는다.
- * forbidden(그 좌표가 원본에서 갖고 있던 면적)과 같은 값이 나오면 다시 뽑는다.
- * 설계 문서 §2.1의 1:1 대응 차단.
+ * Draws an area from the district's area distribution.
+ * Redraws if the result equals forbidden (the area that coordinate originally had).
+ * This is the 1:1 correspondence block from design doc §2.1.
  */
 export function sampleArea(areaSet, rng, forbidden) {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const drawn = Number(clamp(sampleFromQuantiles(areaSet, rng), areaSet.p10, areaSet.p90).toFixed(1));
     if (forbidden === null || drawn !== forbidden) return drawn;
   }
-  // 분포가 한 점으로 눌린 극단적 경우. 최소 단위만큼 밀어 충돌을 확실히 깬다.
+  // Extreme case where the distribution is collapsed to a single point. Nudge by the minimum unit to force the collision to break.
   const nudged = Number((clamp(forbidden + 0.1, areaSet.p10, areaSet.p90 + 0.1)).toFixed(1));
   return nudged === forbidden ? Number((forbidden + 0.1).toFixed(1)) : nudged;
 }
 
-/** 분포에 실제로 존재하는 구간 중 요청 구간에 가장 가까운 것을 고른다. */
+/** Picks the band closest to the requested one among those actually present in the distribution. */
 function resolveBand(bands, areaM2) {
   const preferred = bandForArea(areaM2).key;
   if (bands[preferred]) return bands[preferred];
