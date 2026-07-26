@@ -5,6 +5,9 @@ const apiOrigin = process.env.BACKEND_INTERNAL_URL || "http://127.0.0.1:8000";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   turbopack: { root: process.cwd() },
+  // The Kakao JS key is registered for http://127.0.0.1:4173 (= APP_ORIGIN), so dev must be
+  // reachable there. Without this, Next blocks its own client chunks and the page never hydrates.
+  allowedDevOrigins: ["127.0.0.1"],
   async rewrites() {
     return [{ source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` }];
   },

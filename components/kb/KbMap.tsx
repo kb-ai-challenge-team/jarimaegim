@@ -1,0 +1,100 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, MapPinned } from "lucide-react";
+import { loadKakaoMaps, type KakaoMapInstance, type KakaoMaps, type KakaoOverlay } from "@/lib/kakao";
+import { EVIDENCE_BADGES } from "@/lib/constants";
+import type { Candidate } from "@/lib/types";
+
+const SEOUL_CENTER = { lat: 37.551668, lng: 126.9743216 };
+type MapState = "loading" | "ready" | "missing" | "error";
+
+/** Builds the KB-style split pill: white label half + graded value half. */
+function markerNode(candidate: Candidate, rank: number, isFocused: boolean, onFocus: (id: string) => void) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "kb-marker";
+  node.dataset.grade = candidate.evidence_grade;
+  if (isFocused) node.dataset.focused = "true";
+  node.setAttribute("aria-label", `${candidate.name} ${EVIDENCE_BADGES[candidate.evidence_grade]}`);
+  const name = document.createElement("span");
+  name.className = "kb-marker-name";
+  name.textContent = `${rank}. ${candidate.name}`;
+  const value = document.createElement("span");
+  value.className = "kb-marker-value";
+  value.textContent = candidate.evidence_grade;
+  node.append(name, value);
+  node.addEventListener("click", (event) => { event.stopPropagation(); onFocus(candidate.id); });
+  return node;
+}
+
+export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: Candidate[]; focused: string | null; onFocus: (id: string) => void; aiActive: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<KakaoMapInstance | null>(null);
+  const mapsRef = useRef<KakaoMaps | null>(null);
+  const overlaysRef = useRef<KakaoOverlay[]>([]);
+  const key = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
+  const [state, setState] = useState<MapState>(key ? "loading" : "missing");
+
+  useEffect(() => {
+    if (!key || !containerRef.current) return;
+    let cancelled = false;
+    loadKakaoMaps(key).then((maps) => {
+      if (cancelled || !containerRef.current) return;
+      mapsRef.current = maps;
+      mapRef.current = new maps.Map(containerRef.current, { center: new maps.LatLng(SEOUL_CENTER.lat, SEOUL_CENTER.lng), level: 6 });
+      setState("ready");
+    }).catch(() => { if (!cancelled) setState("error"); });
+    return () => { cancelled = true; };
+  }, [key]);
+
+  // Kakao caches tile geometry, so a container resize (panel toggle, breakpoint change) needs relayout.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || state !== "ready") return;
+    const observer = new ResizeObserver(() => mapRef.current?.relayout());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [state]);
+
+  // Rebuild overlays whenever the recommendation set or the focused candidate changes.
+  useEffect(() => {
+    const maps = mapsRef.current, map = mapRef.current;
+    if (!maps || !map) return;
+    overlaysRef.current.forEach((overlay) => overlay.setMap(null));
+    overlaysRef.current = candidates.map((candidate, index) => {
+      const isFocused = candidate.id === focused;
+      const overlay = new maps.CustomOverlay({
+        position: new maps.LatLng(candidate.latitude, candidate.longitude),
+        content: markerNode(candidate, index + 1, isFocused, onFocus),
+        yAnchor: 1.35, zIndex: isFocused ? 90 : 10, clickable: true
+      });
+      overlay.setMap(map);
+      return overlay;
+    });
+    if (candidates.length > 0) {
+      const bounds = new maps.LatLngBounds();
+      candidates.forEach((candidate) => bounds.extend(new maps.LatLng(candidate.latitude, candidate.longitude)));
+      if (!bounds.isEmpty()) map.setBounds(bounds, 80, 80, 80, 80);
+    }
+  }, [candidates, focused, onFocus, state]);
+
+  useEffect(() => {
+    const maps = mapsRef.current, map = mapRef.current;
+    if (!maps || !map || !focused) return;
+    const target = candidates.find((candidate) => candidate.id === focused);
+    if (target) map.setCenter(new maps.LatLng(target.latitude, target.longitude));
+  }, [focused, candidates]);
+
+  return <div className="kb-map">
+    <div ref={containerRef} className="kb-map-canvas" aria-hidden={state !== "ready"} />
+    {state !== "ready" && <div className="kb-map-fallback">
+      {state === "error" ? <AlertTriangle aria-hidden="true" /> : <MapPinned aria-hidden="true" />}
+      <strong>{state === "missing" ? "지도 연결 키가 필요합니다" : state === "error" ? "지도를 불러오지 못했습니다" : "지도를 불러오는 중입니다"}</strong>
+      <p>{state === "missing" ? "Kakao JavaScript 키를 설정하면 지도에 추천 입지가 표시됩니다. 목록은 그대로 사용할 수 있습니다." : "추천 입지 목록은 왼쪽 패널에서 계속 확인할 수 있습니다."}</p>
+    </div>}
+    {state === "ready" && aiActive && candidates.length === 0 && <div className="kb-map-hint" role="status">
+      <span className="kb-ai-dot" aria-hidden="true" />조건을 확정하면 이 지도에 추천 입지가 표시됩니다.
+    </div>}
+  </div>;
+}

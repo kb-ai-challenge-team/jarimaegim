@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowLeft, ArrowRight, Check, Info, LoaderCircle, MapPinned, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ClipboardCheck, Info, LoaderCircle, MapPinned, ShieldCheck, Sparkles } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { DEFAULT_CASE, PRIORITY_LABELS, SEOUL_DISTRICTS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import type { BusinessStage, CaseInput, StartupType } from "@/lib/types";
@@ -89,7 +89,7 @@ export function Onboarding() {
       <header className="onboarding-header">
         <button onClick={() => router.push("/")} className="back-button"><ArrowLeft/> 처음으로</button>
         <Link className="wordmark" href="/"><span className="brand-symbol"></span><span className="wordmark-partner">KB부동산 ×</span><strong>자리매김</strong></Link>
-        <span>로그인 없이 시작</span>
+        <span>별도 계정 없이 시작</span>
       </header>
       <div className="onboarding-progress" aria-label="온보딩 진행">
         <span className="done"><i><Check/></i>조건 입력</span><b/>
@@ -135,14 +135,14 @@ export function Onboarding() {
             <label className={errors.district ? "has-error" : ""}><span>지역 <Required/>{parsedKeys.has("district") && <Parsed/>}</span><select value={form.district} onChange={(e) => setField("district", e.target.value)}>{SEOUL_DISTRICTS.map((district) => <option key={district}>{district}</option>)}</select><small>{errors.district || "현재 서울 25개 자치구를 지원합니다."}</small></label>
             <MoneyField label="총예산" value={form.budget_krw} error={errors.budget_krw} parsed={parsedKeys.has("budget_krw")} onChange={(value) => setField("budget_krw", value)}/>
             <MoneyField label="자기자본" value={form.equity_krw} error={errors.equity_krw} parsed={parsedKeys.has("equity_krw")} onChange={(value) => setField("equity_krw", value)}/>
-            <fieldset><legend>사업단계 <Required/></legend><div className="segmented">{(Object.keys(STAGE_LABELS) as BusinessStage[]).map((value) => <label key={value}><input type="radio" name="stage" checked={form.business_stage === value} onChange={() => setField("business_stage", value)}/><span>{STAGE_LABELS[value]}</span></label>)}</div></fieldset>
-            <fieldset><legend>창업형태 <Required/></legend><div className="segmented">{(Object.keys(TYPE_LABELS) as StartupType[]).map((value) => <label key={value}><input type="radio" name="type" checked={form.startup_type === value} onChange={() => setField("startup_type", value)}/><span>{TYPE_LABELS[value]}</span></label>)}</div></fieldset>
-            <fieldset className="full-field"><legend>이번 탐색에서 먼저 볼 기준</legend><div className="priority-options">{(Object.keys(PRIORITY_LABELS) as CaseInput["priority"][]).map((value) => <label key={value}><input type="radio" name="priority" checked={form.priority === value} onChange={() => setField("priority", value)}/><span>{PRIORITY_LABELS[value]}</span></label>)}</div></fieldset>
+            <fieldset><legend>사업단계 <Required/></legend><div className="segmented">{(Object.keys(STAGE_LABELS) as BusinessStage[]).map((value) => <label key={value}><input type="radio" name="stage" checked={form.business_stage === value} onChange={() => setField("business_stage", value)}/><span><strong>{STAGE_LABELS[value]}</strong></span></label>)}</div></fieldset>
+            <fieldset><legend>창업형태 <Required/></legend><div className="segmented">{(Object.keys(TYPE_LABELS) as StartupType[]).map((value) => <label key={value}><input type="radio" name="type" checked={form.startup_type === value} onChange={() => setField("startup_type", value)}/><span><strong>{TYPE_LABELS[value]}</strong></span></label>)}</div></fieldset>
+            <fieldset className="full-field"><legend>이번 탐색에서 먼저 볼 기준</legend><div className="priority-options">{(Object.keys(PRIORITY_LABELS) as CaseInput["priority"][]).map((value) => <label key={value}><input type="radio" name="priority" checked={form.priority === value} onChange={() => setField("priority", value)}/><span><strong>{PRIORITY_LABELS[value]}</strong></span></label>)}</div></fieldset>
           </section>
           {submitError && <div className="inline-alert error" role="alert"><AlertCircle/><span>{submitError}</span></div>}
           <footer className="onboarding-actions">
             <div><strong>{ready ? "후보를 찾을 준비가 됐습니다." : "필수 조건을 채워 주세요."}</strong><span>{ready ? `${form.district} · ${form.industry} · ${formatKrw(form.budget_krw)}` : "입력한 값은 분석 전 한 번 더 확인됩니다."}</span></div>
-            {step === "input" ? <button className="secondary-button" onClick={() => setStep("confirm")}>조건 검토하기</button> : <button className="primary-button" onClick={submit} disabled={submitting}>{submitting ? <><LoaderCircle className="spin"/> 후보를 찾는 중</> : <>이 조건으로 후보 찾기 <ArrowRight/></>}</button>}
+            {step === "input" ? <button type="button" className="review-button" onClick={() => setStep("confirm")}><span className="review-button-icon" aria-hidden="true"><ClipboardCheck/></span><span className="review-button-label"><small><b>2단계</b> 입력값 확인</small><strong>조건 검토하기</strong></span><span className="review-button-arrow" aria-hidden="true"><ArrowRight/></span></button> : <button className="primary-button" onClick={submit} disabled={submitting}>{submitting ? <><LoaderCircle className="spin"/> 후보를 찾는 중</> : <>이 조건으로 후보 찾기 <ArrowRight/></>}</button>}
           </footer>
         </section>
 

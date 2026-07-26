@@ -1,2 +1,2 @@
-import { Landing } from "@/components/Landing";
-export default function HomePage() { return <Landing />; }
+import { KbShell } from "@/components/kb/KbShell";
+export default function HomePage() { return <KbShell />; }

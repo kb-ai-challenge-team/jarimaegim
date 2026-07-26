@@ -212,12 +212,28 @@ class AIService:
             return {"message": "AI 설명 키가 아직 설정되지 않았습니다. 후보와 분석 화면의 저장된 공식 근거는 계속 확인할 수 있습니다.", "citations": [], "integration_status": "not_configured"}
         prompt = (
             "당신은 자리매김의 설명 도우미입니다. 새로운 숫자, 점수, 비용, 금융 자격을 만들지 마세요. "
-            "제공된 케이스 요약 안의 사실만 짧고 명확한 한국어로 설명하세요. 개인정보 입력을 요청하지 마세요.\n"
+            "제공된 케이스 요약 안의 사실만 짧고 명확한 한국어로 설명하세요. 개인정보 입력을 요청하지 마세요. "
+            "좁은 사이드 패널에 표시되므로 5문장 이내로 답하세요.\n"
             f"케이스: {case_summary}\n사용자 질문: {user_text}"
         )
         try:
-            response = await self.client.responses.create(model=self.settings.ai_chat_model, input=prompt, store=False, max_output_tokens=500)
+            response = await self._respond(prompt)
             text = response.output_text.strip()
-            return {"message": text or "설명 응답을 완료하지 못했습니다. 저장된 근거를 확인해 주세요.", "citations": [], "integration_status": "connected"}
+            if not text:
+                # Reasoning models spend the budget before emitting text; say so rather than looking generic.
+                return {"message": "설명이 길어져 응답을 완성하지 못했습니다. 질문을 더 좁혀 다시 물어봐 주세요. 저장된 근거는 그대로 확인할 수 있습니다.", "citations": [], "integration_status": "incomplete"}
+            return {"message": text, "citations": [], "integration_status": "connected"}
         except Exception:
             return {"message": "AI 설명 연결이 지연되고 있습니다. 저장된 분석과 공식 원문은 계속 사용할 수 있습니다.", "citations": [], "integration_status": "unavailable"}
+
+    async def _respond(self, prompt: str):
+        """Reasoning models need headroom beyond the reasoning pass; non-reasoning models reject `reasoning`."""
+        common = {"model": self.settings.ai_chat_model, "input": prompt, "store": False, "max_output_tokens": 2000}
+        try:
+            return await self.client.responses.create(**common, reasoning={"effort": "low"})
+        except TypeError:
+            return await self.client.responses.create(**common)
+        except Exception as exc:
+            if "reasoning" not in str(exc):
+                raise
+            return await self.client.responses.create(**common)

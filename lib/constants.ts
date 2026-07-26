@@ -35,6 +35,20 @@ export const PRIORITY_LABELS = {
   GROWTH: "성장"
 } as const;
 
+export const EVIDENCE_BADGES = {
+  A: "근거 A",
+  B: "근거 B",
+  C: "근거 C",
+  U: "근거 U"
+} as const;
+
+export const PROGRAM_CATEGORY_LABELS = {
+  GOVERNMENT: "정부지원",
+  POLICY_FUND: "정책자금",
+  GUARANTEE: "지역보증",
+  PRIVATE: "민간금융"
+} as const;
+
 export const EVIDENCE_LABELS = {
   A: "개별 이력 기반 생존 진단",
   B: "상권 위험 진단",

@@ -20,8 +20,6 @@
     "check:kakao-build-assets": "node scripts/check-kakao-sdk.mjs assets"
   },
   "dependencies": {
-    "@supabase/ssr": "0.12.3",
-    "@supabase/supabase-js": "2.110.7",
     "lucide-react": "1.25.0",
     "next": "16.2.10",
     "react": "19.2.7",

@@ -9,8 +9,6 @@ class Settings(BaseSettings):
     app_origin: str = "http://127.0.0.1:4173"
     supabase_url: str = ""
     supabase_service_role_key: str = ""
-    supabase_jwt_secret: str = ""
-    next_public_supabase_anon_key: str = ""
     next_public_kakao_map_js_key: str = ""
     anon_token_pepper: str = "development-only-change-before-deploy"
     anonymous_session_hours: int = 24
@@ -32,8 +30,6 @@ class Settings(BaseSettings):
     kstartup_api_url: str = ""
     finlife_api_url: str = ""
 
-    aws_region: str = "ap-northeast-2"
-    ses_from_email: str = ""
     privacy_rights_email: str = ""
     financial_application_enabled: bool = False
     consultation_transfer_enabled: bool = False

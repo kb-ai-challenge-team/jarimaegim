@@ -6,7 +6,6 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
-import httpx
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,11 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from .config import get_settings
 from .document_store import DocumentStore, render_case_pdf
-from .errors import APIError
 from .models import (AnalysisCreate, CaseCreate, CasePatch, CaseRecord, CostPlanCreate, DocumentCreate,
                      LocationSearch, MessageCreate, PrivacyRequestCreate, SessionCreate)
 from .repository import Repository, VersionError
-from .security import Actor, validate_supabase_jwt
 from .services import AIService, AnalysisService, CostService, IntegrationError, LocationService, OfficialSourceService
 
 settings = get_settings()
@@ -30,7 +27,7 @@ ai = AIService(settings)
 document_store = DocumentStore(settings.document_storage_dir)
 
 app = FastAPI(title="자리매김 API", version="1.0.0", docs_url="/api/v1/docs" if settings.app_env != "production" else None, redoc_url=None, openapi_url="/api/v1/openapi.json" if settings.app_env != "production" else None)
-app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "Idempotency-Key", "If-Match", "Last-Event-ID"])
+app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Idempotency-Key", "If-Match", "Last-Event-ID"])
 
 SEOUL_DISTRICTS = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"}
 
@@ -84,34 +81,6 @@ async def current_session(request: Request, td_anon: str | None = Cookie(default
     return session_id
 
 
-async def current_user(authorization: str | None = Header(default=None)) -> Actor:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, {"code": "AUTH_REQUIRED", "message": "로그인이 필요한 기능입니다."})
-    token = authorization.removeprefix("Bearer ").strip()
-    if not token:
-        raise HTTPException(401, {"code": "AUTH_REQUIRED", "message": "유효한 로그인 토큰이 필요합니다."})
-    try:
-        if settings.supabase_jwt_secret:
-            payload = validate_supabase_jwt(token, settings.supabase_jwt_secret, f"{settings.supabase_url.rstrip('/')}/auth/v1")
-        elif settings.supabase_url and settings.next_public_supabase_anon_key:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(f"{settings.supabase_url.rstrip('/')}/auth/v1/user", headers={"apikey": settings.next_public_supabase_anon_key, "Authorization": f"Bearer {token}"})
-            if response.status_code != 200:
-                raise HTTPException(401, {"code": "AUTH_REQUIRED", "message": "로그인 세션이 만료되었거나 유효하지 않습니다."})
-            user = response.json()
-            payload = {"sub": user.get("id"), "aal": user.get("aal"), "role": user.get("role", "authenticated")}
-        else:
-            raise HTTPException(503, {"code": "INTEGRATION_PENDING", "message": "로그인 검증 설정이 필요합니다."})
-    except APIError as exc:
-        raise HTTPException(exc.status_code, {"code": exc.code, "message": exc.message}) from exc
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(503, {"code": "UPSTREAM_UNAVAILABLE", "message": "로그인 제공자에 연결할 수 없습니다.", "retryable": True}) from exc
-    try:
-        return Actor("USER", UUID(str(payload["sub"])), payload.get("aal"), payload.get("role"))
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(401, {"code": "AUTH_REQUIRED", "message": "인증 주체가 올바르지 않습니다."}) from exc
-
-
 def owned_case(session_id: UUID, case_id: UUID) -> CaseRecord:
     case = repository.get_case(session_id, case_id)
     if not case:
@@ -119,9 +88,9 @@ def owned_case(session_id: UUID, case_id: UUID) -> CaseRecord:
     return case
 
 
-def owned_document(user: Actor, document_id: UUID) -> dict[str, Any]:
+def owned_document(session_id: UUID, document_id: UUID) -> dict[str, Any]:
     document = document_store.get(document_id)
-    if not document or document.get("owner_user_id") != str(user.id):
+    if not document or document.get("owner_session_id") != str(session_id):
         raise HTTPException(404, {"code": "NOT_FOUND", "message": "문서를 찾을 수 없습니다."})
     return document
 
@@ -142,14 +111,16 @@ async def integration_status():
         "bizinfo": bool(settings.bizinfo_api_key and settings.bizinfo_api_url),
         "kstartup": bool(settings.kstartup_api_key and settings.kstartup_api_url),
         "finlife": bool(settings.finlife_api_key and settings.finlife_api_url),
-        "ses": bool(settings.ses_from_email),
     }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled}}
 
 
 @app.post("/api/v1/sessions/anonymous", status_code=201)
-async def create_anonymous_session(payload: SessionCreate, response: Response):
+async def create_anonymous_session(payload: SessionCreate, response: Response, td_anon: str | None = Cookie(default=None), host_anon: str | None = Cookie(default=None, alias="__Host-td_anon")):
     if not payload.retention_notice_accepted:
         raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "유한 보유기간 고지를 확인해야 합니다."})
+    existing_token = host_anon or td_anon
+    if existing_token and repository.verify_session(token_hash(existing_token)):
+        raise HTTPException(409, {"code": "SESSION_EXISTS", "message": "현재 익명 세션을 계속 사용합니다."})
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(UTC) + timedelta(hours=settings.anonymous_session_hours)
     session_id = repository.create_session(token_hash(token), expires_at)
@@ -246,7 +217,7 @@ async def create_message(case_id: UUID, payload: MessageCreate, session_id: UUID
 
 
 @app.post("/api/v1/documents", status_code=201)
-async def create_document(payload: DocumentCreate, session_id: UUID = Depends(current_session), user: Actor = Depends(current_user)):
+async def create_document(payload: DocumentCreate, session_id: UUID = Depends(current_session)):
     case = owned_case(session_id, payload.case_id)
     if not payload.confirmed:
         raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "포함 정보를 확인한 뒤 문서를 생성해 주세요."})
@@ -254,37 +225,28 @@ async def create_document(payload: DocumentCreate, session_id: UUID = Depends(cu
     descriptor = {"document_id": str(document_id), "created_at": datetime.now(UTC).isoformat(), "template": payload.template}
     try:
         pdf = await asyncio.to_thread(render_case_pdf, case.model_dump(mode="json"), descriptor)
-        document = document_store.save(owner_user_id=user.id, case_id=payload.case_id, template=payload.template, pdf=pdf, document_id=document_id)
+        document = document_store.save(owner_session_id=session_id, case_id=payload.case_id, template=payload.template, pdf=pdf, document_id=document_id)
     except OSError as exc:
         raise HTTPException(500, {"code": "DOCUMENT_STORAGE_FAILED", "message": "PDF를 안전하게 저장하지 못했습니다."}) from exc
-    return {**document, "message": "PDF가 준비되었습니다. 다운로드 버튼을 눌러 저장해 주세요."}
+    return {**document, "message": "PDF가 준비되었습니다. 현재 익명 세션에서 다운로드할 수 있습니다."}
 
 
 @app.get("/api/v1/documents/{document_id}")
-async def get_document(document_id: UUID, user: Actor = Depends(current_user)):
-    document = owned_document(user, document_id)
+async def get_document(document_id: UUID, response: Response, session_id: UUID = Depends(current_session)):
+    document = owned_document(session_id, document_id)
+    response.headers["Cache-Control"] = "private, no-store"
     return {**document, "message": "PDF가 준비되었습니다."}
 
 
 @app.get("/api/v1/documents/{document_id}/download")
-async def download_document(document_id: UUID, user: Actor = Depends(current_user)):
-    document = owned_document(user, document_id)
+async def download_document(document_id: UUID, session_id: UUID = Depends(current_session)):
+    document = owned_document(session_id, document_id)
     path = document_store.pdf_path(document_id)
     if not path:
         raise HTTPException(404, {"code": "NOT_FOUND", "message": "PDF 파일을 찾을 수 없습니다."})
-    return FileResponse(path, media_type="application/pdf", filename=f"jarimaegim-{document['template']}.pdf")
+    return FileResponse(path, media_type="application/pdf", filename=f"jarimaegim-{document['template']}.pdf", headers={"Cache-Control": "private, no-store"})
 
 
 @app.post("/api/v1/privacy/requests", status_code=202)
 async def create_privacy_request(payload: PrivacyRequestCreate, session_id: UUID = Depends(current_session)):
     return {"request_id": str(uuid4()), "status": "RECEIVED", "request_type": payload.request_type, "subject": "ANONYMOUS", "session_id": str(session_id)}
-
-
-@app.get("/api/v1/notifications")
-async def list_notifications(user: Actor = Depends(current_user)):
-    return {"items": [], "next_cursor": None, "user_id": str(user.id)}
-
-
-@app.get("/api/v1/notification-settings")
-async def notification_settings(user: Actor = Depends(current_user)):
-    return {"version": 1, "settings": {"in_app": True, "email_program_deadline": False, "email_document_ready": False}, "user_id": str(user.id)}

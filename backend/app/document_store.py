@@ -14,11 +14,11 @@ class DocumentStore:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.root, 0o700)
 
-    def save(self, *, owner_user_id: UUID, case_id: UUID, template: str, pdf: bytes, document_id: UUID | None = None) -> dict[str, Any]:
+    def save(self, *, owner_session_id: UUID, case_id: UUID, template: str, pdf: bytes, document_id: UUID | None = None) -> dict[str, Any]:
         document_id = document_id or uuid4()
         created_at = datetime.now(UTC).isoformat()
         metadata = {
-            "document_id": str(document_id), "owner_user_id": str(owner_user_id),
+            "document_id": str(document_id), "owner_session_id": str(owner_session_id),
             "case_id": str(case_id), "template": template, "status": "ready",
             "created_at": created_at, "updated_at": created_at,
         }

@@ -173,5 +173,16 @@ export interface IntegrationStatus {
   bizinfo: boolean;
   kstartup: boolean;
   finlife: boolean;
-  ses: boolean;
+}
+
+export interface FeatureFlags {
+  financial_application: boolean;
+  consultation_transfer: boolean;
+  mydata: boolean;
+}
+
+export interface StatusResponse {
+  mode: string;
+  integrations: IntegrationStatus;
+  feature_flags: FeatureFlags;
 }
