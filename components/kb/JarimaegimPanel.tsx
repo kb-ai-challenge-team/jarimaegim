@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, LoaderCircle, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, LoaderCircle, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
 import type { AnalysisResult, CaseInput } from "@/lib/types";
@@ -55,7 +55,7 @@ function AskStep({ flow }: { flow: Jarimaegim }) {
 }
 
 function ConfirmStep({ flow }: { flow: Jarimaegim }) {
-  const { form, parsedKeys, setField } = flow;
+  const { form, bandForm, parsedKeys, setField, setBandField } = flow;
   const ready = Boolean(form.industry.trim()) && form.budget_krw > 0 && form.equity_krw >= 0;
   const mark = (key: keyof CaseInput) => parsedKeys.has(key) ? "parsed" : undefined;
   return <div className="kb-step">
@@ -65,12 +65,16 @@ function ConfirmStep({ flow }: { flow: Jarimaegim }) {
       <label className="kb-field" data-mark={mark("district")}><span>자치구</span><select value={form.district} onChange={(event) => setField("district", event.target.value)}>{SEOUL_DISTRICTS.map((district) => <option key={district} value={district}>{district}</option>)}</select></label>
       <label className="kb-field" data-mark={mark("budget_krw")}><span>총예산</span><input type="number" min="0" step="1000000" inputMode="numeric" value={form.budget_krw || ""} onChange={(event) => setField("budget_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{form.budget_krw > 0 ? formatKrw(form.budget_krw) : "원"}</em></label>
       <label className="kb-field" data-mark={mark("equity_krw")}><span>자기자본</span><input type="number" min="0" step="1000000" inputMode="numeric" value={form.equity_krw || ""} onChange={(event) => setField("equity_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{form.equity_krw > 0 ? formatKrw(form.equity_krw) : "원"}</em></label>
+      <label className="kb-field"><span>희망 평수</span><input type="number" min="0" step="1" inputMode="numeric" value={bandForm.area_pyeong || ""} onChange={(event) => setBandField("area_pyeong", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{bandForm.area_pyeong > 0 ? `${bandForm.area_pyeong}평` : "평"}</em></label>
+      <label className="kb-field"><span>희망 보증금</span><input type="number" min="0" step="1000000" inputMode="numeric" value={bandForm.deposit_krw || ""} onChange={(event) => setBandField("deposit_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{bandForm.deposit_krw > 0 ? formatKrw(bandForm.deposit_krw) : "원"}</em></label>
+      <label className="kb-field"><span>희망 월세</span><input type="number" min="0" step="100000" inputMode="numeric" value={bandForm.monthly_rent_krw || ""} onChange={(event) => setBandField("monthly_rent_krw", Math.max(0, Number(event.target.value)))} placeholder="0" /><em>{bandForm.monthly_rent_krw > 0 ? formatKrw(bandForm.monthly_rent_krw) : "원"}</em></label>
     </div>
     <ChipRow label="사업단계" mark={mark("business_stage")} value={form.business_stage} options={STAGE_LABELS} onSelect={(value) => setField("business_stage", value as CaseInput["business_stage"])} />
     <ChipRow label="창업형태" mark={mark("startup_type")} value={form.startup_type} options={TYPE_LABELS} onSelect={(value) => setField("startup_type", value as CaseInput["startup_type"])} />
     <ChipRow label="우선순위" mark={mark("priority")} value={form.priority} options={PRIORITY_LABELS} onSelect={(value) => setField("priority", value as CaseInput["priority"])} />
     <button className="kb-primary" onClick={flow.start} disabled={!ready || flow.busy === "case"}>{flow.busy === "case" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}이 조건으로 입지 찾기</button>
     {!ready && <p className="kb-note"><CircleHelp aria-hidden="true" />업종과 총예산을 채워야 시작할 수 있습니다.</p>}
+    <p className="kb-note"><Info aria-hidden="true" />임대 조건은 상업용 임대료 공개 원천이 없어 직접 입력받습니다. 비우면 조달 밴드를 계산하지 않고 대기 상태로 둡니다.</p>
   </div>;
 }
 
