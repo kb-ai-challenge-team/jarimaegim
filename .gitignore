@@ -19,3 +19,4 @@ tsconfig.tsbuildinfo
 *.pem
 *.pfx
 scripts/.tmp-*
+pipeline/raw/
