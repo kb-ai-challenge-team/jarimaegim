@@ -15,8 +15,9 @@ page.on("response", response => {
   if (!expectedAuthGate) errors.push(`http:${response.status()}:${response.url()}`);
 });
 
-await page.goto(base, { waitUntil: "networkidle" });
-await page.getByRole("link", { name: "처음 창업을 준비해요" }).click();
+// 랜딩(/)은 KB 셸로 교체되었으므로 조건 입력 흐름의 실제 진입점인 /start에서 시작한다.
+await page.goto(`${base}/start`, { waitUntil: "networkidle" });
+await page.getByRole("link", { name: "처음 창업 조건 입력" }).click();
 await page.getByLabel("업종 필수").fill("카페");
 const numericInputs = page.locator('input[type="number"]');
 await numericInputs.nth(0).fill("100000000");
@@ -54,6 +55,18 @@ await page.getByRole("button", { name: "자금", exact: true }).first().click();
 await page.waitForSelector(".plan-page");
 const funding = { emptySafeState: await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible() };
 
+const caseId = workspaceUrl.match(/\/cases\/([0-9a-f-]{36})/)?.[1];
+const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
+  data: { case_id: caseId, industry: "카페", area_pyeong: 15, deposit_krw: 100000000, monthly_rent_krw: 2500000,
+          monthly_maintenance_krw: 300000, key_money_krw: 0, fitout_krw: null, equity_krw: 100000000,
+          existing_debt_krw: 0, other_monthly_fixed_krw: 1000000 }
+});
+const bandsBody = await bandsResponse.json();
+const bands = { pendingSafeState: bandsBody.status === "integration_pending" && bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0 };
+
+const statusBody = await (await page.request.get(`${base}/api/v1/status`)).json();
+const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis => axis.enabled || Boolean(axis.disabled_reason)) };
+
 await page.getByRole("button", { name: "계획" }).hover();
 await page.getByRole("button", { name: "문서", exact: true }).click();
 await page.getByRole("button", { name: "PDF 준비하기" }).first().click();
@@ -66,7 +79,7 @@ await page.locator(".chat-composer button").click();
 await page.waitForFunction(() => document.querySelectorAll(".chat-message").length >= 3);
 const copilot = { noKeyFallback: (await page.locator(".chat-message").last().textContent()).includes("키") };
 
-const result = { onboarding, cost, funding, document, copilot, errors };
+const result = { onboarding, cost, funding, bands, axes, document, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.emptySafeState || !document.authGate || !copilot.noKeyFallback) process.exitCode = 1;
+if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.emptySafeState || !bands.pendingSafeState || !axes.disabledCarryReason || !document.authGate || !copilot.noKeyFallback) process.exitCode = 1;
