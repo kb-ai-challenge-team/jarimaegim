@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, formatKrw } from "./constants";
-import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, CostItem, CostPlan, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
-export type FlowStep = "ask" | "confirm" | "recommend" | "evidence" | "cost" | "funding";
+// 순서는 조건 → 자금 → 입지 → 근거 → 처방. 금융이 입지보다 먼저 도는 것이 단계 순서에 드러난다.
+export type FlowStep = "ask" | "confirm" | "bands" | "recommend" | "evidence" | "prescribe";
 export type BandForm = typeof DEFAULT_BAND_FORM;
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
 export interface ChatMessage { role: "assistant" | "user"; text: string; citation?: string }
@@ -75,7 +76,6 @@ export function useJarimaegim() {
   const [catalogState, setCatalogState] = useState<LocationState>("idle");
   const [kbProducts, setKbProducts] = useState<KbProduct[]>([]);
   const [kbState, setKbState] = useState<LocationState>("idle");
-  const [costPlan, setCostPlan] = useState<CostPlan | null>(null);
   const [bandForm, setBandForm] = useState<BandForm>(DEFAULT_BAND_FORM);
   const [bands, setBands] = useState<FundingBandResult | null>(null);
   const [bandState, setBandState] = useState<LocationState>("idle");
@@ -190,7 +190,7 @@ export function useJarimaegim() {
   }, []);
 
   const start = useCallback(async () => {
-    setError(""); setBusy("case"); setStep("recommend");
+    setError(""); setBusy("case"); setStep("bands");
     beginTrace(planTrace(form, "full"));
     try {
       await ensureSession();
@@ -235,14 +235,6 @@ export function useJarimaegim() {
     } finally { setBusy(""); }
   }, [analysis, caseData]);
 
-  const saveCost = useCallback(async (items: CostItem[]) => {
-    if (!caseData) return;
-    setBusy("cost");
-    try { setCostPlan(await api.createCostPlan(caseData.id, items)); }
-    catch (err) { setError(err instanceof ApiError ? err.message : "비용을 계산하지 못했습니다."); }
-    finally { setBusy(""); }
-  }, [caseData]);
-
   /** 비용 단계에서 필요자금 내역을 고친 뒤 다시 계산한다. */
   const recomputeBands = useCallback(async () => {
     if (!caseData) return;
@@ -280,8 +272,8 @@ export function useJarimaegim() {
     }
   }, [ensureSession]);
 
-  useEffect(() => { if (step === "funding" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
-  useEffect(() => { if (step === "funding" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
+  useEffect(() => { if (step === "prescribe" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
+  useEffect(() => { if (step === "prescribe" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
 
   /** The 정책 tab reads the same official notices without needing a case. */
   const loadCatalog = useCallback(async () => {
@@ -314,15 +306,15 @@ export function useJarimaegim() {
   const reset = useCallback(() => {
     setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
     setCandidates([]); setLocationState("idle"); setFocused(null); setAnalysis({});
-    setPrograms([]); setProgramState("idle"); setCostPlan(null); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
+    setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
     setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle"); setTraceOpen(false);
   }, []);
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
     bandForm, setBandField, bands, bandState, recomputeBands,
-    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, costPlan, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
-    start, retrySearch, runAnalysis, saveCost, sendChat, loadCatalog, loadKbProducts, reset, dismissTrace
+    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
+    start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, reset, dismissTrace
   };
 }
 

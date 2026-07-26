@@ -48,30 +48,31 @@ const bands = {
   noInventedTradeAreaCount: bandsBody.bands.every(line => line.trade_area_count === null)
 };
 
-await panel.locator(".kb-candidates, .kb-empty").first().waitFor({ timeout: 30000 });
-const location = { rendered: true };
-
-// StepNav 의 다음 버튼을 밴드 화면이 나올 때까지 누른다 (입지 → 근거 → 비용)
-for (let hop = 0; hop < 4; hop += 1) {
-  if (await panel.locator(".kb-band-form").isVisible().catch(() => false)) break;
-  const next = panel.locator(".kb-stepnav .kb-primary-sm");
-  if (await next.count() === 0) throw new Error("StepNav 다음 버튼을 찾지 못했습니다.");
-  await next.click();
-  await page.waitForTimeout(500);
-}
-await panel.locator(".kb-band-form").waitFor({ timeout: 15000 });
+// 조건 확정 직후 착지하는 단계는 자금(밴드)이다. 금융이 입지보다 먼저 온다.
+await panel.locator(".kb-band-form").waitFor({ timeout: 30000 });
+const landedOnBands = (await panel.locator('.kb-stepper li[data-state="current"]').innerText()).includes("자금");
 const cost = {
+  landsFirst: landedOnBands,
   bandScreen: true,
   // 파라미터 미등록이면 누락 키가 화면에 보여야 한다 (부록 A 불변조건 1)
   pendingShown: paramsRegistered ? true : await panel.locator(".kb-missing-params li").count() > 0,
   bandTableShown: paramsRegistered ? await panel.locator(".kb-band-table").isVisible() : true
 };
 
-// 자금 — 공고 조회 응답을 기다린다. 고정 대기로는 로딩 중에 판정해 양쪽 분기가 모두 어긋난다.
-const next = panel.locator(".kb-stepnav .kb-primary-sm");
+// 입지 — 자금 다음 단계
+await panel.locator(".kb-stepnav .kb-primary-sm").click();
+await panel.locator(".kb-candidates, .kb-empty").first().waitFor({ timeout: 30000 });
+const location = { rendered: true };
+
+// 처방 — 근거를 지나 마지막 단계. 공고 조회 응답을 기다린다.
 const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
-if (await next.count() > 0) { await next.click(); }
-await panel.locator(".kb-callout").first().waitFor({ timeout: 15000 });
+for (let hop = 0; hop < 3; hop += 1) {
+  if (await panel.locator(".kb-callout").first().isVisible().catch(() => false)) break;
+  const next = panel.locator(".kb-stepnav .kb-primary-sm");
+  if (await next.count() === 0) throw new Error("StepNav 다음 버튼을 찾지 못했습니다.");
+  await next.click();
+  await page.waitForTimeout(600);
+}
 await programsResponse;
 await page.waitForFunction(() => {
   const root = window.document.querySelector(".kb-ai-panel");
@@ -96,9 +97,9 @@ const funding = {
 const result = { stepper, lease, bands, location, cost, funding, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-const expected = ["상황", "입지", "근거", "비용", "자금"];
+const expected = ["조건", "자금", "입지", "근거", "처방"];
 const stepperOk = expected.every((label, index) => (stepper.labels[index] || "").includes(label));
 if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed || !bands.safeState
-  || !bands.noInventedTradeAreaCount || !location.rendered || !cost.bandScreen || !cost.pendingShown
+  || !bands.noInventedTradeAreaCount || !location.rendered || !cost.landsFirst || !cost.bandScreen || !cost.pendingShown
   || !cost.bandTableShown || !funding.safeState || !funding.subsidyGapDisclosed
   || !axes.disabledCarryReason) process.exitCode = 1;
