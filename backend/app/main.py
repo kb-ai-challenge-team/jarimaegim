@@ -13,8 +13,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from .config import get_settings
 from .document_store import DocumentStore, render_case_pdf
-from .models import (AnalysisCreate, CaseCreate, CasePatch, CaseRecord, CostPlanCreate, DocumentCreate,
-                     LocationSearch, MessageCreate, PrivacyRequestCreate, SessionCreate)
+from .funding import compute_bands
+from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
+                     DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
+                     PrivacyRequestCreate, Provenance, SessionCreate)
+from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .services import AIService, AnalysisService, CostService, IntegrationError, LocationService, OfficialSourceService
 
@@ -25,6 +28,7 @@ analyses = AnalysisService(locations)
 official_sources = OfficialSourceService(settings)
 ai = AIService(settings)
 document_store = DocumentStore(settings.document_storage_dir)
+policy_params = PolicyParams.load(settings.policy_params_path)
 
 app = FastAPI(title="자리매김 API", version="1.0.0", docs_url="/api/v1/docs" if settings.app_env != "production" else None, redoc_url=None, openapi_url="/api/v1/openapi.json" if settings.app_env != "production" else None)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Idempotency-Key", "If-Match", "Last-Event-ID"])
@@ -100,6 +104,34 @@ async def healthz():
     return {"status": "ok"}
 
 
+def analysis_axes() -> dict[str, dict[str, Any]]:
+    """각 분석 축의 가동 여부 (설계 스펙 §7 가드 3).
+
+    축이 켜지려면 원천이 설정되어 있고 **그 축을 계산하는 코드가 존재해야** 한다.
+    설정만 있고 구현이 없는 축을 켜면 화면이 "판정했다"고 말하게 되므로 켜지 않는다.
+    """
+    finlife = bool(settings.finlife_api_key and (settings.finlife_api_url or settings.finlife_api_base_url))
+    subsidy = bool((settings.bizinfo_api_key and settings.bizinfo_api_url)
+                   or (settings.kstartup_api_key and settings.kstartup_api_url))
+    trade_area_pending = "서울 상권분석 연동 미구현 — 원천 설정 여부와 무관하게 판정하지 않습니다"
+    return {
+        "finance.band": {"enabled": True, "disabled_reason": None,
+                         "note": "제도 파라미터 미등록 시 integration_pending을 반환합니다"},
+        "finance.stress": {"enabled": True, "disabled_reason": None, "note": None},
+        "finance.kb_products": {"enabled": finlife,
+                                "disabled_reason": None if finlife else "금융상품 공시 endpoint 미검증",
+                                "note": "finlife는 소비자 대출만 공시합니다. 창업자금 상품 정보는 연동 대기입니다"},
+        "finance.subsidy": {"enabled": subsidy,
+                            "disabled_reason": None if subsidy else "지원사업 endpoint 미검증",
+                            "note": "조달선 상향분 반영은 미구현입니다"},
+        "location.demand": {"enabled": False, "disabled_reason": trade_area_pending, "note": None},
+        "location.competition": {"enabled": False, "disabled_reason": trade_area_pending, "note": None},
+        "location.viability": {"enabled": False, "disabled_reason": trade_area_pending, "note": None},
+        "location.survival": {"enabled": False, "disabled_reason": "인허가 이력 코호트 미구축", "note": "유일한 A등급 경로입니다"},
+        "timing.policy": {"enabled": False, "disabled_reason": "개발·정책 일정 원천 미확보 — 일정 확인 전 판단 유보", "note": None},
+    }
+
+
 @app.get("/api/v1/status")
 async def integration_status():
     return {"mode": settings.app_env, "integrations": {
@@ -111,7 +143,8 @@ async def integration_status():
         "bizinfo": bool(settings.bizinfo_api_key and settings.bizinfo_api_url),
         "kstartup": bool(settings.kstartup_api_key and settings.kstartup_api_url),
         "finlife": bool(settings.finlife_api_key and settings.finlife_api_url),
-    }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled}}
+    }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled},
+        "axes": analysis_axes()}
 
 
 @app.post("/api/v1/sessions/anonymous", status_code=201)
@@ -191,6 +224,40 @@ async def get_analysis(analysis_id: UUID, session_id: UUID = Depends(current_ses
 async def create_cost_plan(payload: CostPlanCreate, session_id: UUID = Depends(current_session)):
     case = owned_case(session_id, payload.case_id)
     return CostService.calculate(payload, case.inputs.equity_krw)
+
+
+@app.post("/api/v1/funding-bands", response_model=FundingBandResult)
+async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Depends(current_session)):
+    owned_case(session_id, payload.case_id)
+    missing = policy_params.missing(payload.industry)
+    if missing:
+        return FundingBandResult(status="integration_pending", missing_params=missing,
+                                 message="조달 밴드 계산에 필요한 제도·업종 파라미터가 아직 등록되지 않았습니다. 등록 전에는 추정하지 않습니다.")
+    fields = payload.model_dump(exclude={"case_id"})
+    try:
+        computed = compute_bands(policy_params, **fields)
+    except ValueError as error:
+        raise HTTPException(422, {"code": "VALIDATION_FAILED", "message": f"업종 파라미터로는 손익분기를 계산할 수 없습니다: {error}"})
+    first = computed["bands"][0]
+    assumptions = [f"원가율·인건비율·평당 인테리어 단가는 등록된 업종 파라미터를 사용했습니다 (출처: {', '.join(policy_params.sources(payload.industry)) or '미기재'})",
+                   f"운전자금 {int(policy_params.value('working_capital.months'))}개월분을 필요자금에 포함했습니다",
+                   "인테리어비는 평수 기준 추정값입니다" if computed["fitout_is_estimate"] else "인테리어비는 사용자 입력값입니다",
+                   "최대 조달선은 신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다"]
+    provenance = Provenance(source_name="자리매김 조달 밴드 계산", industry_scope=payload.industry,
+                            spatial_unit="사용자 입력 조건", source_as_of=policy_params.updated_at,
+                            confidence="LOW",
+                            limitations=["상권별 임대 수준 데이터가 없어 밴드별 진입 가능 상권 수는 제공하지 않습니다",
+                                         "지원사업·창업자금 상품 반영분은 연동 대기 상태입니다",
+                                         "제도 파라미터는 실측 검증 전 등록값입니다"])
+    return FundingBandResult(status="computed", required_capital_krw=computed["required_capital_krw"],
+                             required_capital_band=computed["required_capital_band"],
+                             bands=[BandLine(**band) for band in computed["bands"]],
+                             break_even=BreakEven(monthly_fixed_cost_krw=first["monthly_fixed_cost_krw"],
+                                                  target_monthly_revenue_krw=first["target_monthly_revenue_krw"],
+                                                  target_daily_revenue_krw=first["target_daily_revenue_krw"],
+                                                  contribution_margin_ratio=computed["contribution_margin_ratio"],
+                                                  assumptions=assumptions),
+                             provenance=provenance)
 
 
 @app.get("/api/v1/programs")

@@ -187,3 +187,83 @@ class DocumentCreate(BaseModel):
 class PrivacyRequestCreate(BaseModel):
     request_type: Literal["ACCESS", "RECTIFY", "ERASE", "RESTRICT", "WITHDRAW_CONSENT"]
     verification_method: Literal["ACCOUNT_REAUTH", "ANON_COOKIE", "EMAIL_CHALLENGE"]
+
+
+class FundingBand(StrEnum):
+    EQUITY_ONLY = "EQUITY_ONLY"
+    RECOMMENDED = "RECOMMENDED"
+    MAXIMUM = "MAXIMUM"
+    OUT_OF_RANGE = "OUT_OF_RANGE"
+
+
+class FundingBandInput(BaseModel):
+    case_id: UUID
+    industry: str = Field(min_length=1, max_length=120)
+    area_pyeong: float = Field(gt=0, le=500)
+    deposit_krw: int = Field(ge=0, le=100_000_000_000)
+    monthly_rent_krw: int = Field(ge=0, le=1_000_000_000)
+    monthly_maintenance_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+    key_money_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+    fitout_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    equity_krw: int = Field(ge=0, le=100_000_000_000)
+    existing_debt_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+    other_monthly_fixed_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+
+
+class BandLine(BaseModel):
+    band: FundingBand
+    ceiling_krw: int = Field(ge=0)
+    loan_krw: int = Field(ge=0)
+    monthly_repayment_krw: int = Field(ge=0)
+    monthly_fixed_cost_krw: int = Field(ge=0)
+    target_monthly_revenue_krw: int = Field(ge=0)
+    target_daily_revenue_krw: int = Field(ge=0)
+    runway_months: int | None = None
+    stress_pass: bool
+    repayment_burden_ratio: float = Field(ge=0)
+    subsidy_uplift_krw: int = Field(default=0, ge=0)
+    is_estimate: bool
+    trade_area_count: int | None = None
+
+    @model_validator(mode="after")
+    def band_contract(self):
+        if self.band == FundingBand.MAXIMUM and not self.is_estimate:
+            raise ValueError("MAXIMUM band is a pre-screening estimate and must set is_estimate")
+        if self.loan_krw > 0 and self.monthly_repayment_krw <= 0:
+            raise ValueError("a loan requires a positive monthly repayment")
+        if self.loan_krw == 0 and self.monthly_repayment_krw != 0:
+            raise ValueError("no loan must not carry a repayment")
+        return self
+
+
+class BreakEven(BaseModel):
+    monthly_fixed_cost_krw: int = Field(ge=0)
+    target_monthly_revenue_krw: int = Field(ge=0)
+    target_daily_revenue_krw: int = Field(ge=0)
+    contribution_margin_ratio: float = Field(gt=0, lt=1)
+    assumptions: list[str] = Field(min_length=1)
+
+
+class FundingBandResult(BaseModel):
+    status: Literal["computed", "integration_pending"]
+    required_capital_krw: int | None = None
+    required_capital_band: FundingBand | None = None
+    bands: list[BandLine] = Field(default_factory=list)
+    break_even: BreakEven | None = None
+    missing_params: list[str] = Field(default_factory=list)
+    message: str | None = None
+    provenance: Provenance | None = None
+
+    @model_validator(mode="after")
+    def result_contract(self):
+        if self.status == "computed":
+            if not self.bands or self.break_even is None or self.required_capital_krw is None:
+                raise ValueError("computed result requires bands, break_even and required capital")
+            if self.missing_params:
+                raise ValueError("computed result must not report missing params")
+        else:
+            if not self.missing_params:
+                raise ValueError("integration_pending result requires missing_params")
+            if self.bands or self.break_even is not None:
+                raise ValueError("integration_pending result must not contain computed values")
+        return self
