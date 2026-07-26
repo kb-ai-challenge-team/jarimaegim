@@ -53,7 +53,18 @@ const cost = { calculated: costSummary.includes("소요자금 범위") && costSu
 
 await page.getByRole("button", { name: "자금", exact: true }).first().click();
 await page.waitForSelector(".plan-page");
-const funding = { emptySafeState: await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible() };
+// 공고 조회가 끝난 뒤에 판정한다. 즉시 검사하면 fetch 전의 빈 상태를 보고 통과해 버린다.
+await page.waitForTimeout(5000);
+const programItems = await page.locator(".program-list article").all();
+let programsWithSource = 0;
+for (const item of programItems) if (await item.locator('a[href^="http"]').count() > 0) programsWithSource += 1;
+const funding = {
+  programCount: programItems.length,
+  // 공고가 있으면 모두 공식 원문 링크를 가져야 하고, 없으면 빈 상태가 보여야 한다
+  safeState: programItems.length > 0
+    ? programsWithSource === programItems.length
+    : await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible().catch(() => false)
+};
 
 const caseId = workspaceUrl.match(/\/cases\/([0-9a-f-]{36})/)?.[1];
 const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
@@ -100,4 +111,4 @@ const copilot = {
 const result = { onboarding, cost, funding, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.emptySafeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;
+if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;
