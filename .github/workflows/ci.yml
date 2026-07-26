@@ -1,0 +1,117 @@
+name: CI
+
+# 명세 §13.6의 "lint/typecheck/unit → dependency scan → frontend build → backend tests" 구간.
+#
+# 검증만 한다. 배포는 scripts/deploy.sh가 로컬에서 빌드해 산출물만 EC2로 보낸다.
+# 서버(t3.small · 2GB · 스왑 없음)에서 next build를 돌리면 서비스 중 메모리 스파이크가
+# sshd가 fork하지 못하는 잠김으로 끝나기 때문이다. 그래서 이 저장소에는 배포 워크플로가 없다.
+#
+# deploy.sh도 같은 검사를 배포 직전에 돌린다. 여기서 한 번 더 도는 이유는 PR 단계에서,
+# 즉 누군가 배포를 시도하기 전에 깨진 것을 잡기 위해서다.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: 프론트엔드 (lint · typecheck · build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Kakao 도구 단위 테스트
+        run: npm run test:kakao-tools
+
+      # 빌드는 키 없이 돈다. 키가 필요해지는 순간이 있다면 그건 부록 A 위반(빌드 타임 데이터 주입)이다.
+      - name: Build
+        run: npm run build
+
+  api:
+    name: 백엔드 (compile · pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # 서버 venv와 같은 3.12. requirements가 StrEnum·datetime.UTC를 쓰므로 3.11 이하는 못 쓴다.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - run: pip install -r backend/requirements.txt
+
+      - name: Compile
+        run: python -m compileall -q backend/app
+
+      # .env 없이 돌린다 — 통합 미연결 상태의 안전 동작이 곧 검증 대상이다.
+      - name: pytest
+        working-directory: backend
+        run: python -m pytest -q
+
+  audit:
+    name: 의존성 스캔
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      # 운영에 실제로 실려 나가는 의존성만 본다. dev 전용(eslint 계열 등)은 배포 위험이 아니다.
+      # high 이상이면 파이프라인을 세운다 — 현재 운영 의존성 취약점은 0건이므로 지킬 수 있는 기준이다.
+      # 깨지면 낮추지 말고 원인을 고칠 것. 게이트를 낮추는 순간 이 잡은 의미가 없어진다.
+      - name: npm audit (production)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          npm audit --omit=dev --json > audit.json 2>/dev/null || true
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          try:
+              data = json.load(open("audit.json"))
+          except Exception:
+              print("### 의존성 스캔\n\n결과를 파싱하지 못했습니다."); raise SystemExit
+          counts = data.get("metadata", {}).get("vulnerabilities", {})
+          print("### 의존성 스캔 (production only)\n")
+          print(f"high {counts.get('high', 0)} · critical {counts.get('critical', 0)} · moderate {counts.get('moderate', 0)}\n")
+          rows = [(n, v) for n, v in sorted(data.get("vulnerabilities", {}).items())
+                  if v.get("severity") in ("high", "critical")]
+          if rows:
+              print("| 패키지 | 등급 | 수정 버전 |")
+              print("| --- | --- | --- |")
+              for name, v in rows:
+                  fix = v.get("fixAvailable")
+                  fix = fix.get("version") if isinstance(fix, dict) else ("있음" if fix else "없음")
+                  print(f"| `{name}` | {v['severity']} | {fix} |")
+          PY
