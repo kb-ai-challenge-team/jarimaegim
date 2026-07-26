@@ -1478,7 +1478,7 @@ git commit -m "feat(pipeline): synthesize labelled demo listings from the rent d
 - [ ] **Step 1: 전체 테스트 실행**
 
 Run: `npm run test:pipeline`
-Expected: PASS — quantile 8 + rng 7 + raw-record 7 + distribution 6 + synthesize 12 = 40 tests
+Expected: PASS — quantile 13 + rng 7 + raw-record 7 + distribution 6 + synthesize 12 = 45 tests
 
 - [ ] **Step 2: 파이썬 테스트 실행**
 
@@ -1540,7 +1540,7 @@ git commit -m "docs(pipeline): record the one-shot collection run"
 
 - `data/listings.seoul.json`에 5개 구 × 55건 = 275건이 있고 모든 행에 `listing_kind: "DEMO_SYNTHETIC"`이 있다
 - `npm run pipeline:verify`가 종료 코드 0으로 통과한다
-- `npm run test:pipeline`이 40개 테스트를 통과한다
+- `npm run test:pipeline`이 45개 테스트를 통과한다
 - `pipeline/raw/`가 git에 올라가지 않았다
 - 어떤 결과 행도 좌표가 원본에서 갖고 있던 면적을 그대로 쓰지 않는다 (테스트로 고정)
 
