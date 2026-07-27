@@ -1,6 +1,11 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, listings_service
+
+# Derived, not hard-coded: coverage grows, and a test that pins the count to a literal
+# goes stale every time a district is added.
+COVERED = sorted(listings_service.covered_districts())
+UNCOVERED = "관악구"
 
 
 def test_summary_needs_no_session():
@@ -8,7 +13,7 @@ def test_summary_needs_no_session():
         response = client.get("/api/v1/listings/summary")
         assert response.status_code == 200, response.text
         body = response.json()
-        assert len(body["districts"]) == 5
+        assert len(body["districts"]) == len(COVERED)
         assert all(entry["count"] > 0 for entry in body["districts"])
         assert "Set-Cookie" not in response.headers
 
@@ -35,10 +40,10 @@ def test_listings_for_a_covered_district_need_no_session():
 
 def test_listings_for_an_uncovered_district_explain_the_coverage():
     with TestClient(app) as client:
-        body = client.get("/api/v1/listings", params={"district": "노원구"}).json()
+        body = client.get("/api/v1/listings", params={"district": UNCOVERED}).json()
         assert body["candidates"] == []
         assert body["status"] == "empty"
-        assert "강남구" in body["message"]
+        assert COVERED[0] in body["message"]
 
 
 def test_listings_reject_a_district_outside_seoul():

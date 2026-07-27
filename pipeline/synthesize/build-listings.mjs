@@ -5,6 +5,9 @@ import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, ASSUMED_MAINTENANCE_FEE_RATE, LIS
 import { sampleFromQuantiles } from "../lib/quantile.mjs";
 import { createRng, shuffle } from "../lib/rng.mjs";
 
+/** Rent draws stop at p75; see the note at the call site. */
+const RENT_UPPER_KNOT = 0.75;
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const RAW_DIR = join(ROOT, "pipeline", "raw");
 const DISTRIBUTION_PATH = join(ROOT, "data", "rent-distribution.seoul.json");
@@ -57,18 +60,32 @@ function resolveBand(bands, areaM2) {
   throw new Error("사용 가능한 면적구간이 없습니다");
 }
 
+/**
+ * Stable per-district seed offset. A single shared rng would make every district's output
+ * depend on how many districts precede it, so adding one would silently regenerate all the
+ * others. Deriving the seed from the district name keeps each district's output a function
+ * of its own inputs alone.
+ */
+function districtSeed(district) {
+  let hash = 0;
+  for (let index = 0; index < district.length; index += 1) hash = (Math.imul(hash, 31) + district.charCodeAt(index)) | 0;
+  return (SYNTHESIS_SEED + hash) >>> 0;
+}
+
 export function buildListings({ distribution, coordsByDistrict, perDistrict }) {
-  const rng = createRng(SYNTHESIS_SEED);
   const listings = [];
   for (const district of Object.keys(coordsByDistrict)) {
+    const rng = createRng(districtSeed(district));
     const profile = distribution.districts[district];
     if (!profile) throw new Error(`${district}의 분포가 없습니다`);
     const pool = shuffle(coordsByDistrict[district], rng).slice(0, perDistrict);
     pool.forEach((record, index) => {
       const areaM2 = sampleArea(profile.area, rng, record.area_m2);
       const band = resolveBand(profile.bands, areaM2);
-      const rentRaw = sampleFromQuantiles(band.monthly_rent_krw, rng);
-      const monthlyRent = roundWithin(rentRaw, 10_000, band.monthly_rent_krw.p10, band.monthly_rent_krw.p90);
+      // Capped at p75: in a thin band one expensive arcade unit sets p90, which produced
+      // listings at 80M won a month. The area draw keeps its full range.
+      const rentRaw = sampleFromQuantiles(band.monthly_rent_krw, rng, RENT_UPPER_KNOT);
+      const monthlyRent = roundWithin(rentRaw, 10_000, band.monthly_rent_krw.p10, band.monthly_rent_krw.p75);
       const multiple = ASSUMED_DEPOSIT_MULTIPLE.min + rng() * (ASSUMED_DEPOSIT_MULTIPLE.max - ASSUMED_DEPOSIT_MULTIPLE.min);
       const deposit = Math.max(roundTo(monthlyRent * multiple, 1_000_000), 1_000_000);
       listings.push({
@@ -125,6 +142,7 @@ async function main() {
     listing_kind: "DEMO_SYNTHETIC",
     notice: "시연용 생성 데이터입니다. 실제 임대 매물이 아니며 계약 대상이 아닙니다.",
     method: "위치는 실제 상가 좌표입니다. 면적과 월세는 서울교통공사 지하상가 임대정보의 실측 분포에서 독립 샘플링했습니다.",
+    source_caveat: "월세는 지하상가 임대료 분포에서 나왔습니다. 지하상가는 역세권 유동인구로 값이 매겨져 지상 상권의 자치구 순위와 다릅니다. 자치구 간 비교로 읽지 마세요.",
     assumed: "보증금(월세의 10~20배), 관리비(월세의 8%), 층(1층)은 실측 출처가 없어 가정한 값입니다.",
     // _band_label exists so tests can find the band a listing was drawn from. Strip it here
     // so it never reaches the published artefact.

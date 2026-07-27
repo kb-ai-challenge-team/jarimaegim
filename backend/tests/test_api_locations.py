@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, listings_service
+
+# A district the demo data deliberately does not cover; derived so it survives coverage growth.
+UNCOVERED = next(d for d in ["관악구", "금천구", "양천구"] if d not in listings_service.covered_districts())
 
 
 def new_case(client: TestClient, district: str = "강남구", budget: int = 100_000_000) -> str:
@@ -30,9 +33,9 @@ def test_a_covered_district_returns_labelled_listings():
 
 def test_an_uncovered_district_returns_an_empty_state_not_an_error():
     with TestClient(app) as client:
-        case_id = new_case(client, district="노원구")
+        case_id = new_case(client, district=UNCOVERED)
         response = client.post("/api/v1/locations/search", json={
-            "case_id": case_id, "industry": "카페", "district": "노원구", "limit": 15})
+            "case_id": case_id, "industry": "카페", "district": UNCOVERED, "limit": 15})
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["candidates"] == []

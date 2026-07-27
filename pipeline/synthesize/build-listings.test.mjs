@@ -108,3 +108,15 @@ test("sampleArea는 구 면적 분포의 P10~P90 안에 있다", () => {
     assert.ok(value >= area.p10 && value <= area.p90);
   }
 });
+
+test("구를 추가해도 기존 구의 결과가 바뀌지 않는다", () => {
+  const five = buildListings({ distribution: DISTRIBUTION, coordsByDistrict: { "강남구": coords(60) }, perDistrict: 55 });
+  // A second district appears first in iteration order, so a shared rng stream would shift 강남구.
+  const withExtra = buildListings({
+    distribution: { districts: { ...DISTRIBUTION.districts, "마포구": DISTRIBUTION.districts["강남구"] } },
+    coordsByDistrict: { "마포구": coords(60), "강남구": coords(60) },
+    perDistrict: 55,
+  });
+  const gangnamOnly = withExtra.filter((listing) => listing.district === "강남구");
+  assert.deepEqual(gangnamOnly, five);
+});

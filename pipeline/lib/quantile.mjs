@@ -27,16 +27,21 @@ export function quantileSet(values) {
 
 /**
  * Inverse-transform sampling over the piecewise-linear CDF the knots describe.
- * Given rng() in [0,1], the result always lands within [p10, p90].
+ * Given rng() in [0,1], the result always lands within [p10, values[upperKnot]].
+ *
+ * upperKnot exists because a thin band's p90 can be set by a single observation. Rent
+ * sampling caps at p75 for that reason; area sampling keeps the full p90 range.
  */
-export function sampleFromQuantiles(set, rng) {
+export function sampleFromQuantiles(set, rng, upperKnot = QUANTILE_KNOTS[QUANTILE_KNOTS.length - 1]) {
   const values = [set.p10, set.p25, set.p50, set.p75, set.p90];
   for (let index = 0; index < values.length; index += 1) {
     if (!Number.isFinite(values[index])) throw new Error(`quantile knot ${QUANTILE_KNOTS[index]} is not finite: ${values[index]}`);
     if (index > 0 && values[index] < values[index - 1]) throw new Error("quantile knots must be non-decreasing");
   }
-  const clamp = (value) => Math.min(Math.max(value, set.p10), set.p90);
-  const span = QUANTILE_KNOTS[QUANTILE_KNOTS.length - 1] - QUANTILE_KNOTS[0];
+  const topIndex = QUANTILE_KNOTS.indexOf(upperKnot);
+  if (topIndex < 1) throw new Error(`upperKnot must be one of ${QUANTILE_KNOTS.slice(1).join(", ")}: ${upperKnot}`);
+  const clamp = (value) => Math.min(Math.max(value, set.p10), values[topIndex]);
+  const span = upperKnot - QUANTILE_KNOTS[0];
   const u = QUANTILE_KNOTS[0] + rng() * span;
   for (let index = 1; index < QUANTILE_KNOTS.length; index += 1) {
     if (u <= QUANTILE_KNOTS[index]) {
@@ -45,5 +50,5 @@ export function sampleFromQuantiles(set, rng) {
       return clamp(values[index - 1] + (values[index] - values[index - 1]) * ratio);
     }
   }
-  return clamp(values[values.length - 1]);
+  return clamp(values[topIndex]);
 }

@@ -22,10 +22,13 @@ const stepper = { labels: await panel.locator(".kb-stepper li").allTextContents(
 
 // 첫 진입 — 조건을 넣기 전에는 자치구 요약 핀만 떠 있어야 한다.
 await page.waitForSelector(".kb-district-pin", { timeout: 30000 });
+// 기대 개수는 API에서 유도한다. 커버리지가 늘 때마다 테스트를 고치지 않도록.
+const coveredDistricts = (await (await page.request.get(`${base}/api/v1/listings/summary`)).json()).districts.map(entry => entry.district);
 const overview = {
   pins: await page.locator(".kb-district-pin").count(),
   districts: await page.locator(".kb-district-pin strong").allInnerTexts(),
   markersBefore: await page.locator(".kb-marker").count(),
+  expected: coveredDistricts.length,
 };
 
 await page.locator(".kb-district-pin").first().click();
@@ -149,6 +152,6 @@ if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed |
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest
   || !axes.disabledCarryReason
-  || overview.pins !== 5 || overview.markersBefore !== 0
-  || drilldown.markers === 0 || drilldown.badges === 0 || !drilldown.pinsGone
-  || returned.pins !== 5) process.exitCode = 1;
+  || overview.pins !== overview.expected || overview.markersBefore !== 0
+  || drilldown.markers === 0 || drilldown.badges < 1 || !drilldown.pinsGone
+  || returned.pins !== overview.expected) process.exitCode = 1;

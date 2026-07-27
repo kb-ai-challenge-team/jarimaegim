@@ -142,7 +142,7 @@ export function KbMap({ candidates, summary, focused, onFocus, onSelectDistrict,
     });
     const bounds = new maps.LatLngBounds();
     summary.forEach((entry) => bounds.extend(new maps.LatLng(entry.latitude, entry.longitude)));
-    if (!bounds.isEmpty()) map.setBounds(bounds, 100, 100, 100, 100);
+    if (!bounds.isEmpty()) map.setBounds(bounds, 40, 40, 40, 40);
   }, [summary, candidates.length, onSelectDistrict, state]);
 
   useEffect(() => {

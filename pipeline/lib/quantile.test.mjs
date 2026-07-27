@@ -71,3 +71,30 @@ test("sampleFromQuantiles는 모든 knot이 같으면 그 값을 낸다", () => 
   const flat = { p10: 42, p25: 42, p50: 42, p75: 42, p90: 42, n: 9 };
   for (const u of [0, 0.3, 0.7, 1]) assert.equal(sampleFromQuantiles(flat, () => u), 42);
 });
+
+test("sampleFromQuantiles는 상한 knot을 낮추면 그 아래에만 머문다", () => {
+  const set = { p10: 100, p25: 150, p50: 200, p75: 300, p90: 5000, n: 40 };
+  for (const u of [0, 0.25, 0.5, 0.75, 1]) {
+    const drawn = sampleFromQuantiles(set, () => u, 0.75);
+    assert.ok(drawn >= set.p10 && drawn <= set.p75, `${drawn} not within [${set.p10}, ${set.p75}]`);
+  }
+});
+
+test("sampleFromQuantiles는 상한을 낮춰도 하한 끝값은 그대로다", () => {
+  const set = { p10: 100, p25: 150, p50: 200, p75: 300, p90: 5000, n: 40 };
+  assert.equal(sampleFromQuantiles(set, () => 0, 0.75), 100);
+  assert.equal(sampleFromQuantiles(set, () => 1, 0.75), 300);
+});
+
+test("상한을 낮춘 표집은 p75 한 점에 뭉치지 않는다", () => {
+  const set = { p10: 100, p25: 150, p50: 200, p75: 300, p90: 5000, n: 40 };
+  const rng = createRngForTest(7);
+  const draws = Array.from({ length: 400 }, () => sampleFromQuantiles(set, rng, 0.75));
+  const atCeiling = draws.filter((d) => d === 300).length;
+  assert.ok(atCeiling < 20, `${atCeiling} of 400 draws piled on the ceiling`);
+});
+
+function createRngForTest(seed) {
+  let state = seed >>> 0;
+  return () => { state = (state + 0x6d2b79f5) >>> 0; let t = state; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}

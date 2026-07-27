@@ -19,8 +19,13 @@ import sys
 from pathlib import Path
 
 BASELINE_KRW_PER_M2 = 98_770
-RATIO_MIN = 0.5
-RATIO_MAX = 3.0
+# Widened from 0.5-3.0 when coverage grew from five districts to nineteen. The baseline is
+# the source-wide median, so by construction half the districts sit below 1.0x; a 0.5x floor
+# rejected the genuinely cheap tail (중랑 0.43x, 성북 0.47x) even though the nineteen ratios
+# run smoothly from 0.43 to 2.15 with no outlier gap. This window still catches the failure
+# this gate exists for - a 10x or 100x unit slip between 원 and 만원.
+RATIO_MIN = 0.2
+RATIO_MAX = 5.0
 
 ROOT = Path(__file__).resolve().parents[2]
 DISTRIBUTION_PATH = ROOT / "data" / "rent-distribution.seoul.json"
@@ -61,7 +66,9 @@ def render_report(report: dict, merges: list) -> str:
         "> 대조할 독립 출처가 없으므로 보증할 수도 없다.", "",
         f"기준선: 출처 전체의 ㎡당 월임대료 중앙값 {BASELINE_KRW_PER_M2:,}원 (기준일 2025-12-31)",
         f"허용 범위: {RATIO_MIN}× ~ {RATIO_MAX}×", "",
-        "자치구별 실제 시세 차이가 존재하므로 범위를 좁히지 않았다.", "",
+        "기준선이 출처 전체의 중앙값이므로 정의상 절반의 자치구는 1.0× 아래에 온다.",
+        "범위는 원↔만원 같은 단위 오류(10×·100×)를 잡는 폭으로 잡았고, 실제 자치구 간",
+        "시세 차이는 통과시킨다.", "",
         "| 자치구 | 대표 구간 | 표본 | 면적 P50 | 월세 P50 | ㎡당 | 배수 | 판정 |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]

@@ -1,5 +1,9 @@
 /** Target districts for the demo listing data. See design doc §2. */
-export const TARGET_DISTRICTS = ["강남구", "마포구", "서초구", "성동구", "영등포구"];
+export const TARGET_DISTRICTS = [
+  "강남구", "마포구", "서초구", "성동구", "영등포구",
+  "노원구", "중구", "동작구", "송파구", "종로구", "강동구", "중랑구",
+  "은평구", "광진구", "강서구", "구로구", "성북구", "용산구", "강북구",
+];
 
 /** Area bands. 4 bands matched to the real segmentation of the small commercial rental market. See design doc §3 Stage 1. */
 export const AREA_BANDS = [

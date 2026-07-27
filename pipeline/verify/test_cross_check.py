@@ -19,7 +19,7 @@ def test_baseline_is_the_measured_subway_median():
 
 
 def test_ratio_window_matches_the_design():
-    assert (RATIO_MIN, RATIO_MAX) == (0.5, 3.0)
+    assert (RATIO_MIN, RATIO_MAX) == (0.2, 5.0)
 
 
 def test_a_plausible_district_passes():
@@ -35,10 +35,18 @@ def test_an_order_of_magnitude_error_fails():
     assert result["ratio"] > RATIO_MAX
 
 
-def test_a_far_too_cheap_district_fails():
-    result = evaluate_district("강남구", district(1_000_000))
+def test_a_ten_fold_unit_slip_downwards_fails():
+    # 4,938,500 is the plausible figure; a 원/만원 slip an order of magnitude down is what
+    # this gate exists to catch. Genuine cheap districts (중랑 0.43x) must still pass.
+    result = evaluate_district("강남구", district(493_850))
     assert result["ok"] is False
     assert result["ratio"] < RATIO_MIN
+
+
+def test_a_genuinely_cheap_district_still_passes():
+    # 중랑구 measured at 0.43x of the source-wide median — real variation, not an error.
+    result = evaluate_district("중랑구", district(int(4_938_500 * 0.43)))
+    assert result["ok"] is True
 
 
 def test_the_largest_band_is_the_representative_one():
