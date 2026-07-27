@@ -8,7 +8,9 @@ const outputPath = (name) => fileURLToPath(new URL(name, out));
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ headless: true, executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" });
 const viewports = [{ name: "mobile-320", width: 320, height: 568 }, { name: "mobile-390", width: 390, height: 844 }, { name: "tablet", width: 768, height: 1024 }, { name: "desktop-1280", width: 1280, height: 720 }, { name: "desktop-1440", width: 1440, height: 900 }];
-const publicRoutes = ["/", "/kb", "/cases/new?mode=first", "/auth", "/privacy"];
+// /auth was deleted with the login flow (there are no accounts, only anonymous sessions),
+// so checking it only ever measured the 404 page.
+const publicRoutes = ["/", "/kb", "/cases/new?mode=first", "/privacy"];
 const results = [];
 for (const viewport of viewports) {
   const context = await browser.newContext({ viewport });
