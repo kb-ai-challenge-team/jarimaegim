@@ -1,0 +1,12 @@
+[Unit]
+Description=자리매김 인덱스 갱신을 하루 한 번 돌린다
+
+[Timer]
+OnCalendar=daily
+# 서버가 꺼져 있던 회차를 부팅 후 따라잡는다.
+Persistent=true
+# 공공 API에 정각마다 몰리지 않게 한다.
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
