@@ -66,7 +66,9 @@ create table public.knowledge_documents (
   official_url text not null check (official_url ~ '^https://'),
 
   body_text text not null,
-  content_sha256 bytea not null check (octet_length(content_sha256) = 32),
+  -- 16진 문자열이다. 기존 source_snapshots는 bytea를 쓰지만, 이 테이블은 PostgREST로
+  -- 읽고 쓰므로 bytea의 \x 인코딩을 왕복시킬 이유가 없다.
+  content_sha256 text not null check (content_sha256 ~ '^[0-9a-f]{64}$'),
   embedding extensions.vector(1536),
   embedding_model text,
 
@@ -78,6 +80,9 @@ create table public.knowledge_documents (
   source_as_of date,
 
   raw jsonb not null,
+  -- 프론트가 이미 쓰고 있는 Program·KbProduct 모양 그대로의 표시용 페이로드.
+  -- 같은 정규화기가 body_text와 함께 만든다. §5.1 참조.
+  display jsonb not null,
   collected_at timestamptz not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -170,6 +175,14 @@ language sql stable as $$
 $$;
 ```
 
+### 5.1 표시용 페이로드와 기존 프론트 계약
+
+`/programs`를 DB 읽기로 바꾸면 응답 모양이 바뀔 위험이 있다. `lib/types.ts`의 `Program`은 `status`가 `ELIGIBLE_PRECHECK|CONDITIONAL|MANUAL_CHECK|CLOSED|UNKNOWN` 유니온이고 기간은 `application_period` 문자열 하나이며, `KbProduct`는 `rate_min`·`category_label` 같은 표시용 필드를 요구한다. 테이블 컬럼을 그대로 내보내면 UI가 깨진다.
+
+그래서 정규화기가 두 가지를 함께 만든다 — 임베딩에 들어갈 `body_text`와, 기존 계약 모양 그대로의 `display`. 엔드포인트는 `display`를 그대로 반환하므로 **`lib/types.ts`의 `Program`·`KbProduct`는 손대지 않는다.**
+
+`display.status`는 `UNKNOWN`으로 고정한다. 테이블의 `status`는 접수창이 열려 있는지를 뜻하고, 프론트의 `status`는 자격 사전판정 결과를 뜻한다. 접수 중이라는 사실이 자격이 있다는 뜻이 아니므로 두 값을 잇지 않는다. 다만 `application_end`가 지난 문서는 `CLOSED`로 내보낸다 — 그건 날짜의 산술이다.
+
 ## 6. 가드레일
 
 **유사도는 순서에만 관여한다.** `min_similarity`는 무관한 문서를 화면에서 빼는 하한선이지 자격 판정이 아니다. 통과·탈락은 `regions`·`application_end`·`business_age_limit_years`처럼 원천이 준 값의 결정론적 비교로만 정해지고, 그 비교 결과만 `matched_conditions`에 문장으로 남는다. 예: "지원지역에 서울이 포함됨", "접수마감 2026-08-12로 오늘 기준 진행 중". 나머지는 전부 기존대로 `unknown_conditions`다.
@@ -211,7 +224,8 @@ SQL 함수는 단위 테스트가 어렵다. 대신 `pipeline/policy/verify_inde
 | 임베딩 모델 변경 | `embedding_model`이 다른 문서가 섞이면 유사도가 의미를 잃는다. 불일치를 감지하면 **멈추고** `--reembed`를 명시적으로 요구한다. 자동으로 섞지 않는다 |
 | 검색 중 Supabase 장애 | 챗은 답을 못 하면 안 되므로 `citations` 없이 기존 응답으로 폴백하고 "근거 검색이 지연되어 원문 인용 없이 답했습니다"를 명시 |
 | 타이머가 한 번도 안 돎 | `/programs`가 빈 상태. `/status`의 신선도로 원인이 드러남 |
-| 질의 남용 | 질의 임베딩은 유료 호출이므로 기존 `AI_DAILY_REQUEST_LIMIT`과 같은 결의 세션당 일일 상한을 적용 |
+
+**질의 남용은 이 스펙의 범위 밖이다.** 질의 임베딩이 유료 호출인 것은 맞지만, `AI_DAILY_REQUEST_LIMIT`은 설정에만 있고 이를 강제하는 코드가 `main.py` 어디에도 없다. 없는 리미터에 얹는다고 쓸 수 없으므로, 세션당 상한은 별도 작업으로 분리한다. 그때 챗과 검색에 함께 적용하는 편이 맞다.
 
 ## 9. 설정
 
