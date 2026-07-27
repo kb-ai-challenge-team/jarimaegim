@@ -194,6 +194,7 @@ export interface IntegrationStatus {
   bizinfo: boolean;
   kstartup: boolean;
   finlife: boolean;
+  ipzitalk: boolean;
 }
 
 export interface FeatureFlags {
@@ -208,11 +209,72 @@ export interface AnalysisAxis {
   note: string | null;
 }
 
+/** backend/app/main.py's integration_status(): chat_daily_turns is a process-local (not
+ * cross-worker/cross-restart) counter -- `note` says so plainly, surface it rather than implying
+ * a durable quota. */
+export interface ChatDailyTurnsLimit {
+  per_session: number;
+  scope: string;
+  note: string;
+}
+
+export interface StatusLimits {
+  chat_daily_turns: ChatDailyTurnsLimit;
+}
+
 export interface StatusResponse {
   mode: string;
   integrations: IntegrationStatus;
   feature_flags: FeatureFlags;
   axes: Record<string, AnalysisAxis>;
+  limits: StatusLimits;
+}
+
+/** backend/app/chat_tools.py's `citation()` -- carried per tool_end event and deduped into the
+ * `done` event's final list. */
+export interface Citation {
+  title: string;
+  official_url: string;
+  source_name: string;
+  collected_at: string;
+  tool: string;
+}
+
+/** Mirrors chat_stream.py's `tool_start`/`tool_end` SSE payloads, merged by `call_id`.
+ *
+ * `tool_start` carries {call_id, tool, label} and no status -- the client synthesizes
+ * `status: "running"` itself, which is why "running" is not in chat_tools.TOOL_STATUSES.
+ * `tool_end` carries {call_id, tool, status, summary, citations} and no label -- callers must
+ * look up the label from the matching `tool_start` entry by call_id; lib/api.ts's chatStream
+ * cannot invent one that was never on the wire.
+ *
+ * The eight non-"running" values are exactly chat_tools.TOOL_STATUSES (backend/app/chat_tools.py).
+ * "not_implemented" is included for that reason even though no handler currently returns it (see
+ * that file's comment: it was a Task 5-6 stub-only value) -- keeping this union in lockstep with
+ * the backend's authoritative status set means a status the backend is *allowed* to emit never
+ * fails to type here, even if nothing on today's code path exercises it. */
+export interface ChatToolActivity {
+  call_id: string;
+  tool: string;
+  label: string;
+  status: "running" | "ok" | "empty" | "error" | "out_of_scope" | "invalid_place_ref" | "not_found" | "unknown_tool" | "not_implemented";
+  summary?: string;
+}
+
+/** Handlers for api.chatStream(). Read this before wiring up a message panel (Task 14):
+ *
+ * chat_stream.py emits exactly one `delta` event immediately before `done`, and that delta's
+ * `text` is the SAME full answer as `done`'s `message` (see ChatStreamer.run(): both the
+ * no-tool-calls branch and the round-limit branch send identical text through both events).
+ * Calling BOTH onDelta (to append/render streaming text) AND rendering onDone's `message` will
+ * show the answer twice. Pick one path: either render incrementally from onDelta and ignore
+ * `result.message` in onDone (use it only to know the turn is over), or ignore onDelta entirely
+ * and render `result.message` once onDone fires. Do not do both. */
+export interface ChatStreamHandlers {
+  onToolStart(activity: ChatToolActivity): void;
+  onToolEnd(activity: ChatToolActivity): void;
+  onDelta(text: string): void;
+  onDone(result: { message: string; citations: Citation[]; integration_status: string }): void;
 }
 
 export type FundingBandKey = "EQUITY_ONLY" | "RECOMMENDED" | "MAXIMUM" | "OUT_OF_RANGE";
