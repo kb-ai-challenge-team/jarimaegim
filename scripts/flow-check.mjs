@@ -93,24 +93,40 @@ const documentToast = (await page.locator(".toast").textContent()) || "";
 const documentResult = { sessionScoped: documentToast.includes("익명 세션") };
 
 const aiConfigured = Boolean(statusBody.integrations.openai);
+const ipzitalkConfigured = Boolean(statusBody.integrations.ipzitalk);
 const caseBefore = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
 
 const chat = page.locator("#chat");
 await chat.fill("공식 출처를 알려줘");
+// 패널이 실제로 스트리밍 엔드포인트(POST .../messages/stream)를 호출하는지 네트워크에서 직접 확인한다.
+// 이걸 확인하지 않으면, 패널이 예전 단발성 api.chat()으로 조용히 되돌아가는 회귀가 벌어져도 아래의 다른
+// 단언들은 그대로 통과해 버린다 — 이 단언이 없으면 그 회귀를 잡을 방법이 없다.
+const streamResponsePromise = page.waitForResponse(response => response.request().method() === "POST" && /\/messages\/stream$/.test(new URL(response.url()).pathname), { timeout: 15000 }).catch(() => null);
 await page.locator(".chat-composer button").click();
+const streamResponse = await streamResponsePromise;
 await page.waitForFunction(() => window.document.querySelectorAll(".chat-message").length >= 3);
+// 진행 표시가 턴이 끝난 뒤에도 계속 도는 채로 남아있으면, 앱이 실제로 하고 있지 않은 일을 하고 있다고
+// 보여주는 것이다 — 실행 중(running) 상태의 tool-activity 행도, 범용 진행 문구도 남아있으면 안 된다.
+const progressCleared = await page.waitForFunction(() => !document.querySelector(".tool-progress") && document.querySelectorAll(".tool-activity-item:not(.ok):not(.error)").length === 0, null, { timeout: 10000 }).then(() => true).catch(() => false);
 const reply = (await page.locator(".chat-message").last().textContent()) || "";
+const citationLinks = await page.locator(".citation-list a").count();
 const caseAfter = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
 const copilot = {
   aiConfigured,
+  ipzitalkConfigured,
   // 키가 없으면 폴백 고지가, 있으면 실제 답변이 와야 한다. 둘 다 정상 상태다.
   safeState: aiConfigured ? reply.trim().length > 0 : reply.includes("키"),
   // 부록 A 불변조건 4 — 대화는 케이스 조건을 바꿀 수 없다. 키 유무와 무관하게 항상 성립해야 한다.
   caseUnchanged: caseAfter.version === caseBefore.version
-    && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs)
+    && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs),
+  // 부록 A 불변조건 1 — ipzitalk 도구 연동이 없으면 인용은 도구 호출 결과에서 나올 수 없으므로 하나도
+  // 렌더링되어서는 안 된다. 도구가 연동되어 있으면 실제 인용 유무는 이 스크립트의 관심사가 아니다.
+  noFabricatedCitations: ipzitalkConfigured ? true : citationLinks === 0,
+  noOrphanedProgress: progressCleared,
+  streamEndpointUsed: Boolean(streamResponse) && streamResponse.ok() && /event-stream/.test(streamResponse.headers()["content-type"] || "")
 };
 
 const result = { onboarding, cost, funding, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;
+if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
