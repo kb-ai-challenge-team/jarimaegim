@@ -819,3 +819,5 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-district-pin strong{font-size:13px;color:var(--kb-ink)}
 .kb-district-pin span{font-size:12px;font-weight:700;color:var(--kb-blue)}
 .kb-district-pin small{font-size:10.5px;color:var(--kb-mute)}
+.kb-stage-notice.compact{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.kb-stage-notice.compact strong{font-size:13px}
