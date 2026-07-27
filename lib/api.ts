@@ -1,4 +1,4 @@
-import type { AnalysisResult, Candidate, CaseInput, CaseRecord, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AnalysisResult, Candidate, CaseInput, CaseRecord, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, Program, RetrievalResponse, StatusResponse } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
 
@@ -50,6 +50,8 @@ export const api = {
   getProducts: (caseId: string) => request<{ items: Program[]; status: string }>(`/products?case_id=${encodeURIComponent(caseId)}`),
   getProgramCatalog: () => request<{ items: Program[]; status: string; message?: string }>("/programs/catalog"),
   getKbProducts: () => request<{ items: KbProduct[]; status: string; message?: string }>("/products/kb"),
+  // 질의 1회당 임베딩 호출 1회다. 호출부는 입력마다가 아니라 제출에서만 부른다.
+  searchPrograms: (query: string, district?: string, limit = 8) => request<RetrievalResponse>(`/knowledge/search?q=${encodeURIComponent(query)}&kind=PROGRAM${district ? `&district=${encodeURIComponent(district)}` : ""}&limit=${limit}`),
   createCostPlan: (caseId: string, items: { key: string; label: string; min_krw: number | null; max_krw: number | null; source_type: string }[]) => request<CostPlan>("/cost-plans", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, items }) }),
   fundingBands: (caseId: string, inputs: FundingBandInput) => request<FundingBandResult>("/funding-bands", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, ...inputs }) }),
   chat: (caseId: string, content: string) => request<{ message: string; citations: { title: string; official_url: string }[]; integration_status: string }>(`/cases/${caseId}/messages`, { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ client_message_id: requestId(), content, base_case_version: 1, confirmed_case_patch: [], locale: "ko-KR" }) }),

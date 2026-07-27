@@ -72,6 +72,33 @@ const funding = {
     : await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible().catch(() => false)
 };
 
+// 의미 검색. 키 없는 머신에서는 integration_pending 이 정상이므로 "결과가 나온다"를 단언하지
+// 않는다. 검색창이 있고, 제출해도 에러 없이 정해진 상태 중 하나로 착지하는지까지만 본다.
+await page.getByPlaceholder("예: 임차료 지원, 청년 창업 보증").fill("임차료 지원");
+await page.locator("form.policy-search button[type=submit]").click();
+await page.waitForFunction(
+  () => Boolean(window.document.querySelector(".retrieved-list article, .full-empty h1, .inline-alert.error")),
+  null, { timeout: 40000 });
+const retrievedItems = await page.locator(".retrieved-list article").all();
+let retrievedWithEvidence = 0;
+for (const item of retrievedItems) {
+  const hasSource = await item.locator('a[href^="http"]').count() > 0;
+  const hasExcerpt = await item.locator("blockquote").count() > 0;
+  const hasProvenance = await item.locator(".provenance").count() > 0;
+  if (hasSource && hasExcerpt && hasProvenance) retrievedWithEvidence += 1;
+}
+const searchText = await page.locator(".plan-page").innerText();
+const search = {
+  resultCount: retrievedItems.length,
+  // 결과가 있으면 모두 원문·발췌·출처를 갖춰야 하고, 없으면 이유를 밝힌 빈 상태여야 한다
+  safeState: retrievedItems.length > 0
+    ? retrievedWithEvidence === retrievedItems.length && searchText.includes("근거 등급 C")
+    : await page.getByText("검색 결과가 없습니다").isVisible().catch(() => false),
+  // 유사도 수치는 화면에 나오면 안 된다 (점수로 오해된다)
+  hidesSimilarity: !/0\.\d{2}/.test(searchText)
+};
+if (retrievedItems.length > 0) await page.locator(".retrieved-list header button").click();
+
 const caseId = workspaceUrl.match(/\/cases\/([0-9a-f-]{36})/)?.[1];
 const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
   data: { case_id: caseId, industry: "카페", area_pyeong: 15, deposit_krw: 100000000, monthly_rent_krw: 2500000,
@@ -114,7 +141,7 @@ const copilot = {
     && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs)
 };
 
-const result = { onboarding, listings, cost, funding, bands, axes, document: documentResult, copilot, errors };
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;
+if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !search.safeState || !search.hidesSimilarity || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;

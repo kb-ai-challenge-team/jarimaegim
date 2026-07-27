@@ -825,3 +825,28 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-stage-notice.compact strong{font-size:13px}
 /* Unfocused markers collapse to rank + grade so fifteen listings in one district stay apart. */
 .kb-marker[data-compact] .kb-marker-name{min-width:18px;padding:0 2px;text-align:center}
+.policy-search{display:flex;align-items:center;gap:8px;border:1px solid var(--line-strong);border-radius:12px;padding:8px 10px;background:#fff;margin-bottom:6px}
+.policy-search:focus-within{border-color:var(--focus);box-shadow:0 0 0 3px rgba(20,115,230,.16)}
+.policy-search>svg{width:16px;height:16px;color:var(--muted);flex:none}
+.policy-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:13px;color:var(--ink)}
+.policy-search input::placeholder{color:var(--unavailable)}
+.policy-search-clear{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;padding:2px;cursor:pointer}
+.policy-search-clear svg{width:14px;height:14px}
+.policy-search button[type=submit]{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:9px;padding:7px 14px;background:var(--primary);color:#fff;font-size:12px;font-weight:700;cursor:pointer}
+.policy-search button[type=submit]:hover:not(:disabled){background:var(--primary-hover)}
+.policy-search button[type=submit]:disabled{background:var(--line-strong);cursor:not-allowed}
+.policy-search button[type=submit] svg{width:13px;height:13px;animation:spin 1s linear infinite}
+.policy-search-note{margin:0 0 14px;font-size:11px;color:var(--muted)}
+.retrieved-list{display:grid;gap:10px}
+.retrieved-list>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.retrieved-list>header button{border:1px solid var(--line);border-radius:8px;padding:5px 11px;background:#fff;font-size:11px;font-weight:700;color:var(--ink);cursor:pointer}
+.retrieved-list article{display:grid;grid-template-columns:95px minmax(220px,1fr) auto;align-items:start;gap:16px;border:1px solid var(--line);border-radius:13px;padding:16px;background:#fff}
+.retrieved-list article h2{margin:0 0 3px;font-size:14px}
+.retrieved-list article>div>p{margin:0;font-size:11px;color:var(--muted)}
+/* 발췌는 공고 원문이다. 우리가 쓴 문장과 눈으로 구분되어야 한다. */
+.retrieved-list blockquote{margin:9px 0 0;border-left:2px solid var(--line-strong);padding:2px 0 2px 9px;font-size:11.5px;line-height:1.6;color:var(--ink)}
+.retrieved-list .condition-tags.matched span{background:var(--positive-soft);color:var(--positive)}
+.retrieved-list article>a{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--primary)}
+.retrieved-list article>a svg{width:12px;height:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:760px){.retrieved-list article{grid-template-columns:1fr}}
