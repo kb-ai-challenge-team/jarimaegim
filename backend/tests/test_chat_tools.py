@@ -1,5 +1,4 @@
-import pytest
-from app.chat_tools import ChatToolset, PlaceRegistry, _https
+from app.chat_tools import TOOL_SCHEMAS, ChatToolset, PlaceRegistry, _https
 from app.mcp_client import MCPUnavailable
 
 
@@ -78,6 +77,17 @@ PRESALE_NONE_KEY_COLLISION = {**GANGNAM,
                                   {"kapt_code": "WRONG", "kapt_da_cnt": 9999}]}}
 
 
+NEARBY = {**GANGNAM,
+          "search_by_nearby_category": {"documents": [{"place_name": "역삼역", "category_group_code": "SW8",
+                                                       "distance": "320", "place_url": "https://place.map.kakao.com/2"}]},
+          "search_by_nearby_keyword": {"documents": [{"place_name": "테스트카페", "distance": "80",
+                                                      "place_url": "https://place.map.kakao.com/3"}]}}
+
+MAPS = {**GANGNAM,
+        "get_map_embed_url": {"url": "https://map.naver.com/embed?c=127.03,37.50"},
+        "get_static_map": {"url": "https://naveropenapi.apigw.ntruss.com/map-static/v2/raster?center=127.03,37.50"}}
+
+
 def toolset(payloads):
     return ChatToolset(FakeSession(payloads), PlaceRegistry())
 
@@ -131,7 +141,6 @@ async def test_resolve_produces_a_kakao_citation():
     assert citation["collected_at"].endswith("+00:00") or citation["collected_at"].endswith("Z")
 
 
-@pytest.mark.xfail(reason="도구 6종은 Task 5-6 에서 추가된다", strict=True)
 async def test_every_declared_tool_has_a_schema_and_a_handler():
     tools = toolset(GANGNAM)
     names = {schema["name"] for schema in tools.schemas()}
@@ -360,3 +369,158 @@ def test_https_upgrades_bare_http_and_protocol_relative_urls():
     assert _https("//example.com/a", "https://fallback/") == "https://example.com/a"
     assert _https("https://example.com/a", "https://fallback/") == "https://example.com/a"
     assert _https("", "https://fallback/") == "https://fallback/"
+
+
+async def test_nearby_scan_runs_category_and_keyword_searches():
+    session = FakeSession(NEARBY)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
+                                                        "categories": ["SW8"], "keywords": ["카페"]})
+    assert result["status"] == "ok"
+    called = [name for name, _ in session.calls]
+    assert "search_by_nearby_category" in called and "search_by_nearby_keyword" in called
+    assert result["by_category"]["SW8"][0]["place_name"] == "역삼역"
+    assert result["by_keyword"]["카페"][0]["place_name"] == "테스트카페"
+
+
+async def test_nearby_scan_skips_the_search_it_was_not_asked_for():
+    session = FakeSession({**GANGNAM, "search_by_nearby_category": NEARBY["search_by_nearby_category"]})
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["SW8"]})
+    assert "search_by_nearby_keyword" not in [name for name, _ in session.calls]
+
+
+async def test_nearby_scan_requires_at_least_one_target():
+    tools = ChatToolset(FakeSession(GANGNAM), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "error"
+    assert "카테고리" in result["message"]
+
+
+async def test_nearby_scan_cites_kakao():
+    tools = ChatToolset(FakeSession(NEARBY), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "keywords": ["카페"]})
+    assert any(item["source_name"] == "카카오 로컬" and item["tool"] == "scan_nearby_facilities"
+               for item in result["citations"])
+
+
+async def test_nearby_scan_routes_results_by_call_kind_not_by_string_equality():
+    # Regression test for the reference implementation's `target in categories` routing bug:
+    # the exact same string ("강남") requested as both a category code and a keyword must not
+    # let one search's result silently overwrite or masquerade as the other's. A routing
+    # scheme that keys off value membership instead of which search actually produced the
+    # payload would misfile this case; deleting the fix and reverting to value-based routing
+    # makes this test fail.
+    payloads = {**GANGNAM,
+                "search_by_nearby_category": {"documents": [{"place_name": "카테고리결과"}]},
+                "search_by_nearby_keyword": {"documents": [{"place_name": "키워드결과"}]}}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
+                                                        "categories": ["강남"], "keywords": ["강남"]})
+    assert result["by_category"]["강남"][0]["place_name"] == "카테고리결과"
+    assert result["by_keyword"]["강남"][0]["place_name"] == "키워드결과"
+
+
+async def test_nearby_scan_reports_a_partial_failure_rather_than_a_clean_answer():
+    payloads = {**NEARBY, "search_by_nearby_keyword": MCPUnavailable("카카오 로컬 조회 실패")}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
+                                                        "categories": ["SW8"], "keywords": ["카페"]})
+    # The category search succeeded, so this is still a real answer -- but the keyword search's
+    # failure must be visible, not silently swallowed as "no cafes found nearby".
+    assert result["status"] == "ok"
+    assert result["by_category"]["SW8"][0]["place_name"] == "역삼역"
+    assert result["by_keyword"]["카페"] == []
+    assert result["failed_targets"] == ["카페"]
+    assert "failure_note" in result and "카페" in result["failure_note"]
+
+
+async def test_nearby_scan_reports_total_failure_as_error_not_as_a_confident_empty():
+    payloads = {**GANGNAM, "search_by_nearby_category": MCPUnavailable("카카오 로컬 조회 실패")}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["SW8"]})
+    # If the only search attempted failed outright, we genuinely don't know whether anything is
+    # nearby -- that must not be reported the same way as a search that ran cleanly and found
+    # zero rows (status=empty). Collapsing the two would let the model tell the user "nothing
+    # nearby" when the truth is "we couldn't check".
+    assert result["status"] == "error"
+    assert result["failed_targets"] == ["SW8"]
+
+
+async def test_nearby_scan_clamps_an_excessive_radius():
+    session = FakeSession(NEARBY)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
+                                                        "categories": ["SW8"], "radius_m": 999999})
+    assert result["radius_m"] == 20000
+    call_args = next(args for name, args in session.calls if name == "search_by_nearby_category")
+    assert call_args["radius"] == 20000
+
+
+async def test_nearby_scan_clamps_a_non_positive_radius():
+    tools = ChatToolset(FakeSession(NEARBY), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
+                                                        "categories": ["SW8"], "radius_m": -5})
+    assert result["radius_m"] == 1
+
+
+async def test_map_url_tool_returns_a_naver_link():
+    tools = ChatToolset(FakeSession(MAPS), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("render_location_map", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "ok"
+    assert result["map_url"].startswith("https://")
+    assert any(item["source_name"] == "네이버 지도" for item in result["citations"])
+
+
+async def test_map_image_tool_returns_an_image_url():
+    tools = ChatToolset(FakeSession(MAPS), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("get_location_map_image", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "ok"
+    assert result["image_url"].startswith("https://")
+
+
+async def test_map_tools_report_a_missing_url_rather_than_fabricating_one():
+    tools = ChatToolset(FakeSession({**GANGNAM, "get_map_embed_url": {}}), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("render_location_map", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "empty"
+    assert "map_url" not in result
+    # Product rule: every data surface carries provenance. Even though no map link could be
+    # produced, we still made a real call to Naver Maps -- that attempt itself is the fact being
+    # cited, not a fabricated URL. An implementation that reverts to `"citations": []` here
+    # (as the original reference code did) passes the two asserts above but fails this one.
+    assert result["citations"]
+    assert result["citations"][0]["source_name"] == "네이버 지도"
+
+
+async def test_map_image_tool_reports_a_missing_url_and_still_cites_naver():
+    tools = ChatToolset(FakeSession({**GANGNAM, "get_static_map": {}}), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("get_location_map_image", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "empty"
+    assert "image_url" not in result
+    assert result["citations"]
+    assert result["citations"][0]["source_name"] == "네이버 지도"
+
+
+async def test_map_tool_schemas_never_let_the_model_supply_a_coordinate():
+    # Product rule 2: the model must never supply a coordinate. A `markers` (or bare
+    # latitude/longitude) parameter on either map tool's schema would be exactly that -- so its
+    # absence here is a safety property, not an incidental gap. This fails if a future edit
+    # exposes it.
+    for schema in TOOL_SCHEMAS:
+        if schema["name"] in ("render_location_map", "get_location_map_image", "scan_nearby_facilities"):
+            props = schema["parameters"]["properties"]
+            assert "markers" not in props
+            assert "latitude" not in props and "longitude" not in props

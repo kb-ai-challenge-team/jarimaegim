@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
@@ -108,6 +109,20 @@ def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
+def _clamp_radius_m(value: Any) -> int:
+    """Unlike the presale radius removed elsewhere in this project's history, this one is real:
+    it's forwarded straight to Kakao's nearby-search and genuinely filters results. Kakao
+    documents 0-20000 meters as the valid range for keyword/category search; floor at 1 (a
+    0-meter radius describes no area at all) and cap at 20000. Mirrors _lookup_complex_trades'
+    `months` clamp -- default a missing/malformed value rather than reject the call outright,
+    since an out-of-range number is the model's mistake, not a reason to refuse an answer."""
+    try:
+        radius = int(value) if value is not None else 1000
+    except (TypeError, ValueError):
+        radius = 1000
+    return max(1, min(radius, 20000))
+
+
 class PlaceRefError(Exception):
     """The model passed a place_ref this turn's registry never issued."""
 
@@ -123,6 +138,9 @@ class ChatToolset:
             "lookup_seoul_presale": self._lookup_seoul_presale,
             "lookup_seoul_complex": self._lookup_seoul_complex,
             "lookup_complex_trades": self._lookup_complex_trades,
+            "scan_nearby_facilities": self._scan_nearby_facilities,
+            "render_location_map": self._render_location_map,
+            "get_location_map_image": self._get_location_map_image,
         }
 
     def has_handler(self, name: str) -> bool:
@@ -266,6 +284,106 @@ class ChatToolset:
                 "citations": [citation(f"국토교통부 실거래가 — {place.name}", source,
                                        "국토교통부 실거래가", "lookup_complex_trades")]}
 
+    async def _scan_nearby_facilities(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        place = self._require_place(arguments)
+        categories = [str(item) for item in (arguments.get("categories") or []) if item]
+        keywords = [str(item) for item in (arguments.get("keywords") or []) if item]
+        if not categories and not keywords:
+            return {"status": "error", "message": "찾을 카테고리 코드나 키워드를 하나 이상 지정해야 합니다."}
+        radius_m = _clamp_radius_m(arguments.get("radius_m"))
+        base = {"latitude": place.latitude, "longitude": place.longitude, "radius": radius_m}
+
+        # Tag each call with which search produced it, rather than routing results afterward by
+        # `target in categories` -- a keyword that happens to equal a category code (or the same
+        # string passed in both lists) would otherwise land in the wrong bucket, or overwrite the
+        # right one. `targets` and the positional args to gather() are built from the same two
+        # comprehensions in the same order, so zip() pairs each result with the call that produced
+        # it regardless of which one finishes first: asyncio.gather with return_exceptions=True
+        # returns results in input order, not completion order.
+        targets = [("category", code) for code in categories] + [("keyword", word) for word in keywords]
+        results = await asyncio.gather(
+            *(self.session.call("search_by_nearby_category", {**base, "category_group_code": code}) for code in categories),
+            *(self.session.call("search_by_nearby_keyword", {**base, "keyword": word}) for word in keywords),
+            return_exceptions=True)
+
+        by_category: dict[str, list[dict[str, Any]]] = {}
+        by_keyword: dict[str, list[dict[str, Any]]] = {}
+        failures: list[str] = []
+        for (kind, target), payload in zip(targets, results):
+            bucket = by_category if kind == "category" else by_keyword
+            if isinstance(payload, Exception):
+                failures.append(target)
+                bucket[target] = []
+                continue
+            bucket[target] = [item for item in (payload.get("documents") or []) if isinstance(item, dict)]
+
+        found = sum(len(rows) for rows in list(by_category.values()) + list(by_keyword.values()))
+        total_targets = len(targets)
+        # A failed search and a search that genuinely found nothing are different facts (see
+        # TOOL_STATUSES' `empty` vs `error`). If every target failed we have no idea whether
+        # anything is actually nearby, so this must not be reported with the same confidence as a
+        # clean zero-row result. A partial failure alongside real hits is still `ok` -- the
+        # failure_note says what's missing, the same role _lookup_seoul_presale's enrichment_note
+        # plays for its own "part of this answer didn't come back" case.
+        if failures and len(failures) == total_targets:
+            status = "error"
+            message = f"카카오 로컬 주변 검색에 실패했습니다: {', '.join(failures)}"
+        elif found:
+            status = "ok"
+            message = None
+        else:
+            status = "empty"
+            message = f"{place.name} 반경 {radius_m}m 안에서 해당 시설을 찾지 못했습니다."
+
+        result: dict[str, Any] = {"status": status, "radius_m": radius_m,
+                                   "by_category": by_category, "by_keyword": by_keyword,
+                                   "failed_targets": failures, "message": message,
+                                   "citations": [citation(f"카카오 로컬 주변 검색 — {place.name} 반경 {radius_m}m",
+                                                          "https://map.kakao.com/", "카카오 로컬",
+                                                          "scan_nearby_facilities")]}
+        if failures:
+            result["failure_note"] = f"다음 대상은 조회에 실패해 결과에서 빠졌습니다: {', '.join(failures)}"
+        return result
+
+    def _map_arguments(self, place: Place, arguments: dict[str, Any]) -> dict[str, Any]:
+        # No `markers` input from arguments: a marker is a coordinate, and the model must never
+        # supply one (product rule 2). The single marker is always the resolved place itself.
+        return {"latitude": place.latitude, "longitude": place.longitude,
+                "radius": _clamp_radius_m(arguments.get("radius_m")),
+                "markers": [{"latitude": place.latitude, "longitude": place.longitude, "label": place.name}]}
+
+    async def _render_location_map(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        place = self._require_place(arguments)
+        payload = await self.session.call("get_map_embed_url", self._map_arguments(place, arguments))
+        url = payload.get("url") or payload.get("embed_url") or ""
+        if not url:
+            # Still cite Naver Maps: we made a real call to that source and it came back without a
+            # link, which is itself the fact being attributed -- not a fabricated URL standing in
+            # for one that failed. Same shape as lookup_seoul_complex's not_found branch citing
+            # K-apt even with no complex data to show.
+            return {"status": "empty", "message": "지도 링크를 생성하지 못했습니다.",
+                    "citations": [citation(f"네이버 지도 조회 시도 — {place.name}", "https://map.naver.com/",
+                                           "네이버 지도", "render_location_map")]}
+        # `url` is already known non-empty here, so `_https`'s fallback branch can never fire --
+        # passed anyway to keep the call shape identical to every other `_https(url, fallback)`
+        # call site in this module rather than introducing a second, fallback-less variant.
+        secure_url = _https(url, url)
+        return {"status": "ok", "map_url": secure_url,
+                "citations": [citation(f"네이버 지도 — {place.name}", secure_url, "네이버 지도", "render_location_map")]}
+
+    async def _get_location_map_image(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        place = self._require_place(arguments)
+        payload = await self.session.call("get_static_map", self._map_arguments(place, arguments))
+        url = payload.get("url") or payload.get("image_url") or ""
+        if not url:
+            return {"status": "empty", "message": "지도 이미지를 생성하지 못했습니다.",
+                    "citations": [citation(f"네이버 정적 지도 조회 시도 — {place.name}", "https://map.naver.com/",
+                                           "네이버 지도", "get_location_map_image")]}
+        secure_url = _https(url, url)
+        return {"status": "ok", "image_url": secure_url,
+                "citations": [citation(f"네이버 정적 지도 — {place.name}", secure_url,
+                                       "네이버 지도", "get_location_map_image")]}
+
     async def _resolve_seoul_place(self, arguments: dict[str, Any]) -> dict[str, Any]:
         query = (arguments.get("query") or "").strip()
         if not query:
@@ -342,5 +460,34 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
                                    "months": {"type": "integer",
                                               "description": "선택. 조회 개월 수. 기본 12, 1~36 범위를 벗어나면 자동 보정된다"}},
+                    "required": ["place_ref"]}},
+    {"name": "scan_nearby_facilities",
+     "description": ("place_ref 반경 안의 시설을 카카오 로컬에서 찾는다. categories 는 카카오 카테고리 그룹 코드"
+                     "(SW8 지하철역, SC4 학교, MT1 대형마트, CS2 편의점, HP8 병원, PK6 주차장, BK9 은행, CE7 카페, FD6 음식점)를, "
+                     "keywords 는 자유 검색어를 받는다. 둘 중 하나는 반드시 지정해야 한다. 일부 대상 조회가 실패하면 "
+                     "failed_targets 와 failure_note 에 어떤 대상이 실패했는지 담기며, 이때는 그 대상에 아무것도 "
+                     "없다고 말하지 말고 조회 자체가 실패했다고 전하라."),
+     "parameters": {"type": "object", "additionalProperties": False,
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
+                                   "categories": {"type": "array", "items": {"type": "string"},
+                                                  "description": "카카오 카테고리 그룹 코드 목록"},
+                                   "keywords": {"type": "array", "items": {"type": "string"},
+                                                "description": "자유 검색어 목록"},
+                                   "radius_m": {"type": "integer",
+                                                "description": "선택. 반경(미터). 기본 1000, 1~20000 범위를 벗어나면 자동 보정된다"}},
+                    "required": ["place_ref"]}},
+    {"name": "render_location_map",
+     "description": "place_ref 위치를 마커와 반경으로 표시한 공유용 네이버 지도 링크를 만든다.",
+     "parameters": {"type": "object", "additionalProperties": False,
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
+                                   "radius_m": {"type": "integer",
+                                                "description": "선택. 반경(미터). 기본 1000, 1~20000 범위를 벗어나면 자동 보정된다"}},
+                    "required": ["place_ref"]}},
+    {"name": "get_location_map_image",
+     "description": "place_ref 위치의 네이버 정적 지도 이미지 URL을 만든다. 링크가 아니라 이미지가 필요할 때만 쓴다.",
+     "parameters": {"type": "object", "additionalProperties": False,
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
+                                   "radius_m": {"type": "integer",
+                                                "description": "선택. 반경(미터). 기본 1000, 1~20000 범위를 벗어나면 자동 보정된다"}},
                     "required": ["place_ref"]}},
 ]
