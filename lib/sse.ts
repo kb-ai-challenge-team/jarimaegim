@@ -32,6 +32,18 @@
 // here: the only source is our own backend, which always terminates every frame (including
 // heartbeats) with a blank line, so an unterminated stream would mean the backend itself is
 // broken -- not something this parser can recover from by capping a buffer.
+//
+// A frame with an `event:` line but no `data:` line parses to `{}` rather than being dropped.
+// sse_frame() always writes both, so this never fires today; permissive was chosen over strict
+// because an empty payload is a plausible future frame shape and dropping it would lose the event.
+//
+// One real hazard, currently unreachable: a ": ping" arriving BETWEEN two chunks of a single
+// half-written frame would contribute its own "\n\n", creating a false frame boundary that splits
+// the real frame in two -- both halves then fail to parse and the payload is silently lost. That
+// cannot happen against this backend because heartbeat_frames() pumps whole, already-terminated
+// sse_frame() strings and only emits a ping when the queue times out waiting for the NEXT item,
+// never mid-write of the current one; ASGI writes are sequential per yield, so a ping's bytes can
+// never interleave with an item already being written. Revisit if that yield discipline changes.
 
 export interface SseEvent {
   event: string;
@@ -68,7 +80,11 @@ function parseFrame(frame: string): SseEvent | null {
   let event = "";
   let payload = "";
   for (const line of frame.split("\n")) {
-    if (line.startsWith(":")) continue; // heartbeat/comment line, e.g. ": ping" -- never carries data
+    // Belt-and-braces only: ":"-prefixed comment lines are prefix-disjoint from "event: " and
+    // "data: ", so they'd fall through both branches below and be ignored anyway. No input can
+    // distinguish this guard's presence from its absence -- it documents intent, it does not
+    // implement it. Don't take the "주석 무시" tests as coverage of this line.
+    if (line.startsWith(":")) continue;
     if (line.startsWith("event: ")) event = line.slice(7);
     else if (line.startsWith("data: ")) payload += line.slice(6);
   }
