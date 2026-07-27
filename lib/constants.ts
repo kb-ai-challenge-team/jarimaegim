@@ -81,3 +81,17 @@ export function formatKrw(value: number) {
   if (value >= 10_000) return `${Math.round(value / 10_000).toLocaleString("ko-KR")}만 원`;
   return `${value.toLocaleString("ko-KR")}원`;
 }
+
+// backend/app/chat_tools.py's citation()/collected_at is `datetime.now(UTC).isoformat()` -- raw
+// ISO-8601 with microseconds and a UTC offset, unreadable as-is. Renders as a KST calendar date
+// (not a timestamp): this value marks when a lookup was collected, and a user doesn't need
+// minute-level precision for that -- but Korean users do read dates in KST, so rendering the raw
+// UTC instant's date risks the displayed day being off by one near midnight. Never throws and
+// never invents a date: a missing, empty, or unparseable value falls back to the same "미수집"
+// register already used where this field has no value.
+export function formatCollectedAt(value?: string | null) {
+  if (!value) return "미수집";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "미수집";
+  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" }).format(parsed);
+}
