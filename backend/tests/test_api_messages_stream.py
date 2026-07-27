@@ -112,3 +112,57 @@ def test_the_status_endpoint_exposes_the_ipzitalk_integration():
     from app.main import app
     payload = TestClient(app).get("/api/v1/status").json()
     assert payload["integrations"]["ipzitalk"] is False
+
+
+async def test_a_slow_turn_emits_heartbeat_comments():
+    import asyncio
+    from app.main import heartbeat_frames
+
+    async def slow_source():
+        yield "event: turn_start\ndata: {}\n\n"
+        await asyncio.sleep(0.05)
+        yield "event: done\ndata: {}\n\n"
+
+    chunks = [chunk async for chunk in heartbeat_frames(slow_source(), interval_s=0.01)]
+    assert any(chunk.startswith(": ping") for chunk in chunks)
+    assert chunks[0].startswith("event: turn_start")
+    assert chunks[-1].startswith("event: done")
+
+
+async def test_a_fast_turn_emits_no_heartbeat():
+    from app.main import heartbeat_frames
+
+    async def fast_source():
+        yield "event: turn_start\ndata: {}\n\n"
+        yield "event: done\ndata: {}\n\n"
+
+    chunks = [chunk async for chunk in heartbeat_frames(fast_source(), interval_s=5)]
+    assert not any(chunk.startswith(": ping") for chunk in chunks)
+
+
+async def test_a_disconnected_consumer_still_lets_the_source_clean_up():
+    """Deleting the try/finally + awaited task.cancel() in heartbeat_frames (e.g. reverting to a
+    bare, un-awaited `pending.cancel()`) makes this test fail: cleanup_ran stays False right after
+    aclose() returns, because nothing ever gave the cancelled task a chance to run its own
+    `finally` before we asserted. This is the regression check for the real failure mode: a client
+    disconnecting mid-turn must still let the MCPSession's `async with` block (which owns a live
+    npx subprocess) tear down, not leave it orphaned."""
+    import asyncio
+    from app.main import heartbeat_frames
+
+    cleanup_ran = False
+
+    async def hanging_source():
+        nonlocal cleanup_ran
+        try:
+            yield "event: turn_start\ndata: {}\n\n"
+            await asyncio.sleep(10)  # would hang forever if cancellation never arrives
+            yield "event: done\ndata: {}\n\n"
+        finally:
+            cleanup_ran = True
+
+    gen = heartbeat_frames(hanging_source(), interval_s=1)
+    first = await gen.__anext__()
+    assert first.startswith("event: turn_start")
+    await gen.aclose()  # simulates the client disconnecting mid-turn
+    assert cleanup_ran, "source cleanup did not run before aclose() returned -- orphaned subprocess risk"

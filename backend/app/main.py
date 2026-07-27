@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -320,6 +321,80 @@ def sse_frame(event: dict[str, Any]) -> str:
     return f"event: {event['event']}\ndata: {json.dumps(event['data'], ensure_ascii=False, default=str)}\n\n"
 
 
+_HEARTBEAT_DONE = object()
+
+
+async def heartbeat_frames(source, interval_s: float = 15.0):
+    """Keeps idle proxies (nginx, browser) from dropping a long tool-calling turn: `create_message_
+    stream`'s `frames()` can sit silent for up to 8s per tool call across 4 rounds between a
+    `tool_start` and its `tool_end`, and a comment line (`: ping`, ignored by every SSE client) is
+    enough to keep the socket warm.
+
+    Deliberately NOT the naive `asyncio.ensure_future(iterator.__anext__())`-per-item shape: that
+    calls `source.__anext__()` from inside a *freshly created task* every single time, and
+    `source` here is `frames()`, which holds `async with mcp_client.session()` open across many
+    `yield`s. anyio's cancel scopes (opened inside `MCPSession.__aenter__`, closed inside
+    `MCPSession.__aexit__`) require the exact same asyncio task to enter and exit them -- see
+    mcp_client.MCPSession's own docstring on this. Advancing `frames()` from a different task each
+    time reproduces exactly that "Attempted to exit cancel scope in a different task than it was
+    entered in" RuntimeError (confirmed with a standalone repro against a real anyio.CancelScope
+    before writing this). Driving `source` from one single long-lived `pump` task instead -- and
+    funneling its output through a queue that this generator's own task reads with a timeout --
+    keeps `source` single-task for its whole lifetime, heartbeats or not.
+
+    Cancellation/cleanup: if the consumer stops early (client disconnect cancels the request task,
+    which reaches this generator via `aclose()`/an injected exception), `finally` cancels `pump`
+    and *awaits* it -- not fire-and-forget -- so `source`'s own cleanup (tearing down the MCP
+    subprocess) has actually run by the time this generator finishes unwinding. An un-awaited
+    `.cancel()` only schedules cancellation; it does not guarantee delivery before the caller
+    moves on, which is exactly how an abandoned request would leak an `npx` subprocess. See
+    test_a_disconnected_consumer_still_lets_the_source_clean_up for the regression check, and the
+    scratch repro referenced in the Task 11 report showing the un-awaited variant leaves
+    `cleanup_ran` False even one event-loop tick after `aclose()` returns.
+
+    No frame is ever dropped mid-flight: `pump` puts every item from `source` onto the queue as
+    soon as it is produced, and a heartbeat timeout only ever races a `queue.get()`, never
+    `source.__anext__()` itself -- so an item already sitting in the queue is never in danger of
+    being lost to a timeout-driven cancellation the way a bare `pending` task's result would be.
+
+    `pump` only catches `Exception`, never `BaseException`: a genuine `CancelledError` must
+    propagate out of `pump`'s task untouched so `task.cancel()` composes correctly, matching the
+    same rule `MCPSession.call()` applies for the same reason. In practice `frames()` already
+    catches every `Exception` itself and always yields a well-formed `error`/`done` frame before
+    returning (see its own `except Exception` clause) -- so the `except Exception` branch below is
+    a defensive fallback for a bug that slipped past that boundary, not the expected path. If it
+    ever fires, it re-raises here rather than fabricating a synthetic SSE frame of its own: this
+    generic wrapper doesn't know the app's frame shape and must not guess at one."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def pump() -> None:
+        try:
+            async for item in source:
+                await queue.put(item)
+        except Exception as exc:  # noqa: BLE001 -- see docstring: re-raised verbatim below, never fabricated.
+            await queue.put(("__heartbeat_error__", exc))
+        else:
+            await queue.put(_HEARTBEAT_DONE)
+
+    task = asyncio.ensure_future(pump())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=interval_s)
+            except TimeoutError:
+                yield ": ping\n\n"
+                continue
+            if item is _HEARTBEAT_DONE:
+                return
+            if isinstance(item, tuple) and len(item) == 2 and item[0] == "__heartbeat_error__":
+                raise item[1]
+            yield item
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 @app.post("/api/v1/cases/{case_id}/messages/stream")
 async def create_message_stream(case_id: UUID, payload: MessageCreate, session_id: UUID = Depends(current_session)):
     # Ownership, then consent, then the metered daily-turn consumption -- in that order, so a
@@ -379,8 +454,10 @@ async def create_message_stream(case_id: UUID, payload: MessageCreate, session_i
 
     # No `Connection: keep-alive` header: Starlette/uvicorn already keep an HTTP/1.1 connection
     # alive by default, and the `Connection` header has no meaning on HTTP/2 (RFC 7540 forbids it
-    # as a connection-specific header) -- setting it here would be a no-op at best.
-    return StreamingResponse(frames(), media_type="text/event-stream",
+    # as a connection-specific header) -- setting it here would be a no-op at best. The `: ping`
+    # comment frames from heartbeat_frames are what actually keeps idle proxies from dropping the
+    # connection; a `Connection` header was never doing that job.
+    return StreamingResponse(heartbeat_frames(frames(), interval_s=15.0), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
