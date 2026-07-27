@@ -95,6 +95,19 @@ def test_the_daily_limit_eventually_refuses_a_turn(monkeypatch):
     assert second.status_code == 429
 
 
+def test_a_refused_request_does_not_spend_a_turn(monkeypatch):
+    """consume_daily_turn mutates, so it must run after every guard that can reject. If the
+    order were reversed, a rejected request would burn a turn the user never got to use."""
+    import app.main as main
+    monkeypatch.setattr(main.settings, "ai_daily_request_limit", 1, raising=False)
+    client, case_id = client_and_case()
+    refused = client.post(f"/api/v1/cases/{case_id}/messages/stream",
+                          json=message_body(patch=[{"field": "district", "value": "강남구"}]))
+    assert refused.status_code == 422
+    allowed = client.post(f"/api/v1/cases/{case_id}/messages/stream", json=message_body())
+    assert allowed.status_code == 200, "422 가 턴을 소비했다"
+
+
 def test_the_status_endpoint_exposes_the_ipzitalk_integration():
     from app.main import app
     payload = TestClient(app).get("/api/v1/status").json()
