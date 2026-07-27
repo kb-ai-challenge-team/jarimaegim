@@ -44,7 +44,7 @@ export function KbShell() {
 
   return <div className="kb-app" data-ai={aiActive ? "open" : "closed"} data-panel={panelOpen ? "open" : "closed"} data-chat={chatVisible ? "open" : "closed"}>
     <nav className="kb-gnb" aria-label="주요 메뉴">
-      <span className="kb-logo" aria-label="KB부동산">KB</span>
+      <span className="kb-logo" aria-label="KB 자리매김">KB</span>
       <button type="button" className="kb-gnb-ai" aria-current={aiActive && panelOpen ? "page" : undefined} aria-expanded={aiActive && panelOpen} onClick={() => selectView("ai")}>
         <span className="kb-ai-badge" aria-hidden="true">AI</span><span>자리매김</span>
       </button>
