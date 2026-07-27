@@ -1,5 +1,10 @@
-from app.chat_tools import TOOL_SCHEMAS, ChatToolset, PlaceRegistry, _https
-from app.mcp_client import MCPUnavailable
+import inspect
+import re
+
+from app.chat_tools import REAL_MCP_TOOL_NAMES, TOOL_SCHEMAS, ChatToolset, PlaceRegistry, _https
+from app.mcp_client import MCPToolError, MCPUnavailable
+
+import app.chat_tools as chat_tools_module
 
 
 class FakeSession:
@@ -19,73 +24,79 @@ class FakeSession:
         return payload
 
 
-GANGNAM = {"get_address": {"documents": [{"address_name": "서울 강남구 역삼동 1", "road_address_name": "서울 강남구 테헤란로 1",
-                                          "place_name": "테스트빌딩", "x": "127.03", "y": "37.50",
-                                          "place_url": "https://place.map.kakao.com/1"}]},
-           "get_geocode": {"documents": [{"x": "127.03", "y": "37.50", "address_name": "서울 강남구 역삼동 1",
-                                          "region_1depth_name": "서울", "region_2depth_name": "강남구",
-                                          "b_code": "1168010100"}]},
-           "get_region_code": {"bjd_code": "1168010100", "sgg_code": "11680", "applyhome_code": "11680",
-                               "sido": "서울특별시", "sigungu": "강남구"}}
+# Fixture shapes below mirror the *real* presale-mcp outputSchemas (and, where none is declared,
+# its own source) rather than the Kakao-documents-style shapes the original code assumed --
+# captured by listing tools against a live `npx -y presale-mcp@0.1.0` process with placeholder
+# credentials and, for the undeclared outputSchemas, reading the package's bundled dist/index.js.
+
+GANGNAM = {
+    "get_address": {"query": "역삼동 테스트빌딩", "results": [
+        {"name": "테스트빌딩", "lat": 37.50, "lng": 127.03, "address": "서울 강남구 역삼동 1",
+         "road_address": "서울 강남구 테헤란로 1", "kakao_place_id": "111", "kakao_category_name": "빌딩"}],
+        "summary": {"total_found": 1}, "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}},
+    "get_geocode": {"address": "서울 강남구 테헤란로 1", "lat": 37.50, "lng": 127.03,
+                    "normalized_address": "서울 강남구 역삼동 1", "address_type": "road", "matched_provider": "naver",
+                    "region": {"sido": "서울", "sigungu": "강남구", "eupmyeondong": "역삼동"},
+                    "region_code": "1168010100", "confidence": "exact",
+                    "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}},
+    "get_region_code": {"query": "서울 강남구 역삼동 1", "full_code": "1168010100", "sigungu_code": "11680",
+                        "sido_code": "11", "applyhome_code": "11680", "region_name": "강남구",
+                        "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}},
+}
 
 SUWON = {**GANGNAM,
-         "get_geocode": {"documents": [{"x": "127.02", "y": "37.26", "address_name": "경기 수원시 영통구 1",
-                                        "region_1depth_name": "경기", "region_2depth_name": "수원시 영통구",
-                                        "b_code": "4111700000"}]},
-         "get_region_code": {"bjd_code": "4111700000", "sgg_code": "41117", "applyhome_code": "41117",
-                             "sido": "경기도", "sigungu": "수원시 영통구"}}
+         "get_geocode": {"address": "경기 수원시 영통구 1", "lat": 37.26, "lng": 127.02,
+                         "normalized_address": "경기 수원시 영통구 1", "address_type": "road", "matched_provider": "naver",
+                         "region": {"sido": "경기", "sigungu": "수원시 영통구", "eupmyeondong": "영통동"},
+                         "region_code": "4111700000", "confidence": "exact",
+                         "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}}}
 
 PRESALE = {**GANGNAM,
-           "search_announcement_info": {"items": [
-               {"house_nm": "강남OO아파트", "pblanc_url": "https://www.applyhome.co.kr/ai/aia/1",
-                "rcrit_pblanc_de": "2026-07-01", "house_manage_no": "2026000123",
-                "supply_types": [{"house_ty": "84A", "supply_price_man": 120000}]}]},
-           "enrich_complex_info": {"items": [{"house_manage_no": "2026000123", "kapt_code": "A13001",
-                                             "kapt_da_cnt": 480, "kapt_usedate": "2029"}]}}
+           "search_presale_announcements": {
+               "announcements": [
+                   {"announcement_id": "2026-1", "house_manage_no": "2026000123", "type": "apt",
+                    "name": "강남OO아파트", "address": "서울 강남구 역삼동 100", "official_url": "http://www.applyhome.co.kr/ai/aia/1",
+                    "status": "분양중"}],
+               "unlocated_announcements": [],
+               "summary": {"total_found": 1, "geocoded": 1, "within_radius": 1, "unlocated": 0, "by_status": {"분양중": 1}},
+               "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}}}
 
 COMPLEX = {**GANGNAM,
-           "get_complex_info": {"kapt_code": "A13001", "kapt_name": "강남OO아파트", "kapt_da_cnt": 480,
-                                "kapt_usedate": "20290301", "kapt_dong_cnt": 6, "kapt_pcnt_tot": 620,
-                                "source_url": "http://www.k-apt.go.kr/kaptinfo/A13001"}}
+           "get_complex_info": {"kapt_code": "A13001", "name": "강남OO아파트", "resolved_from": "bjd_code+name",
+                                "match": "exact",
+                                "basic": {"build_year": 2010, "total_units": 480, "dong_count": 6},
+                                "detail": None, "derived": {},
+                                "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z",
+                                            "data_source": "kapt_basis_info_v4", "sources": [], "note": ""}}}
 
 TRADES = {**GANGNAM,
-          "get_complex_trades": {"items": [{"deal_ymd": "202606", "deal_amount_man": 210000,
-                                            "exclu_use_ar": 84.97, "floor": 12, "trade_type": "매매"}],
-                                 "source_url": "https://rt.molit.go.kr/"}}
-
-# Covers the join's three non-trivial shapes: a match, a manage_no present upstream but absent from
-# the enrichment response, and an int-vs-string key mismatch between the two payloads.
-PRESALE_JOIN = {**GANGNAM,
-                "search_announcement_info": {"items": [
-                    {"house_nm": "A아파트", "house_manage_no": 2026000001, "pblanc_url": "https://x/1"},
-                    {"house_nm": "B아파트", "house_manage_no": "2026000002", "pblanc_url": "https://x/2"},
-                    {"house_nm": "C아파트", "house_manage_no": "2026000003", "pblanc_url": "https://x/3"}]},
-                "enrich_complex_info": {"items": [
-                    {"house_manage_no": "2026000001", "kapt_code": "A1", "kapt_da_cnt": 100},
-                    {"house_manage_no": "2026000003", "kapt_code": "A3", "kapt_da_cnt": 300}]}}
-
-# A malformed enrichment row with no house_manage_no of its own, alongside an announcement that
-# also has no house_manage_no -- the exact shape that would collide on the literal key "None" if
-# the join didn't filter None on both sides.
-PRESALE_NONE_KEY_COLLISION = {**GANGNAM,
-                              "search_announcement_info": {"items": [
-                                  {"house_nm": "정상아파트", "house_manage_no": "2026000123",
-                                   "pblanc_url": "https://x/1"},
-                                  {"house_nm": "무번호아파트", "pblanc_url": "https://x/2"}]},
-                              "enrich_complex_info": {"items": [
-                                  {"house_manage_no": "2026000123", "kapt_code": "A1", "kapt_da_cnt": 480},
-                                  {"kapt_code": "WRONG", "kapt_da_cnt": 9999}]}}
-
+          "get_complex_trades": {"trade_type": "sale", "region_code": "11680", "year_month": "202606",
+                                 "total_count": 1, "filtered_count": 1,
+                                 "items": [{"apt_name": "강남OO아파트", "dong": "역삼동", "jibun": "100",
+                                           "area_sqm": 84.97, "floor": 12, "trade_date": "2026-06-05",
+                                           "price_10k": 210000}],
+                                 "summary": {"sample_count": 1},
+                                 "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}}}
 
 NEARBY = {**GANGNAM,
-          "search_by_nearby_category": {"documents": [{"place_name": "역삼역", "category_group_code": "SW8",
-                                                       "distance": "320", "place_url": "https://place.map.kakao.com/2"}]},
-          "search_by_nearby_keyword": {"documents": [{"place_name": "테스트카페", "distance": "80",
-                                                      "place_url": "https://place.map.kakao.com/3"}]}}
+          "search_by_nearby_category": {"center": {"lat": 37.50, "lng": 127.03}, "radius_m": 1000,
+                                        "results": {"subway": [{"name": "역삼역", "lat": 37.501, "lng": 127.031,
+                                                                "distance_m": 320, "distance_label": "320m",
+                                                                "address": "서울 강남구", "kakao_place_id": "2",
+                                                                "kakao_category_name": "지하철역"}]},
+                                        "summary": {"total": 1, "by_category": {"subway": 1}},
+                                        "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}},
+          "search_by_nearby_keyword": {"center": {"lat": 37.50, "lng": 127.03}, "radius_m": 1000, "query": "카페",
+                                       "filter_applied": None, "deduplicate_by": None,
+                                       "results": [{"name": "테스트카페", "lat": 37.5001, "lng": 127.0301,
+                                                   "distance_m": 80, "distance_label": "80m", "address": "서울 강남구",
+                                                   "kakao_place_id": "3", "kakao_category_name": "카페"}],
+                                       "summary": {"total_found": 1, "after_filter": 1, "after_dedupe": 1},
+                                       "metadata": {"cache_hit": False, "collected_at": "2026-07-27T00:00:00Z"}}}
 
 MAPS = {**GANGNAM,
-        "get_map_embed_url": {"url": "https://map.naver.com/embed?c=127.03,37.50"},
-        "get_static_map": {"url": "https://naveropenapi.apigw.ntruss.com/map-static/v2/raster?center=127.03,37.50"}}
+        "get_static_map": {"marker_count": 1, "maptype": "basic", "warnings": [],
+                           "image_base64": "ZmFrZS1wbmctYnl0ZXM=", "image_mime_type": "image/png"}}
 
 
 def toolset(payloads):
@@ -141,14 +152,39 @@ async def test_resolve_produces_a_kakao_citation():
     assert citation["collected_at"].endswith("+00:00") or citation["collected_at"].endswith("Z")
 
 
+async def test_resolve_reads_region_code_from_the_get_region_code_response_not_get_geocode():
+    # get_region_code's real fields are full_code/sigungu_code/applyhome_code -- a place resolved
+    # this way must carry those through to the district-scoped tools (lookup_seoul_complex,
+    # lookup_complex_trades) via place.bjd_code/sgg_code/applyhome_code. Deleting the
+    # get_region_code call (and falling back only to get_geocode's own region_code) would still
+    # populate bjd_code but leave sgg_code/applyhome_code empty -- this test pins that the real
+    # get_region_code call actually happened and its values landed on the resolved place.
+    session = FakeSession(GANGNAM)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    place = tools.registry.get(resolved["place_ref"])
+    assert place.bjd_code == "1168010100"
+    assert place.sgg_code == "11680"
+    assert place.applyhome_code == "11680"
+    region_code_call = next(args for name, args in session.calls if name == "get_region_code")
+    assert region_code_call == {"query": "서울 강남구 역삼동 1"}
+
+
 async def test_every_declared_tool_has_a_schema_and_a_handler():
     tools = toolset(GANGNAM)
     names = {schema["name"] for schema in tools.schemas()}
     assert names == {"resolve_seoul_place", "lookup_seoul_presale", "lookup_seoul_complex",
-                     "lookup_complex_trades", "scan_nearby_facilities", "render_location_map",
-                     "get_location_map_image"}
+                     "lookup_complex_trades", "scan_nearby_facilities", "get_location_map_image"}
     for name in names:
         assert tools.has_handler(name), f"{name} 에 핸들러가 없다"
+
+
+async def test_render_location_map_was_removed_along_with_its_schema_and_handler():
+    # Product decision: no embed-URL primitive exists on the real server (only get_static_map,
+    # which renders an image) -- render_location_map must be gone, not merely undocumented.
+    tools = toolset(GANGNAM)
+    assert "render_location_map" not in {schema["name"] for schema in tools.schemas()}
+    assert not tools.has_handler("render_location_map")
 
 
 async def test_an_unknown_tool_name_is_reported_not_raised():
@@ -179,44 +215,95 @@ async def test_an_unexpected_handler_exception_becomes_an_error_result_not_a_cra
     assert result["status"] == "error"
 
 
-async def test_presale_lookup_uses_the_region_code_from_the_place_ref():
+def test_https_upgrades_bare_http_and_protocol_relative_urls():
+    assert _https("http://example.com/a", "https://fallback/") == "https://example.com/a"
+    assert _https("//example.com/a", "https://fallback/") == "https://example.com/a"
+    assert _https("https://example.com/a", "https://fallback/") == "https://example.com/a"
+    assert _https("", "https://fallback/") == "https://fallback/"
+
+
+# --- lookup_seoul_presale --------------------------------------------------------------------
+
+async def test_presale_lookup_calls_the_real_search_tool_with_a_radius_km():
     session = FakeSession(PRESALE)
     tools = ChatToolset(session, PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    announcement_call = next(args for name, args in session.calls if name == "search_announcement_info")
-    assert announcement_call["region_code"] == "11680"
-    # resolve already fetched the region code; looking it up again would be a wasted round trip.
-    assert [name for name, _ in session.calls].count("get_region_code") == 1
+    await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"], "radius_km": 3})
+    call_args = next(args for name, args in session.calls if name == "search_presale_announcements")
+    assert call_args == {"center_lat": 37.50, "center_lng": 127.03, "radius_km": 3}
 
 
-async def test_presale_lookup_cites_applyhome():
+async def test_presale_lookup_reads_the_real_announcements_field_not_items():
     tools = ChatToolset(FakeSession(PRESALE), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "ok"
+    assert result["items"][0]["name"] == "강남OO아파트"
     assert any(item["source_name"] == "청약홈" for item in result["citations"])
-    assert result["items"][0]["house_nm"] == "강남OO아파트"
+
+
+async def test_presale_lookup_upgrades_a_bare_http_official_url_to_https():
+    tools = ChatToolset(FakeSession(PRESALE), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    assert result["items"][0]["official_url"] == "https://www.applyhome.co.kr/ai/aia/1"
 
 
 async def test_presale_lookup_reports_an_empty_result_rather_than_inventing_one():
-    payloads = {**GANGNAM, "search_announcement_info": {"items": []}}
+    payloads = {**GANGNAM, "search_presale_announcements": {"announcements": [], "unlocated_announcements": [],
+                                                            "summary": {"total_found": 0}, "metadata": {}}}
     tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "empty"
     assert result["items"] == []
-    assert "확인" in result["message"]
+    assert "찾지 못했습니다" in result["message"]
 
 
-async def test_presale_lookup_states_the_scope_is_the_whole_district():
+async def test_presale_lookup_states_the_scope_is_a_real_coordinate_radius_filter():
+    # Regression test for the earlier bug: our own scope_note must describe what the server
+    # actually did (geocode each announcement and keep only the ones inside radius_km), not claim
+    # a filter that never ran.
     tools = ChatToolset(FakeSession(PRESALE), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"], "radius_km": 5})
+    assert "반경 5km" in result["scope_note"]
+    assert "좌표" in result["scope_note"]
+
+
+async def test_presale_lookup_clamps_an_out_of_range_radius():
+    session = FakeSession(PRESALE)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"], "radius_km": 999})
+    call_args = next(args for name, args in session.calls if name == "search_presale_announcements")
+    assert call_args["radius_km"] == 20
+
+
+async def test_presale_lookup_collapses_citations_to_one_per_call():
+    payloads = {**GANGNAM, "search_presale_announcements": {
+        "announcements": [{"announcement_id": "1", "name": "1단지", "official_url": "https://x/1"},
+                          {"announcement_id": "2", "name": "2단지", "official_url": "https://x/2"}],
+        "unlocated_announcements": [], "summary": {"total_found": 2}, "metadata": {}}}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    assert "강남구" in result["scope_note"]
-    assert "전체" in result["scope_note"]
-    # No distance filter is actually applied -- the note must say so, not claim one happened.
-    assert "좁혀진 결과가 아닙니다" in result["scope_note"]
+    applyhome_citations = [item for item in result["citations"] if item["source_name"] == "청약홈"]
+    assert len(applyhome_citations) == 1
+
+
+# --- lookup_seoul_complex ---------------------------------------------------------------------
+
+async def test_complex_lookup_sends_bjd_code_and_complex_name_not_latitude_longitude():
+    # get_complex_info's real schema has no latitude/longitude properties at all (additionalProperties
+    # is not declared false on the input, but sending keys the tool doesn't know about is exactly
+    # the class of bug this whole rewrite exists to fix).
+    session = FakeSession(COMPLEX)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("lookup_seoul_complex", {"place_ref": resolved["place_ref"]})
+    call_args = next(args for name, args in session.calls if name == "get_complex_info")
+    assert call_args == {"bjd_code": "1168010100", "complex_name": "테스트빌딩"}
 
 
 async def test_complex_lookup_returns_the_overview_without_touching_trades():
@@ -225,13 +312,18 @@ async def test_complex_lookup_returns_the_overview_without_touching_trades():
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("lookup_seoul_complex", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "ok"
-    assert result["complex"]["kapt_da_cnt"] == 480
+    assert result["complex"]["basic"]["total_units"] == 480
     assert "get_complex_trades" not in [name for name, _ in session.calls]
     assert any(item["source_name"] == "K-apt" for item in result["citations"])
 
 
-async def test_complex_not_found_still_cites_kapt():
-    payloads = {**GANGNAM, "get_complex_info": {}}
+async def test_complex_not_found_is_reported_via_the_iserror_not_found_convention():
+    # presale-mcp marks "no K-apt record" as a tool-level isError whose message embeds
+    # "NOT_FOUND" (confirmed by reading its source) -- our mcp_client.call() raises MCPToolError
+    # for any isError result, so this handler must specifically catch that and re-map it to
+    # status=not_found rather than letting run()'s generic `except MCPUnavailable` report a bare
+    # status=error.
+    payloads = {**GANGNAM, "get_complex_info": MCPToolError("[NOT_FOUND] 해당 단지의 기본정보가 없음.")}
     tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("lookup_seoul_complex", {"place_ref": resolved["place_ref"]})
@@ -240,21 +332,12 @@ async def test_complex_not_found_still_cites_kapt():
     assert result["citations"][0]["official_url"].startswith("https://")
 
 
-async def test_complex_citation_urls_are_upgraded_to_https():
-    tools = ChatToolset(FakeSession(COMPLEX), PlaceRegistry())
+async def test_complex_lookup_treats_a_non_not_found_tool_error_as_a_generic_error():
+    payloads = {**GANGNAM, "get_complex_info": MCPToolError("presale-mcp 응답을 해석할 수 없습니다.")}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("lookup_seoul_complex", {"place_ref": resolved["place_ref"]})
-    for item in result["citations"]:
-        assert item["official_url"].startswith("https://")
-
-
-async def test_trades_lookup_cites_molit():
-    tools = ChatToolset(FakeSession(TRADES), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "months": 12})
-    assert result["status"] == "ok"
-    assert any(item["source_name"] == "국토교통부 실거래가" for item in result["citations"])
-    assert result["items"][0]["deal_amount_man"] == 210000
+    assert result["status"] == "error"
 
 
 async def test_a_tool_failure_is_returned_as_an_error_result_not_raised():
@@ -266,109 +349,88 @@ async def test_a_tool_failure_is_returned_as_an_error_result_not_raised():
     assert "실패" in result["message"]
 
 
-async def test_presale_enrichment_joins_by_manage_no_across_int_and_string_keys():
-    tools = ChatToolset(FakeSession(PRESALE_JOIN), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    items_by_name = {item["house_nm"]: item for item in result["items"]}
-    assert items_by_name["A아파트"]["complex_info"]["kapt_da_cnt"] == 100  # int upstream, str downstream
-    assert items_by_name["C아파트"]["complex_info"]["kapt_da_cnt"] == 300
-    assert "complex_info" not in items_by_name["B아파트"]  # present upstream, absent from enrichment
+# --- lookup_complex_trades --------------------------------------------------------------------
 
-
-async def test_presale_enrichment_does_not_attach_an_unrelated_complex_to_an_id_less_announcement():
-    # Regression test for the None-key collision: without filtering rows/items whose
-    # house_manage_no is None, str(None) == "None" would let the malformed "WRONG" row match
-    # 무번호아파트 even though they have nothing to do with each other.
-    tools = ChatToolset(FakeSession(PRESALE_NONE_KEY_COLLISION), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    items_by_name = {item["house_nm"]: item for item in result["items"]}
-    assert items_by_name["정상아파트"]["complex_info"]["kapt_da_cnt"] == 480
-    assert "complex_info" not in items_by_name["무번호아파트"]
-
-
-async def test_presale_enrichment_request_dedupes_a_repeated_manage_no():
-    payloads = {**GANGNAM, "search_announcement_info": {"items": [
-        {"house_nm": "중복1", "house_manage_no": "2026000999", "pblanc_url": "https://x/a"},
-        {"house_nm": "중복2", "house_manage_no": "2026000999", "pblanc_url": "https://x/b"}]},
-        "enrich_complex_info": {"items": [{"house_manage_no": "2026000999", "kapt_code": "AX", "kapt_da_cnt": 10}]}}
-    session = FakeSession(payloads)
-    tools = ChatToolset(session, PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    enrich_call = next(args for name, args in session.calls if name == "enrich_complex_info")
-    assert enrich_call["house_manage_nos"] == ["2026000999"]
-
-
-async def test_presale_lookup_survives_an_enrichment_failure_and_keeps_the_announcements():
-    payloads = {**PRESALE, "enrich_complex_info": MCPUnavailable("K-apt 보강 실패")}
-    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    assert result["status"] == "ok"
-    assert result["items"][0]["house_nm"] == "강남OO아파트"
-    assert "complex_info" not in result["items"][0]
-    assert "실패" in result["enrichment_note"]
-    assert not any(item["source_name"] == "K-apt" for item in result["citations"])
-
-
-async def test_presale_lookup_skips_enrichment_when_no_item_has_a_manage_no():
-    payloads = {**GANGNAM, "search_announcement_info": {"items": [
-        {"house_nm": "번호없음", "pblanc_url": "https://x/9"}]}}
-    session = FakeSession(payloads)
-    tools = ChatToolset(session, PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    assert result["status"] == "ok"
-    assert "enrich_complex_info" not in [name for name, _ in session.calls]
-    assert "생략" in result["enrichment_note"]
-
-
-async def test_presale_lookup_collapses_citations_to_one_per_district_not_one_per_announcement():
-    payloads = {**GANGNAM, "search_announcement_info": {"items": [
-        {"house_nm": "1단지", "house_manage_no": "2026000001", "pblanc_url": "https://x/1"},
-        {"house_nm": "2단지", "house_manage_no": "2026000002", "pblanc_url": "https://x/2"}]},
-        "enrich_complex_info": {"items": []}}
-    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
-    applyhome_citations = [item for item in result["citations"] if item["source_name"] == "청약홈"]
-    assert len(applyhome_citations) == 1
-
-
-async def test_trades_lookup_reports_an_empty_result_rather_than_inventing_one():
-    payloads = {**GANGNAM, "get_complex_trades": {"items": [], "source_url": "https://rt.molit.go.kr/"}}
-    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"]})
-    assert result["status"] == "empty"
-    assert result["items"] == []
-    assert any(item["source_name"] == "국토교통부 실거래가" for item in result["citations"])
-
-
-async def test_trades_lookup_clamps_an_excessive_months_value():
+async def test_trades_lookup_sends_a_single_year_month_via_complex_query_not_region_code():
+    # complex_query and region_code are mutually exclusive in the real tool -- presale-mcp only
+    # resolves complex_query when region_code is absent (confirmed by reading its source), so
+    # sending both would silently discard the complex-level filter.
     session = FakeSession(TRADES)
     tools = ChatToolset(session, PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "months": 999})
-    assert result["months"] == 36
+    await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "year_month": "202606"})
     call_args = next(args for name, args in session.calls if name == "get_complex_trades")
-    assert call_args["months"] == 36
+    assert call_args == {"complex_query": "테스트빌딩", "year_month": "202606"}
 
 
-async def test_trades_lookup_clamps_a_non_positive_months_value():
+async def test_trades_lookup_defaults_the_year_month_when_none_is_given():
+    session = FakeSession(TRADES)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"]})
+    call_args = next(args for name, args in session.calls if name == "get_complex_trades")
+    assert re.fullmatch(r"\d{6}", call_args["year_month"])
+
+
+async def test_trades_lookup_falls_back_to_the_default_on_a_malformed_year_month():
+    session = FakeSession(TRADES)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "year_month": "not-a-month"})
+    call_args = next(args for name, args in session.calls if name == "get_complex_trades")
+    assert re.fullmatch(r"\d{6}", call_args["year_month"])
+
+
+async def test_trades_lookup_makes_exactly_one_raw_call_per_invocation():
+    # Guards the 12-call-per-turn budget: this tool must never fan out to multiple months on its
+    # own, however the model phrases its request.
+    session = FakeSession(TRADES)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    session.calls.clear()
+    await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"]})
+    assert len([name for name, _ in session.calls if name == "get_complex_trades"]) == 1
+
+
+async def test_trades_lookup_cites_molit():
     tools = ChatToolset(FakeSession(TRADES), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "months": -5})
-    assert result["months"] == 1
+    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "year_month": "202606"})
+    assert result["status"] == "ok"
+    assert any(item["source_name"] == "국토교통부 실거래가" for item in result["citations"])
+    assert result["items"][0]["price_10k"] == 210000
 
 
-def test_https_upgrades_bare_http_and_protocol_relative_urls():
-    assert _https("http://example.com/a", "https://fallback/") == "https://example.com/a"
-    assert _https("//example.com/a", "https://fallback/") == "https://example.com/a"
-    assert _https("https://example.com/a", "https://fallback/") == "https://example.com/a"
-    assert _https("", "https://fallback/") == "https://fallback/"
+async def test_trades_lookup_reports_an_empty_result_rather_than_inventing_one():
+    payloads = {**GANGNAM, "get_complex_trades": {"items": [], "trade_type": "sale"}}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "year_month": "202606"})
+    assert result["status"] == "empty"
+    assert result["items"] == []
+
+
+async def test_trades_lookup_treats_the_iserror_not_found_convention_as_empty_not_error():
+    payloads = {**GANGNAM, "get_complex_trades": MCPToolError("[NOT_FOUND] 해당 지역·기간 실거래 없음.")}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "year_month": "202606"})
+    assert result["status"] == "empty"
+
+
+# --- scan_nearby_facilities ---------------------------------------------------------------------
+
+async def test_nearby_scan_sends_every_category_in_a_single_call():
+    # search_by_nearby_category accepts the whole categories array in one call -- unlike
+    # search_by_nearby_keyword, which is one query per call. Calling it once per category (as the
+    # earlier code did) would waste calls against the 12-per-turn budget.
+    session = FakeSession(NEARBY)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["subway", "school"]})
+    category_calls = [args for name, args in session.calls if name == "search_by_nearby_category"]
+    assert len(category_calls) == 1
+    assert category_calls[0]["categories"] == ["subway", "school"]
 
 
 async def test_nearby_scan_runs_category_and_keyword_searches():
@@ -376,19 +438,19 @@ async def test_nearby_scan_runs_category_and_keyword_searches():
     tools = ChatToolset(session, PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
-                                                        "categories": ["SW8"], "keywords": ["카페"]})
+                                                        "categories": ["subway"], "keywords": ["카페"]})
     assert result["status"] == "ok"
     called = [name for name, _ in session.calls]
     assert "search_by_nearby_category" in called and "search_by_nearby_keyword" in called
-    assert result["by_category"]["SW8"][0]["place_name"] == "역삼역"
-    assert result["by_keyword"]["카페"][0]["place_name"] == "테스트카페"
+    assert result["by_category"]["subway"][0]["name"] == "역삼역"
+    assert result["by_keyword"]["카페"][0]["name"] == "테스트카페"
 
 
 async def test_nearby_scan_skips_the_search_it_was_not_asked_for():
     session = FakeSession({**GANGNAM, "search_by_nearby_category": NEARBY["search_by_nearby_category"]})
     tools = ChatToolset(session, PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["SW8"]})
+    await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["subway"]})
     assert "search_by_nearby_keyword" not in [name for name, _ in session.calls]
 
 
@@ -397,7 +459,7 @@ async def test_nearby_scan_requires_at_least_one_target():
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "error"
-    assert "카테고리" in result["message"]
+    assert "카테고리" in result["message"] or "키워드" in result["message"]
 
 
 async def test_nearby_scan_cites_kakao():
@@ -408,22 +470,19 @@ async def test_nearby_scan_cites_kakao():
                for item in result["citations"])
 
 
-async def test_nearby_scan_routes_results_by_call_kind_not_by_string_equality():
-    # Regression test for the reference implementation's `target in categories` routing bug:
-    # the exact same string ("강남") requested as both a category code and a keyword must not
-    # let one search's result silently overwrite or masquerade as the other's. A routing
-    # scheme that keys off value membership instead of which search actually produced the
-    # payload would misfile this case; deleting the fix and reverting to value-based routing
-    # makes this test fail.
-    payloads = {**GANGNAM,
-                "search_by_nearby_category": {"documents": [{"place_name": "카테고리결과"}]},
-                "search_by_nearby_keyword": {"documents": [{"place_name": "키워드결과"}]}}
+async def test_nearby_scan_surfaces_an_unresolved_category_alias_rather_than_a_silent_zero():
+    # resolveCategory (server-side) drops any alias it doesn't recognize and records a
+    # "Unknown category: X" warning in metadata.warnings instead of erroring -- if we don't
+    # surface that, "school_bogus" would look identical to a category that was checked and found
+    # nothing.
+    payloads = {**GANGNAM, "search_by_nearby_category": {
+        "center": {"lat": 37.50, "lng": 127.03}, "radius_m": 1000, "results": {},
+        "summary": {"total": 0, "by_category": {}},
+        "metadata": {"cache_hit": False, "collected_at": "x", "warnings": ["Unknown category: school_bogus"]}}}
     tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
-                                                        "categories": ["강남"], "keywords": ["강남"]})
-    assert result["by_category"]["강남"][0]["place_name"] == "카테고리결과"
-    assert result["by_keyword"]["강남"][0]["place_name"] == "키워드결과"
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["school_bogus"]})
+    assert "school_bogus" in result["unresolved_categories_note"]
 
 
 async def test_nearby_scan_reports_a_partial_failure_rather_than_a_clean_answer():
@@ -431,11 +490,11 @@ async def test_nearby_scan_reports_a_partial_failure_rather_than_a_clean_answer(
     tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
-                                                        "categories": ["SW8"], "keywords": ["카페"]})
+                                                        "categories": ["subway"], "keywords": ["카페"]})
     # The category search succeeded, so this is still a real answer -- but the keyword search's
     # failure must be visible, not silently swallowed as "no cafes found nearby".
     assert result["status"] == "ok"
-    assert result["by_category"]["SW8"][0]["place_name"] == "역삼역"
+    assert result["by_category"]["subway"][0]["name"] == "역삼역"
     assert result["by_keyword"]["카페"] == []
     assert result["failed_targets"] == ["카페"]
     assert "failure_note" in result and "카페" in result["failure_note"]
@@ -445,13 +504,9 @@ async def test_nearby_scan_reports_total_failure_as_error_not_as_a_confident_emp
     payloads = {**GANGNAM, "search_by_nearby_category": MCPUnavailable("카카오 로컬 조회 실패")}
     tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["SW8"]})
-    # If the only search attempted failed outright, we genuinely don't know whether anything is
-    # nearby -- that must not be reported the same way as a search that ran cleanly and found
-    # zero rows (status=empty). Collapsing the two would let the model tell the user "nothing
-    # nearby" when the truth is "we couldn't check".
+    result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"], "categories": ["subway"]})
     assert result["status"] == "error"
-    assert result["failed_targets"] == ["SW8"]
+    assert result["failed_targets"] == ["subway"]
 
 
 async def test_nearby_scan_clamps_an_excessive_radius():
@@ -459,68 +514,99 @@ async def test_nearby_scan_clamps_an_excessive_radius():
     tools = ChatToolset(session, PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
-                                                        "categories": ["SW8"], "radius_m": 999999})
+                                                        "categories": ["subway"], "radius_m": 999999})
     assert result["radius_m"] == 20000
     call_args = next(args for name, args in session.calls if name == "search_by_nearby_category")
-    assert call_args["radius"] == 20000
+    assert call_args["radius_m"] == 20000
 
 
 async def test_nearby_scan_clamps_a_non_positive_radius():
     tools = ChatToolset(FakeSession(NEARBY), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("scan_nearby_facilities", {"place_ref": resolved["place_ref"],
-                                                        "categories": ["SW8"], "radius_m": -5})
+                                                        "categories": ["subway"], "radius_m": -5})
     assert result["radius_m"] == 1
 
 
-async def test_map_url_tool_returns_a_naver_link():
-    tools = ChatToolset(FakeSession(MAPS), PlaceRegistry())
+async def test_scan_nearby_schema_uses_the_real_alias_vocabulary_not_kakao_raw_codes():
+    schema = next(schema for schema in TOOL_SCHEMAS if schema["name"] == "scan_nearby_facilities")
+    description = schema["description"]
+    # These nine ids are confirmed against presale-mcp's own bundled alias table (dist/index.js'
+    # embedded categories_default YAML), not invented. A raw Kakao category-group code like "SW8"
+    # or "MT1" is exactly what the earlier, wrong description told the model to send.
+    for alias in ("school_elementary", "school_middle", "school_high", "school", "subway",
+                 "mart_large", "hospital", "pharmacy", "park"):
+        assert alias in description
+    assert "SW8" not in description
+    assert "MT1" not in description
+
+
+# --- get_location_map_image --------------------------------------------------------------------
+
+async def test_map_image_tool_sends_a_marker_not_latitude_longitude():
+    session = FakeSession(MAPS)
+    tools = ChatToolset(session, PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("render_location_map", {"place_ref": resolved["place_ref"]})
-    assert result["status"] == "ok"
-    assert result["map_url"].startswith("https://")
-    assert any(item["source_name"] == "네이버 지도" for item in result["citations"])
+    await tools.run("get_location_map_image", {"place_ref": resolved["place_ref"]})
+    call_args = next(args for name, args in session.calls if name == "get_static_map")
+    assert call_args["markers"] == [{"lat": 37.50, "lng": 127.03}]
+    assert "latitude" not in call_args and "longitude" not in call_args
 
 
-async def test_map_image_tool_returns_an_image_url():
+async def test_map_image_tool_builds_a_data_url_from_the_returned_image_content():
+    # get_static_map has no url/image_url field anywhere in its declared outputSchema -- the image
+    # arrives as a separate base64 MCP ImageContent block (confirmed by reading presale-mcp's own
+    # source), which mcp_client._unwrap folds into image_base64/image_mime_type. This handler must
+    # build the image_url from those two fields, not read a url key that does not exist upstream.
     tools = ChatToolset(FakeSession(MAPS), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("get_location_map_image", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "ok"
-    assert result["image_url"].startswith("https://")
+    assert result["image_url"] == "data:image/png;base64,ZmFrZS1wbmctYnl0ZXM="
 
 
-async def test_map_tools_report_a_missing_url_rather_than_fabricating_one():
-    tools = ChatToolset(FakeSession({**GANGNAM, "get_map_embed_url": {}}), PlaceRegistry())
-    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("render_location_map", {"place_ref": resolved["place_ref"]})
-    assert result["status"] == "empty"
-    assert "map_url" not in result
-    # Product rule: every data surface carries provenance. Even though no map link could be
-    # produced, we still made a real call to Naver Maps -- that attempt itself is the fact being
-    # cited, not a fabricated URL. An implementation that reverts to `"citations": []` here
-    # (as the original reference code did) passes the two asserts above but fails this one.
-    assert result["citations"]
-    assert result["citations"][0]["source_name"] == "네이버 지도"
-
-
-async def test_map_image_tool_reports_a_missing_url_and_still_cites_naver():
-    tools = ChatToolset(FakeSession({**GANGNAM, "get_static_map": {}}), PlaceRegistry())
+async def test_map_image_tool_reports_a_missing_image_rather_than_fabricating_one():
+    tools = ChatToolset(FakeSession({**GANGNAM, "get_static_map": {"marker_count": 0, "maptype": "basic",
+                                                                   "warnings": ["no image"]}}), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
     result = await tools.run("get_location_map_image", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "empty"
     assert "image_url" not in result
+    # Product rule: every data surface carries provenance, even an empty branch.
     assert result["citations"]
     assert result["citations"][0]["source_name"] == "네이버 지도"
 
 
-async def test_map_tool_schemas_never_let_the_model_supply_a_coordinate():
-    # Product rule 2: the model must never supply a coordinate. A `markers` (or bare
-    # latitude/longitude) parameter on either map tool's schema would be exactly that -- so its
-    # absence here is a safety property, not an incidental gap. This fails if a future edit
-    # exposes it.
+async def test_map_tool_schema_never_lets_the_model_supply_a_coordinate():
+    # Product rule 2: the model must never supply a coordinate. A `markers`/`center` (or bare
+    # latitude/longitude) parameter on get_location_map_image's or scan_nearby_facilities'
+    # *schema* would be exactly that -- so its absence here is a safety property, not an
+    # incidental gap.
     for schema in TOOL_SCHEMAS:
-        if schema["name"] in ("render_location_map", "get_location_map_image", "scan_nearby_facilities"):
+        if schema["name"] in ("get_location_map_image", "scan_nearby_facilities"):
             props = schema["parameters"]["properties"]
-            assert "markers" not in props
+            assert "markers" not in props and "center" not in props
             assert "latitude" not in props and "longitude" not in props
+
+
+# --- the contract test: every raw tool name we call must exist on the real server ---------------
+
+def test_every_raw_tool_call_targets_a_name_the_server_actually_has():
+    """Pins the class of bug this whole rewrite was written to fix: chat_tools.py was calling raw
+    tool names (search_announcement_info, enrich_complex_info, get_map_embed_url) that do not
+    exist on presale-mcp at all, and others (get_region_code, get_complex_trades, ...) with wrong
+    parameter names -- caught only by a live check against real credentials, not by the 191 tests
+    that existed at the time (they all used a fake MCP session that accepted whatever name and
+    shape was asked of it).
+
+    This can't reach the network, so it can't confirm parameter *shapes* -- but it can pin the
+    *tool names* chat_tools.py's source actually calls against REAL_MCP_TOOL_NAMES (see that
+    constant's docstring for how it was captured and how to regenerate it). A rename or typo on
+    either side changes the extracted set and fails this test immediately, instead of failing
+    silently in production against real credentials the way this bug originally did.
+    """
+    source = inspect.getsource(chat_tools_module)
+    called = set(re.findall(r'self\.session\.call\(\s*"([a-zA-Z_]+)"', source))
+    assert called, "no self.session.call(...) call sites were found -- did the pattern or the code move?"
+    unknown = called - REAL_MCP_TOOL_NAMES
+    assert not unknown, f"chat_tools.py calls raw tool name(s) presale-mcp does not expose: {unknown}"

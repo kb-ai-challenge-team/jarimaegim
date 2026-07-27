@@ -24,7 +24,6 @@ TOOL_LABELS = {
     "lookup_seoul_complex": "K-apt 단지 정보 조회 중",
     "lookup_complex_trades": "국토교통부 실거래가 조회 중",
     "scan_nearby_facilities": "주변 시설 검색 중",
-    "render_location_map": "지도 링크 생성 중",
     "get_location_map_image": "지도 이미지 생성 중",
 }
 

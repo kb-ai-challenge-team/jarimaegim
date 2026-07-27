@@ -251,28 +251,59 @@ def _tool_error_message(tool_name: str, result: Any) -> str:
     """The MCP SDK's own server-side convention (see mcp.server.lowlevel.server
     Server._make_error_result) is to put a human-readable explanation in the first text
     content block when isError is set. Surface that to the model rather than a generic
-    message, so it can read why presale-mcp couldn't answer."""
+    message, so it can read why presale-mcp couldn't answer.
+
+    presale-mcp itself, though, puts the *whole JSON result* (e.g.
+    '{"error":"NOT_FOUND","message":"[NOT_FOUND] ...","metadata":{...}}') in that text block --
+    confirmed by reading its source (src/tool-result.ts's jsonToolResult, used for every isError
+    response it produces). Handing the raw JSON blob to the model as "the reason" would be
+    technically true but unreadable, so this prefers the embedded `message` field when the text
+    parses as a JSON object with one, falling back to the raw text for any other tool (or MCP
+    server) that follows the SDK's plain-text convention instead."""
     blocks = getattr(result, "content", None) or []
     for block in blocks:
         text = getattr(block, "text", None)
-        if text:
+        if not text:
+            continue
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
             return text
+        if isinstance(parsed, dict) and isinstance(parsed.get("message"), str) and parsed["message"]:
+            return parsed["message"]
+        return text
     return f"{tool_name} 조회 결과가 없습니다."
 
 
 def _unwrap(tool_name: str, result: Any) -> dict[str, Any]:
-    """The shape contract Tasks 4-6's seven tool handlers rely on: a JSON *object* -- either
+    """The shape contract every chat_tools.py handler relies on: a JSON *object* -- either
     `structuredContent` verbatim, the parsed JSON object from the first text content block, or
     {"items": [...]} when that JSON was an array. A payload that isn't valid JSON, or that
     parses to a JSON scalar (string/number/bool/null), can't satisfy that contract; rather than
     hand handlers an ad hoc {"text": ...} shape they'd have to reverse-engineer and would
     KeyError on, we raise MCPToolError so the failure is catchable the same way an isError
     response is. An empty content list (no blocks at all) is a legitimate degenerate case and
-    returns {} -- a valid, if empty, flat dict."""
+    returns {} -- a valid, if empty, flat dict.
+
+    get_static_map is the one tool that returns an *image*, not just JSON: it emits an MCP
+    ImageContent block (type="image", data=<base64>, mimeType=<string>) alongside its
+    structuredContent (confirmed by reading presale-mcp's own source, src/tool-result.ts's
+    imageToolResult). Before this fix, the `structuredContent`-first branch below returned that
+    metadata dict and silently discarded the image block entirely -- there is no path by which
+    get_location_map_image could ever have produced an image. Any image block found is folded
+    into the returned dict under image_base64/image_mime_type so chat_tools.py's handler can read
+    it; this is additive and does not change the shape returned for any of the other nine tools,
+    none of which emit an image block."""
     structured = getattr(result, "structuredContent", None)
-    if isinstance(structured, dict):
-        return structured
+    payload = dict(structured) if isinstance(structured, dict) else None
     blocks = getattr(result, "content", None) or []
+    image_block = next((block for block in blocks if getattr(block, "type", None) == "image"), None)
+    if image_block is not None:
+        payload = payload if payload is not None else {}
+        payload["image_base64"] = getattr(image_block, "data", None)
+        payload["image_mime_type"] = getattr(image_block, "mimeType", None)
+    if payload is not None:
+        return payload
     for block in blocks:
         text = getattr(block, "text", None)
         if not text:
