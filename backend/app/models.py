@@ -81,6 +81,16 @@ class Provenance(BaseModel):
     limitations: list[str]
 
 
+class ListingTerms(BaseModel):
+    """Demo listing terms. The label is a required Literal so an unlabelled listing cannot be constructed."""
+    listing_kind: Literal["DEMO_SYNTHETIC"]
+    deposit_krw: int = Field(ge=0)
+    monthly_rent_krw: int = Field(gt=0)
+    maintenance_fee_krw: int | None = Field(default=None, ge=0)
+    area_m2: float = Field(gt=0)
+    floor: int
+
+
 class Candidate(BaseModel):
     id: str
     name: str
@@ -93,6 +103,7 @@ class Candidate(BaseModel):
     display_label: str
     context_signals: list[ContextSignal]
     provenance: Provenance
+    listing: ListingTerms | None = None
 
 
 class AnalysisCreate(BaseModel):
