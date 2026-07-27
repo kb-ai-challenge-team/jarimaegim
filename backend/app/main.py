@@ -208,6 +208,22 @@ async def search_locations(payload: LocationSearch, session_id: UUID = Depends(c
     return {"candidates": [candidate.model_dump(mode="json") for candidate in candidates], "status": status, "message": message}
 
 
+@app.get("/api/v1/listings/summary")
+async def listing_summary():
+    """Public: per-district aggregate for the landing map. No session — listings are
+    reference data, and browsing must not mint an anonymous cookie."""
+    return {"districts": [entry.model_dump(mode="json") for entry in listings_service.summary()]}
+
+
+@app.get("/api/v1/listings")
+async def public_listings(district: str = Query(min_length=1, max_length=20), limit: int = Query(default=15, ge=1, le=55)):
+    """Public: one district's demo listings. No session, for the same reason as the summary."""
+    if district not in SEOUL_DISTRICTS:
+        raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "서울 25개 자치구 중에서 선택해 주세요."})
+    candidates, status, message = listings_service.search(district, None, limit)
+    return {"candidates": [candidate.model_dump(mode="json") for candidate in candidates], "status": status, "message": message}
+
+
 @app.post("/api/v1/analyses")
 async def create_analysis(payload: AnalysisCreate, session_id: UUID = Depends(current_session)):
     owned_case(session_id, payload.case_id)

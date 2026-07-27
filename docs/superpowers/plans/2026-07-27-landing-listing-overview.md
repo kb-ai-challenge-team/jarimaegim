@@ -266,9 +266,13 @@ def test_listings_reject_a_district_outside_seoul():
         assert client.get("/api/v1/listings", params={"district": "부산 해운대구"}).status_code == 400
 
 
-def test_listings_cap_the_limit():
+def test_listings_reject_an_out_of_range_limit_the_same_way_as_any_bad_input():
     with TestClient(app) as client:
-        assert client.get("/api/v1/listings", params={"district": "강남구", "limit": 500}).status_code == 422
+        response = client.get("/api/v1/listings", params={"district": "강남구", "limit": 500})
+        # The app's RequestValidationError handler maps every malformed parameter to 400,
+        # so an out-of-range limit must not invent a different status.
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 ```
 
 `Set-Cookie` 어서션이 이 태스크의 핵심이다. 세션을 요구하지 않는다는 결정이 코드로 지켜지는지 확인한다.
