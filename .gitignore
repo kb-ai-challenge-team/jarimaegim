@@ -20,3 +20,6 @@ tsconfig.tsbuildinfo
 *.pfx
 scripts/.tmp-*
 pipeline/raw/
+
+# Tooling worktrees created by other sessions
+.claude/
