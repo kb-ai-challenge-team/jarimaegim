@@ -1,0 +1,53 @@
+from app.config import Settings
+from app.mcp_client import MCPClient
+
+
+def configured_settings(**overrides) -> Settings:
+    base = dict(ipzitalk_mcp_enabled=True, ipzitalk_mcp_command="npx", ipzitalk_mcp_args="-y presale-mcp@0.1.0",
+                kakao_rest_api_key="k", data_go_kr_service_key="d",
+                naver_maps_client_id="n", naver_maps_client_secret="s")
+    base.update(overrides)
+    return Settings(**base)
+
+
+def test_client_is_available_when_every_key_is_present():
+    assert MCPClient(configured_settings()).available is True
+
+
+def test_client_is_unavailable_when_the_flag_is_off():
+    assert MCPClient(configured_settings(ipzitalk_mcp_enabled=False)).available is False
+
+
+def test_client_is_unavailable_when_a_single_key_is_missing():
+    for missing in ("kakao_rest_api_key", "data_go_kr_service_key", "naver_maps_client_id", "naver_maps_client_secret"):
+        client = MCPClient(configured_settings(**{missing: ""}))
+        assert client.available is False, f"{missing} 없이 available 이면 안 된다"
+
+
+def test_unavailable_client_reports_a_korean_reason():
+    reason = MCPClient(configured_settings(ipzitalk_mcp_enabled=False)).unavailable_reason
+    assert reason and "" != reason.strip()
+    assert all(ord(char) < 128 or "가" <= char <= "힣" or not char.isalpha() for char in reason)
+
+
+def test_secrets_never_appear_in_the_unavailable_reason():
+    client = MCPClient(configured_settings(naver_maps_client_secret=""))
+    assert "k" != client.unavailable_reason
+    for secret in ("k", "d", "n"):
+        assert f"={secret}" not in (client.unavailable_reason or "")
+
+
+def test_subprocess_env_carries_every_upstream_key():
+    env = MCPClient(configured_settings()).subprocess_env()
+    assert env["KAKAO_REST_API_KEY"] == "k"
+    assert env["DATA_GO_KR_SERVICE_KEY"] == "d"
+    assert env["NAVER_MAPS_CLIENT_ID"] == "n"
+    assert env["NAVER_MAPS_CLIENT_SECRET"] == "s"
+
+
+def test_args_are_split_on_whitespace():
+    assert MCPClient(configured_settings()).command_args == ["-y", "presale-mcp@0.1.0"]
+
+
+def test_empty_args_produce_an_empty_list():
+    assert MCPClient(configured_settings(ipzitalk_mcp_args="")).command_args == []
