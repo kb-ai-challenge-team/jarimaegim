@@ -54,6 +54,10 @@ def test_secrets_never_appear_in_the_unavailable_reason():
                 assert value not in reason, f"{name} 값이 이유 문자열에 노출됐다"
 
 
+def test_available_client_has_no_unavailable_reason():
+    assert MCPClient(configured_settings()).unavailable_reason is None
+
+
 def test_subprocess_env_carries_every_upstream_key():
     env = MCPClient(configured_settings()).subprocess_env()
     assert env["KAKAO_REST_API_KEY"] == "k"
@@ -62,9 +66,29 @@ def test_subprocess_env_carries_every_upstream_key():
     assert env["NAVER_MAPS_CLIENT_SECRET"] == "s"
 
 
+def test_subprocess_env_keeps_path_so_npx_resolves(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    env = MCPClient(configured_settings()).subprocess_env()
+    assert env["PATH"] == "/usr/bin:/bin"
+
+
+def test_subprocess_env_does_not_leak_the_parent_environment(monkeypatch):
+    """subprocess_env() must be an explicit allowlist, never {**os.environ, ...} --
+    presale-mcp is a third-party package and must never see this backend's own secrets."""
+    monkeypatch.setenv("OPENAI_API_KEY", "OPENAI-DECOY-9f8e7d")
+    env = MCPClient(configured_settings()).subprocess_env()
+    assert "OPENAI_API_KEY" not in env
+    assert "OPENAI-DECOY-9f8e7d" not in env.values()
+
+
 def test_args_are_split_on_whitespace():
     assert MCPClient(configured_settings()).command_args == ["-y", "presale-mcp@0.1.0"]
 
 
 def test_empty_args_produce_an_empty_list():
     assert MCPClient(configured_settings(ipzitalk_mcp_args="")).command_args == []
+
+
+def test_args_respect_quoted_paths_with_spaces():
+    client = MCPClient(configured_settings(ipzitalk_mcp_args='"/opt/my tools/presale-mcp" --flag'))
+    assert client.command_args == ["/opt/my tools/presale-mcp", "--flag"]
