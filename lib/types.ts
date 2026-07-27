@@ -11,6 +11,7 @@ export interface CaseInput {
   business_stage: BusinessStage;
   startup_type: StartupType;
   priority: "STABILITY" | "DEMAND" | "COST" | "GROWTH";
+  committed_listing_id?: string | null;
 }
 
 export interface CaseRecord {

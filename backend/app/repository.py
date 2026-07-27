@@ -54,7 +54,7 @@ class Repository:
         record = CaseRecord(id=uuid4(), title=payload.title, version=1, status="ACTIVE", inputs=payload.inputs, created_at=now, updated_at=now)
         if self.supabase:
             self.supabase.table("cases").insert({"id": str(record.id), "anonymous_session_id": str(owner_session), "title": record.title, "status": "ACTIVE", "version": 1}).execute()
-            rows = [{"case_id": str(record.id), "field": key, "value_json": value.value if hasattr(value, "value") else value, "source": "FORM", "confirmed_at": now.isoformat()} for key, value in record.inputs.model_dump().items()]
+            rows = [{"case_id": str(record.id), "field": key, "value_json": value.value if hasattr(value, "value") else value, "source": "FORM", "confirmed_at": now.isoformat()} for key, value in record.inputs.model_dump().items() if value is not None]
             self.supabase.table("case_inputs").insert(rows).execute()
         else:
             with self._lock:
@@ -86,6 +86,8 @@ class Repository:
         if self.supabase:
             self.supabase.table("cases").update({"title": updated.title, "version": updated.version, "updated_at": updated.updated_at.isoformat()}).eq("id", str(case_id)).eq("anonymous_session_id", str(owner_session)).eq("version", expected_version).execute()
             for field, value in payload.inputs.items():
+                if value is None:
+                    continue  # value_json is NOT NULL; a None patch value is a no-op rather than a clear.
                 self.supabase.table("case_inputs").upsert({"case_id": str(case_id), "field": field, "value_json": value, "source": "USER", "confirmed_at": updated.updated_at.isoformat()}).execute()
         else:
             with self._lock:

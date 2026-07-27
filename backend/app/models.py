@@ -25,6 +25,7 @@ class CaseInput(BaseModel):
     business_stage: BusinessStage
     startup_type: StartupType
     priority: Literal["STABILITY", "DEMAND", "COST", "GROWTH"] = "STABILITY"
+    committed_listing_id: str | None = Field(default=None, max_length=64)
 
 
 class CaseCreate(BaseModel):
