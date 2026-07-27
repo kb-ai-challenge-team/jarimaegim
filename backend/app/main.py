@@ -14,17 +14,19 @@ from pydantic import BaseModel
 from .config import get_settings
 from .document_store import DocumentStore, render_case_pdf
 from .funding import compute_bands
+from .listings import ListingService
 from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
                      DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
                      PrivacyRequestCreate, Provenance, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
-from .services import AIService, AnalysisService, CostService, IntegrationError, LocationService, OfficialSourceService
+from .services import AIService, AnalysisService, CostService, LocationService, OfficialSourceService
 
 settings = get_settings()
 repository = Repository(settings)
 locations = LocationService(settings)
-analyses = AnalysisService(locations)
+listings_service = ListingService(settings)
+analyses = AnalysisService(listings_service)
 official_sources = OfficialSourceService(settings)
 ai = AIService(settings)
 document_store = DocumentStore(settings.document_storage_dir)
@@ -202,11 +204,8 @@ async def search_locations(payload: LocationSearch, session_id: UUID = Depends(c
     case = owned_case(session_id, payload.case_id)
     if payload.district != case.inputs.district or payload.industry != case.inputs.industry:
         raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "확정된 케이스 조건과 검색 조건이 다릅니다."})
-    try:
-        candidates, status, message = await locations.search(payload)
-        return {"candidates": [candidate.model_dump(mode="json") for candidate in candidates], "status": status, "message": message}
-    except IntegrationError as exc:
-        raise HTTPException(503, {"code": "UPSTREAM_UNAVAILABLE", "message": str(exc), "retryable": True}) from exc
+    candidates, status, message = listings_service.search(payload.district, case.inputs.budget_krw, payload.limit)
+    return {"candidates": [candidate.model_dump(mode="json") for candidate in candidates], "status": status, "message": message}
 
 
 @app.post("/api/v1/analyses")
