@@ -129,7 +129,7 @@ class ChatStreamer:
                              status=result.get("status", "ok"), summary=_summarize(result),
                              citations=result.get("citations") or [])
                 messages.append({"role": "tool", "tool_call_id": call.get("id"),
-                                 "content": f"<<<TOOL_RESULT\n{json.dumps(result, ensure_ascii=False)}\nTOOL_RESULT>>>"})
+                                 "content": f"<<<TOOL_RESULT\n{json.dumps(_for_model(result), ensure_ascii=False)}\nTOOL_RESULT>>>"})
             if truncated:
                 # The assistant message appended above declares every call in `calls`, but the
                 # budget ran out partway through executing them -- calls[break_index:] were never
@@ -160,6 +160,30 @@ class ChatStreamer:
 # instead of silently falling through to a numeric count it was never designed to produce.
 _COUNTABLE_STATUSES = frozenset({"ok", "empty"})
 assert _COUNTABLE_STATUSES <= TOOL_STATUSES
+
+
+# A tool result goes to two places with different needs: `tool_end` carries it to the browser,
+# which renders it once, and `messages` carries it to the model -- where it is re-sent on EVERY
+# remaining round of the turn. get_location_map_image returns a base64 data: URI because
+# presale-mcp's get_static_map has no hosted URL to give; at ~10-20k tokens that one field would
+# dominate the turn's input cost three times over. The model does not need the bytes, only the
+# knowledge that a map exists, so oversized values are replaced here. Judged by size, not by field
+# name -- a future tool returning something large should be trimmed too, without anyone
+# remembering to add it to a list.
+_MODEL_FIELD_CHAR_BUDGET = 4000
+
+
+def _for_model(result: dict[str, Any]) -> dict[str, Any]:
+    """The model-facing copy of a tool result. `tool_end` keeps the full one."""
+    trimmed = {}
+    for key, value in result.items():
+        if isinstance(value, str) and len(value) > _MODEL_FIELD_CHAR_BUDGET:
+            # Say what was withheld and why, so the model reports a map it cannot quote rather
+            # than treating the call as having failed and retrying it.
+            trimmed[key] = f"<{key} 생략: {len(value)}자 분량이라 대화에 싣지 않았습니다. 화면에는 정상 표시됩니다.>"
+        else:
+            trimmed[key] = value
+    return trimmed
 
 
 def _summarize(result: dict[str, Any]) -> str:

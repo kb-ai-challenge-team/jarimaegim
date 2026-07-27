@@ -415,3 +415,57 @@ async def test_respond_propagates_errors_unrelated_to_reasoning():
     with pytest.raises(RuntimeError):
         await responder.respond([{"role": "user", "content": "hi"}], [])
     assert len(client.responses.calls) == 1
+
+
+# --- oversized tool payloads must not ride along in the model conversation -------------------
+
+def _big_image_result(size=20000):
+    return {"status": "ok", "image_url": "data:image/png;base64," + ("Q" * size),
+            "citations": [{"title": "네이버 정적 지도", "official_url": "https://map.naver.com/",
+                           "source_name": "네이버 지도", "collected_at": "2026-07-27T00:00:00+00:00",
+                           "tool": "get_location_map_image"}]}
+
+
+async def _run_with(result):
+    tools = FakeToolset({"get_location_map_image": result})
+    llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "get_location_map_image", "arguments": {}}]},
+                   {"text": "지도를 만들었습니다.", "tool_calls": []}])
+    events = await collect(ChatStreamer(llm, tools, StreamLimits()))
+    tool_message = [item for item in llm.prompts[1][0] if item.get("role") == "tool"][0]
+    return events, tool_message["content"]
+
+
+async def test_an_oversized_field_never_reaches_the_model_conversation():
+    """Deleting _for_model's trimming makes this fail: the base64 blob lands in `messages` and is
+    re-sent on every remaining round, at roughly 10-20k tokens a time."""
+    _, tool_content = await _run_with(_big_image_result())
+    assert "Q" * 5000 not in tool_content
+    assert len(tool_content) < 5000
+
+
+async def test_the_same_turn_still_sends_the_full_payload_to_the_browser():
+    events, _ = await _run_with(_big_image_result())
+    tool_end = [event for event in events if event["event"] == "tool_end"][0]
+    # tool_end carries status/summary/citations, and `done` carries the citations -- neither is
+    # allowed to lose anything because the model-facing copy was trimmed.
+    assert tool_end["data"]["status"] == "ok"
+    assert tool_end["data"]["citations"][0]["source_name"] == "네이버 지도"
+    done = [event for event in events if event["event"] == "done"][0]
+    assert done["data"]["citations"][0]["source_name"] == "네이버 지도"
+
+
+async def test_the_model_is_told_what_was_withheld_not_that_the_call_failed():
+    _, tool_content = await _run_with(_big_image_result())
+    assert "image_url" in tool_content and "생략" in tool_content
+    assert '"status": "ok"' in tool_content
+
+
+async def test_an_ordinary_result_passes_through_untouched():
+    ordinary = {"status": "ok", "items": [{"house_nm": "강남OO아파트"}], "citations": []}
+    tools = FakeToolset({"lookup_seoul_presale": ordinary})
+    llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "lookup_seoul_presale", "arguments": {}}]},
+                   {"text": "확인했습니다.", "tool_calls": []}])
+    await collect(ChatStreamer(llm, tools, StreamLimits()))
+    tool_message = [item for item in llm.prompts[1][0] if item.get("role") == "tool"][0]
+    assert "강남OO아파트" in tool_message["content"]
+    assert "생략" not in tool_message["content"]
