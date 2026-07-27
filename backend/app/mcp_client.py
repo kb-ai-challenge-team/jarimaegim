@@ -23,6 +23,13 @@ class MCPUnavailable(Exception):
     """Raised when a tool call is attempted while the subprocess cannot serve it."""
 
 
+class MCPToolError(MCPUnavailable):
+    """The session is healthy; the tool itself reported a failure (isError=True). Not a
+    reason to restart -- an empty-result lookup is expected behavior for a Korean public-data
+    API, not a transport problem. A subclass of MCPUnavailable so callers that only need to
+    know "this call didn't produce data" can keep a single `except MCPUnavailable`."""
+
+
 class MCPClient:
     """Owns the presale-mcp subprocess. Knows nothing about Jarimaegim's domain."""
 
@@ -83,6 +90,12 @@ class MCPClient:
         except asyncio.TimeoutError as exc:
             self.restart_pending = True
             raise MCPUnavailable(f"{tool_name} 조회가 {int(self.call_timeout_s)}초 안에 끝나지 않았습니다.") from exc
+        except MCPToolError:
+            # The session answered fine; the tool just has nothing (or an error) to report.
+            # Must be caught before the bare MCPUnavailable clause below, since it's a subclass
+            # and would otherwise be swallowed by it -- but that clause doesn't set
+            # restart_pending either, so keep this one explicit for clarity, not just correctness.
+            raise
         except MCPUnavailable:
             raise
         except Exception as exc:
@@ -94,8 +107,21 @@ class MCPClient:
         session = await self._ensure_session()
         result = await session.call_tool(tool_name, arguments)
         if result.isError:
-            raise RuntimeError(f"{tool_name} tool call returned isError=True")
+            raise MCPToolError(self._tool_error_message(tool_name, result))
         return self._unwrap(result)
+
+    @staticmethod
+    def _tool_error_message(tool_name: str, result: Any) -> str:
+        """The MCP SDK's own server-side convention (see mcp.server.lowlevel.server
+        Server._make_error_result) is to put a human-readable explanation in the first text
+        content block when isError is set. Surface that to the model rather than a generic
+        message, so it can read why presale-mcp couldn't answer."""
+        blocks = getattr(result, "content", None) or []
+        for block in blocks:
+            text = getattr(block, "text", None)
+            if text:
+                return text
+        return f"{tool_name} 조회 결과가 없습니다."
 
     async def _ensure_session(self) -> ClientSession:
         async with self._lock:

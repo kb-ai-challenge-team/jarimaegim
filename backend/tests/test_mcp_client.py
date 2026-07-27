@@ -4,7 +4,7 @@ import os
 import pytest
 
 from app.config import Settings
-from app.mcp_client import MCPClient, MCPUnavailable
+from app.mcp_client import MCPClient, MCPToolError, MCPUnavailable
 
 SECRETS = {"kakao_rest_api_key": "KAKAO-SECRET-a1b2c3d4e5",
            "data_go_kr_service_key": "DATAGO-SECRET-f6g7h8i9j0",
@@ -183,3 +183,63 @@ async def test_a_call_that_exceeds_the_timeout_raises(monkeypatch):
     monkeypatch.setattr(client, "_session_call", slow_call)
     with pytest.raises(MCPUnavailable):
         await client.call("get_geocode", {"address": "서울 마포구"})
+
+
+def test_mcp_tool_error_is_caught_by_except_mcp_unavailable():
+    """Tasks 4-6 keep a single `except MCPUnavailable` in chat_tools.py; MCPToolError must be
+    a subclass so a tool-level failure doesn't need a second except-clause everywhere."""
+    assert issubclass(MCPToolError, MCPUnavailable)
+    try:
+        raise MCPToolError("해당 주소는 데이터에 없습니다.")
+    except MCPUnavailable as exc:
+        assert isinstance(exc, MCPToolError)
+    else:
+        pytest.fail("MCPToolError was not caught by except MCPUnavailable")
+
+
+@pytest.mark.asyncio
+async def test_a_tool_error_leaves_restart_pending_false_and_the_session_intact(monkeypatch):
+    """A business-level 'no' from a healthy session (e.g. no announcements for a district) must
+    not tear down the subprocess -- only transport/protocol failures or timeouts should."""
+    client = MCPClient(configured_settings())
+    sentinel_session = object()
+    client._session = sentinel_session
+
+    async def tool_error_call(name, arguments):
+        raise MCPToolError("해당 자치구에는 공고가 없습니다.")
+
+    monkeypatch.setattr(client, "_session_call", tool_error_call)
+    with pytest.raises(MCPUnavailable) as exc_info:
+        await client.call("search_announcements", {"district": "강남구"})
+    assert isinstance(exc_info.value, MCPToolError)
+    assert client.restart_pending is False
+    assert client._session is sentinel_session  # untouched -- no restart was triggered
+
+
+@pytest.mark.asyncio
+async def test_call_surfaces_the_tool_provided_error_message(monkeypatch):
+    """isError content blocks carry a human-readable explanation (this is the MCP SDK's own
+    server-side convention, see Server._make_error_result) -- surface it instead of a generic
+    Korean string so the model downstream gets to read why the lookup failed."""
+    client = MCPClient(configured_settings())
+
+    class FakeBlock:
+        text = "해당 자치구는 서울이 아닙니다."
+
+    class FakeResult:
+        isError = True
+        content = [FakeBlock()]
+        structuredContent = None
+
+    class FakeSession:
+        async def call_tool(self, name, arguments):
+            return FakeResult()
+
+    async def fake_ensure_session():
+        return FakeSession()
+
+    monkeypatch.setattr(client, "_ensure_session", fake_ensure_session)
+    with pytest.raises(MCPToolError) as exc_info:
+        await client.call("get_geocode", {"address": "부산 해운대구"})
+    assert str(exc_info.value) == "해당 자치구는 서울이 아닙니다."
+    assert client.restart_pending is False
