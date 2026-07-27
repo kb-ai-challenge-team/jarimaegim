@@ -313,15 +313,21 @@ class AIService:
         self.settings = settings
         self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 
-    async def explain(self, user_text: str, case_summary: str) -> dict[str, Any]:
-        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
-            return {"message": "AI 설명 키가 아직 설정되지 않았습니다. 후보와 분석 화면의 저장된 공식 근거는 계속 확인할 수 있습니다.", "citations": [], "integration_status": "not_configured"}
-        prompt = (
+    def build_prompt(self, user_text: str, case_summary: str) -> str:
+        """The assistant's instructions. Extracted from explain() so the guardrails can be asserted."""
+        return (
             "당신은 자리매김의 설명 도우미입니다. 새로운 숫자, 점수, 비용, 금융 자격을 만들지 마세요. "
             "제공된 케이스 요약 안의 사실만 짧고 명확한 한국어로 설명하세요. 개인정보 입력을 요청하지 마세요. "
+            "요약에 매물 조건이 있다면 그것은 시연용으로 생성한 데이터이며 실제 임대 매물이 아닙니다. "
+            "계약 가능 여부나 실제 거래 조건을 단정하지 말고, 시연용 데이터라는 점을 밝히세요. "
             "좁은 사이드 패널에 표시되므로 5문장 이내로 답하세요.\n"
             f"케이스: {case_summary}\n사용자 질문: {user_text}"
         )
+
+    async def explain(self, user_text: str, case_summary: str) -> dict[str, Any]:
+        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+            return {"message": "AI 설명 키가 아직 설정되지 않았습니다. 후보와 분석 화면의 저장된 공식 근거는 계속 확인할 수 있습니다.", "citations": [], "integration_status": "not_configured"}
+        prompt = self.build_prompt(user_text, case_summary)
         try:
             response = await self._respond(prompt)
             text = response.output_text.strip()
