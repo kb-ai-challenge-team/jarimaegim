@@ -71,11 +71,25 @@ def parse_range_dates(value: str | None) -> tuple[date | None, date | None]:
     return (parse_iso_date(head.strip()), parse_iso_date(tail.strip()))
 
 
+# 원천이 실제로 쓰는 구분자들. 'ㆍ'(U+318D)는 '대구ㆍ경북'처럼 기업마당이 즐겨 쓰는데
+# 가운뎃점(U+00B7)과 다른 문자다. 빠뜨리면 다지역 공고가 통째로 '지역 미상'이 된다.
+_REGION_SEPARATORS = re.compile(r"[,/·ㆍ‧・]")
+# 기업마당 공고명은 '[서울] 2026년 …' 꼴로 지역을 앞에 붙인다. 발행자가 명시한 값이므로
+# 읽어도 되지만, 지역명으로 해석되지 않는 접두어([창업] 등)는 매핑에서 자연히 걸러진다.
+_TITLE_REGION_PREFIX = re.compile(r"^\[([^\]]{1,20})\]")
+
+
 def canonical_regions(value: str | None) -> list[str] | None:
     """지역 문자열을 짧은 표기 목록으로 바꾼다. 하나도 못 맞추면 None(=제한 미상)."""
-    tokens = [token.strip() for token in re.split(r"[,/·]", value or "") if token.strip()]
+    tokens = [token.strip() for token in _REGION_SEPARATORS.split(value or "") if token.strip()]
     mapped = sorted({_REGION_ALIASES[token] for token in tokens if token in _REGION_ALIASES})
     return mapped or None
+
+
+def title_prefix_regions(title: str | None) -> list[str] | None:
+    """공고명 앞의 '[서울]' 같은 대괄호 접두어에서 지역을 읽는다."""
+    match = _TITLE_REGION_PREFIX.match((title or "").strip())
+    return canonical_regions(match.group(1)) if match else None
 
 
 def resolve_status(application_end: date | None, today: date) -> str:
@@ -197,8 +211,9 @@ def normalize_bizinfo(record: dict[str, Any], *, today: date) -> KnowledgeDocume
         id=doc_id, kind="PROGRAM", provider="기업마당", category="GOVERNMENT",
         title=title, organization=organization, official_url=url,
         body_text=body_text, status=resolve_status(end, today),
-        # 지역 필드가 없는 원천이다. 소관기관이 광역지자체명일 때만 확정한다.
-        regions=canonical_regions(organization),
+        # 지역 전용 필드가 없는 원천이다. 소관기관이 광역지자체명이면 그것을 쓰고,
+        # 아니면 공고명 접두어를 읽는다. 둘 다 발행자가 명시한 값이다.
+        regions=canonical_regions(organization) or title_prefix_regions(title),
         application_start=start, application_end=end,
         source_as_of=source_as_of,
         raw=record,

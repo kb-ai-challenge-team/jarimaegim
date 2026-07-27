@@ -5,7 +5,7 @@ from xml.etree import ElementTree
 
 from normalize import (canonical_regions, display_status, normalize_bizinfo, normalize_kb_product,
                        normalize_kstartup, parse_business_age_limit, parse_compact_date,
-                       parse_range_dates, resolve_status, strip_html)
+                       parse_range_dates, resolve_status, strip_html, title_prefix_regions)
 
 KB_BASE = {"fin_prdt_cd": "CR0001A", "fin_prdt_nm": "KB Star 신용대출",
            "kor_co_nm": "KB국민은행", "join_way": "영업점,인터넷,스마트폰",
@@ -63,6 +63,25 @@ def test_canonical_regions_splits_comma_separated_values():
     assert canonical_regions("서울,경기") == ["경기", "서울"]
 
 
+def test_canonical_regions_splits_on_the_separators_the_sources_actually_use():
+    # 'ㆍ'(U+318D)는 가운뎃점(U+00B7)과 다른 문자인데 기업마당이 이걸 쓴다.
+    assert canonical_regions("대구ㆍ경북") == ["경북", "대구"]
+    assert canonical_regions("서울ㆍ인천ㆍ경기") == ["경기", "서울", "인천"]
+    assert canonical_regions("대전·충남") == ["대전", "충남"]
+
+
+def test_title_prefix_regions_reads_the_bracketed_prefix():
+    assert title_prefix_regions("[서울] 2026년 중소기업육성기금 융자지원 계획 공고") == ["서울"]
+    assert title_prefix_regions("[대구ㆍ경북] 공동 모집 공고") == ["경북", "대구"]
+
+
+def test_title_prefix_regions_ignores_prefixes_that_are_not_regions():
+    # '[창업]'은 분류 라벨이지 지역이 아니다. 매핑에서 자연히 걸러진다.
+    assert title_prefix_regions("[창업] 계약서 실무 교육") is None
+    assert title_prefix_regions("대괄호 없는 공고명") is None
+    assert title_prefix_regions("") is None
+
+
 def test_canonical_regions_returns_none_when_nothing_maps():
     # '전남광주'처럼 원천이 붙여 보낸 값은 어느 지역인지 확정할 수 없으므로 버린다.
     assert canonical_regions("전남광주") is None
@@ -117,6 +136,22 @@ def test_normalize_bizinfo_takes_region_only_from_the_jurisdiction_field():
                              "jrsdInsttNm": "중소벤처기업부", "bsnsSumryCn": "<p>내용</p>",
                              "hashtags": "서울,창업"}, today=date(2026, 7, 27))
     assert doc.regions is None
+
+
+def test_normalize_bizinfo_falls_back_to_the_title_prefix_for_region():
+    doc = normalize_bizinfo({"pblancNm": "[서울] 2026년 중소기업육성기금 융자지원 계획 공고",
+                             "pblancId": "PBLN_4", "pblancUrl": "https://www.bizinfo.go.kr/x",
+                             "jrsdInsttNm": "중소벤처기업부", "bsnsSumryCn": "<p>내용</p>"},
+                            today=date(2026, 7, 27))
+    assert doc.regions == ["서울"]
+
+
+def test_normalize_bizinfo_prefers_the_jurisdiction_over_the_title_prefix():
+    doc = normalize_bizinfo({"pblancNm": "[전남] 공동 모집 공고", "pblancId": "PBLN_5",
+                             "pblancUrl": "https://www.bizinfo.go.kr/x",
+                             "jrsdInsttNm": "대구광역시", "bsnsSumryCn": "<p>내용</p>"},
+                            today=date(2026, 7, 27))
+    assert doc.regions == ["대구"]
 
 
 def test_normalize_bizinfo_rejects_records_without_a_title_or_url():
