@@ -1,18 +1,25 @@
 from __future__ import annotations
-import asyncio
 import json
+import logging
 import os
 import shlex
 from contextlib import AsyncExitStack
 from typing import Any
+import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from .config import Settings
+
+logger = logging.getLogger(__name__)
 
 # The child (launched via npx) needs enough of the parent environment to resolve
 # Node and npm, plus proxy settings if the host sits behind one -- but nothing else.
 # Never fall back to inheriting the full parent environment; that would hand a
 # third-party package every secret this backend holds.
+# Note: HTTP_PROXY/HTTPS_PROXY values can themselves embed http://user:pass@host
+# credentials. We inherit them anyway (npx needs them to function behind a proxy at
+# all), but that's a real, deliberate exception to "never leak secrets" -- not an
+# oversight.
 _INHERITED_ENV_NAMES = ("PATH", "HOME",
                         "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
                         "http_proxy", "https_proxy", "no_proxy")
@@ -24,22 +31,34 @@ class MCPUnavailable(Exception):
 
 
 class MCPToolError(MCPUnavailable):
-    """The session is healthy; the tool itself reported a failure (isError=True). Not a
-    reason to restart -- an empty-result lookup is expected behavior for a Korean public-data
-    API, not a transport problem. A subclass of MCPUnavailable so callers that only need to
-    know "this call didn't produce data" can keep a single `except MCPUnavailable`."""
+    """The session is healthy; the tool itself reported a failure (isError=True), or its
+    payload didn't parse into the shape callers rely on. Doesn't imply the session is dead --
+    an empty-result lookup is expected behavior for a Korean public-data API, not a transport
+    problem. A subclass of MCPUnavailable so callers that only need to know "this call didn't
+    produce data" can keep a single `except MCPUnavailable`."""
 
 
 class MCPClient:
-    """Owns the presale-mcp subprocess. Knows nothing about Jarimaegim's domain."""
+    """Owns presale-mcp's configuration and availability gating. Holds no session of its own:
+    `session()` returns an MCPSession scoped to a single turn -- spawn, handshake, every call,
+    and teardown all happen inside one `async with` block, in the task that opens it. Nothing
+    is held across turns, so there is no restart concept and no cross-task cancel-scope risk
+    (see MCPSession for why that matters)."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
+        # Cold `npx <package>@version` has to resolve the version, download and extract the
+        # tarball, and start node before it can answer `initialize()` -- that can genuinely take
+        # several seconds even on a decent connection. 20s is generous enough to tolerate a real
+        # cold start without leaving a chat turn hanging forever against a broken registry. This
+        # is a reasoned default, not a measured one: we have no Naver Maps credentials yet, so
+        # this client has never run against a real presale-mcp subprocess (Task 17 should revisit
+        # once it can).
+        self.startup_timeout_s = 20.0
+        # A single tool call against an already-initialized session -- a plain HTTP-backed
+        # lookup, not a cold start. Kept short since a slow answer here is a data-provider
+        # problem the model should hear about promptly, not a startup cost to absorb.
         self.call_timeout_s = 8.0
-        self.restart_pending = False
-        self._session: ClientSession | None = None
-        self._stack: AsyncExitStack | None = None
-        self._lock = asyncio.Lock()
 
     @property
     def available(self) -> bool:
@@ -82,95 +101,168 @@ class MCPClient:
                 "NAVER_MAPS_CLIENT_ID": self.settings.naver_maps_client_id,
                 "NAVER_MAPS_CLIENT_SECRET": self.settings.naver_maps_client_secret}
 
-    async def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def session(self) -> "MCPSession":
+        """`async with client.session() as session: await session.call(name, arguments)`.
+
+        Every call site opens its own subprocess and MCP handshake and tears it down on the
+        way out of the `async with` block -- success, tool error, timeout, or cancellation
+        alike. This costs a fresh cold start per turn (no warm-subprocess reuse), which we
+        accept deliberately: a long-lived session shared across concurrent calling tasks would
+        need its own restart/locking machinery, and we have no Naver Maps credentials to
+        exercise that against a real subprocess before Task 17 at the earliest. Turn-scoped
+        ownership is correct by construction instead -- the same task always opens and closes
+        the session, so anyio's "a cancel scope must be exited by the task that entered it"
+        requirement can't be violated."""
         if not self.available:
             raise MCPUnavailable(self.unavailable_reason or "ipzitalk 도구를 사용할 수 없습니다.")
+        return MCPSession(self.settings.ipzitalk_mcp_command, self.command_args, self.subprocess_env(),
+                          startup_timeout_s=self.startup_timeout_s, call_timeout_s=self.call_timeout_s)
+
+
+class MCPSession:
+    """One presale-mcp subprocess + MCP session, owned entirely by the task that opens it via
+    `async with`.
+
+    Timeout design note: `session.initialize()` and `session.call_tool()` are each individually
+    wrapped in `anyio.fail_after`, never `asyncio.wait_for`. `wait_for` schedules the wrapped
+    awaitable as a *new* asyncio Task; since `stdio_client`/`ClientSession` open anyio cancel
+    scopes as part of their own `async with`, running them under a different task than the one
+    that will eventually close them raises "Attempted to exit cancel scope in a different task
+    than it was entered in" on the very first restart under concurrency. `anyio.fail_after`
+    instead scopes the cancellation to the *current* task, so it composes safely with those
+    nested scopes -- verified directly against a real subprocess via the installed mcp SDK.
+
+    A second, less obvious rule follows from the same fact: the timeout must wrap only a single
+    leaf await (`initialize()`, `call_tool()`), never the `stack.enter_async_context(...)` calls
+    that open `stdio_client`/`ClientSession` themselves. Wrapping the whole multi-step handshake
+    in one `fail_after` block was tried and reproducibly raises the same cross-scope RuntimeError
+    when the deadline fires mid-handshake -- a cancel scope opened by a not-yet-returned
+    `@asynccontextmanager` generator can't be safely unwound by an outer scope's cancellation.
+    Spawning the process (entering `stdio_client`) is a fast, effectively non-blocking syscall;
+    the actual cold-start delay of a `npx` install surfaces inside `initialize()`'s wait for the
+    handshake response, which is exactly where the budget is applied.
+    """
+
+    def __init__(self, command: str, args: list[str], env: dict[str, str], *,
+                 startup_timeout_s: float, call_timeout_s: float):
+        self._command = command
+        self._args = args
+        self._env = env
+        self._startup_timeout_s = startup_timeout_s
+        self._call_timeout_s = call_timeout_s
+        self._stack: AsyncExitStack | None = None
+        self._session: ClientSession | None = None
+
+    async def _open(self, stack: AsyncExitStack) -> ClientSession:
+        params = StdioServerParameters(command=self._command, args=self._args, env=self._env)
+        read, write = await stack.enter_async_context(stdio_client(params))
+        session = await stack.enter_async_context(ClientSession(read, write))
+        with anyio.fail_after(self._startup_timeout_s):
+            await session.initialize()
+        return session
+
+    async def __aenter__(self) -> "MCPSession":
+        stack = AsyncExitStack()
+        started = False
         try:
-            return await asyncio.wait_for(self._session_call(tool_name, arguments), timeout=self.call_timeout_s)
-        except asyncio.TimeoutError as exc:
-            self.restart_pending = True
-            raise MCPUnavailable(f"{tool_name} 조회가 {int(self.call_timeout_s)}초 안에 끝나지 않았습니다.") from exc
-        except MCPToolError:
-            # The session answered fine; the tool just has nothing (or an error) to report.
-            # Must be caught before the bare MCPUnavailable clause below, since it's a subclass
-            # and would otherwise be swallowed by it -- but that clause doesn't set
-            # restart_pending either, so keep this one explicit for clarity, not just correctness.
+            self._session = await self._open(stack)
+            started = True
+        except TimeoutError as exc:
+            logger.warning("ipzitalk MCP 세션 시작 타임아웃: timeout_s=%.1f", self._startup_timeout_s)
+            raise MCPUnavailable(f"ipzitalk 도구 시작이 {round(self._startup_timeout_s)}초 안에 끝나지 않았습니다.") from exc
+        except BaseException as exc:
+            # Catch everything -- including CancelledError -- purely to log that a startup
+            # attempt failed before it leaves no trace. Never converted: re-raised unchanged so
+            # cancellation semantics reach the caller intact.
+            logger.warning("ipzitalk MCP 세션 시작 실패: %s", type(exc).__name__)
             raise
-        except MCPUnavailable:
-            raise
-        except Exception as exc:
-            # The subprocess may have died mid-call; force a restart before the next one.
-            self.restart_pending = True
-            raise MCPUnavailable(f"{tool_name} 조회에 실패했습니다.") from exc
+        finally:
+            # `finally`, not `except Exception`: a timeout or external cancellation delivers
+            # CancelledError (BaseException, not Exception) into whichever await was suspended
+            # inside `_open`. `except Exception` would skip straight past it and leave the
+            # partially-started subprocess and pipes referenced only by this now-discarded
+            # local `stack` -- orphaned with nothing left to close them. `finally` runs
+            # regardless of exception type, so cleanup happens whether `_open` failed with an
+            # ordinary exception, our own startup timeout, or a genuine external cancellation.
+            if not started:
+                try:
+                    await stack.aclose()
+                except BaseException as close_exc:
+                    logger.warning("ipzitalk MCP 세션 정리 중 오류: %s", type(close_exc).__name__)
+        self._stack = stack
+        return self
 
-    async def _session_call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        session = await self._ensure_session()
-        result = await session.call_tool(tool_name, arguments)
-        if result.isError:
-            raise MCPToolError(self._tool_error_message(tool_name, result))
-        return self._unwrap(result)
-
-    @staticmethod
-    def _tool_error_message(tool_name: str, result: Any) -> str:
-        """The MCP SDK's own server-side convention (see mcp.server.lowlevel.server
-        Server._make_error_result) is to put a human-readable explanation in the first text
-        content block when isError is set. Surface that to the model rather than a generic
-        message, so it can read why presale-mcp couldn't answer."""
-        blocks = getattr(result, "content", None) or []
-        for block in blocks:
-            text = getattr(block, "text", None)
-            if text:
-                return text
-        return f"{tool_name} 조회 결과가 없습니다."
-
-    async def _ensure_session(self) -> ClientSession:
-        async with self._lock:
-            if self.restart_pending:
-                await self._close_locked()
-                self.restart_pending = False
-            if self._session is not None:
-                return self._session
-            stack = AsyncExitStack()
-            try:
-                params = StdioServerParameters(command=self.settings.ipzitalk_mcp_command,
-                                               args=self.command_args, env=self.subprocess_env())
-                read, write = await stack.enter_async_context(stdio_client(params))
-                session = await stack.enter_async_context(ClientSession(read, write))
-                await session.initialize()
-            except Exception:
-                # Never leak a half-started subprocess if the handshake fails partway.
-                await stack.aclose()
-                raise
-            self._stack, self._session = stack, session
-            return session
-
-    @staticmethod
-    def _unwrap(result: Any) -> dict[str, Any]:
-        """Modern MCP tools may return structuredContent directly; text-only servers like
-        presale-mcp put their JSON payload in the first text content block instead."""
-        structured = getattr(result, "structuredContent", None)
-        if isinstance(structured, dict):
-            return structured
-        blocks = getattr(result, "content", None) or []
-        for block in blocks:
-            text = getattr(block, "text", None)
-            if not text:
-                continue
-            try:
-                parsed = json.loads(text)
-            except (TypeError, ValueError):
-                return {"text": text}
-            return parsed if isinstance(parsed, dict) else {"items": parsed}
-        return {}
-
-    async def _close_locked(self) -> None:
+    async def __aexit__(self, exc_type, exc, tb) -> None:
         stack, self._stack, self._session = self._stack, None, None
-        if stack is not None:
-            try:
-                await stack.aclose()
-            except Exception:
-                pass
+        if stack is None:
+            return
+        try:
+            await stack.aclose()
+        except Exception as close_exc:
+            # Logged, not re-raised: a teardown hiccup must not shadow whatever exception (or
+            # lack of one) is already propagating out of the `async with` body. A genuine
+            # CancelledError here (BaseException, not Exception) is not caught by this clause
+            # and propagates normally.
+            logger.warning("ipzitalk MCP 세션 종료 중 오류: %s", type(close_exc).__name__)
 
-    async def close(self) -> None:
-        async with self._lock:
-            await self._close_locked()
+    async def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if self._session is None:
+            raise MCPUnavailable("ipzitalk MCP 세션이 아직 시작되지 않았습니다.")
+        try:
+            with anyio.fail_after(self._call_timeout_s):
+                result = await self._session.call_tool(tool_name, arguments)
+        except TimeoutError as exc:
+            logger.warning("ipzitalk MCP 호출 타임아웃: tool=%s timeout_s=%.1f", tool_name, self._call_timeout_s)
+            raise MCPUnavailable(f"{tool_name} 조회가 {round(self._call_timeout_s)}초 안에 끝나지 않았습니다.") from exc
+        except Exception as exc:
+            # Plain Exception, not BaseException: a genuine CancelledError must propagate
+            # untouched, not be relabeled as a data-layer failure.
+            logger.warning("ipzitalk MCP 호출 실패: tool=%s error=%s", tool_name, type(exc).__name__)
+            raise MCPUnavailable(f"{tool_name} 조회에 실패했습니다.") from exc
+        # A tool-level failure leaves the session alone -- only the try/except above (transport
+        # or timeout) is a reason to consider the subprocess unhealthy.
+        if result.isError:
+            raise MCPToolError(_tool_error_message(tool_name, result))
+        return _unwrap(tool_name, result)
+
+
+def _tool_error_message(tool_name: str, result: Any) -> str:
+    """The MCP SDK's own server-side convention (see mcp.server.lowlevel.server
+    Server._make_error_result) is to put a human-readable explanation in the first text
+    content block when isError is set. Surface that to the model rather than a generic
+    message, so it can read why presale-mcp couldn't answer."""
+    blocks = getattr(result, "content", None) or []
+    for block in blocks:
+        text = getattr(block, "text", None)
+        if text:
+            return text
+    return f"{tool_name} 조회 결과가 없습니다."
+
+
+def _unwrap(tool_name: str, result: Any) -> dict[str, Any]:
+    """The shape contract Tasks 4-6's seven tool handlers rely on: a JSON *object* -- either
+    `structuredContent` verbatim, the parsed JSON object from the first text content block, or
+    {"items": [...]} when that JSON was an array. A payload that isn't valid JSON, or that
+    parses to a JSON scalar (string/number/bool/null), can't satisfy that contract; rather than
+    hand handlers an ad hoc {"text": ...} shape they'd have to reverse-engineer and would
+    KeyError on, we raise MCPToolError so the failure is catchable the same way an isError
+    response is. An empty content list (no blocks at all) is a legitimate degenerate case and
+    returns {} -- a valid, if empty, flat dict."""
+    structured = getattr(result, "structuredContent", None)
+    if isinstance(structured, dict):
+        return structured
+    blocks = getattr(result, "content", None) or []
+    for block in blocks:
+        text = getattr(block, "text", None)
+        if not text:
+            continue
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError) as exc:
+            raise MCPToolError(f"{tool_name} 응답을 해석할 수 없습니다.") from exc
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"items": parsed}
+        raise MCPToolError(f"{tool_name} 응답 형식이 예상과 다릅니다.")
+    return {}

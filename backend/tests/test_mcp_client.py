@@ -3,8 +3,9 @@ import os
 
 import pytest
 
+import app.mcp_client as mcp_client
 from app.config import Settings
-from app.mcp_client import MCPClient, MCPToolError, MCPUnavailable
+from app.mcp_client import MCPClient, MCPSession, MCPToolError, MCPUnavailable
 
 SECRETS = {"kakao_rest_api_key": "KAKAO-SECRET-a1b2c3d4e5",
            "data_go_kr_service_key": "DATAGO-SECRET-f6g7h8i9j0",
@@ -136,53 +137,22 @@ def test_subprocess_env_still_does_not_leak_the_parent_environment(monkeypatch):
     assert "SUPABASE-DECOY-1a2b3c" not in env.values()
 
 
-@pytest.mark.asyncio
-async def test_call_raises_when_unavailable():
+def test_session_raises_when_unavailable():
     client = MCPClient(configured_settings(ipzitalk_mcp_enabled=False))
     with pytest.raises(MCPUnavailable):
-        await client.call("get_geocode", {"address": "서울 마포구"})
+        client.session()
 
 
-@pytest.mark.asyncio
-async def test_call_returns_the_parsed_tool_payload(monkeypatch):
+def test_session_returns_a_configured_mcp_session():
     client = MCPClient(configured_settings())
-    calls = []
-
-    async def fake_session_call(name, arguments):
-        calls.append((name, arguments))
-        return {"documents": [{"x": "126.9", "y": "37.5"}]}
-
-    monkeypatch.setattr(client, "_session_call", fake_session_call)
-    result = await client.call("get_geocode", {"address": "서울 마포구"})
-    assert result == {"documents": [{"x": "126.9", "y": "37.5"}]}
-    assert calls == [("get_geocode", {"address": "서울 마포구"})]
-
-
-@pytest.mark.asyncio
-async def test_a_failed_call_marks_the_client_for_restart(monkeypatch):
-    client = MCPClient(configured_settings())
-
-    async def failing_call(name, arguments):
-        raise RuntimeError("broken pipe")
-
-    monkeypatch.setattr(client, "_session_call", failing_call)
-    with pytest.raises(MCPUnavailable):
-        await client.call("get_geocode", {"address": "서울 마포구"})
-    assert client.restart_pending is True
-
-
-@pytest.mark.asyncio
-async def test_a_call_that_exceeds_the_timeout_raises(monkeypatch):
-    client = MCPClient(configured_settings())
-    client.call_timeout_s = 0.01
-
-    async def slow_call(name, arguments):
-        await asyncio.sleep(1)
-        return {}
-
-    monkeypatch.setattr(client, "_session_call", slow_call)
-    with pytest.raises(MCPUnavailable):
-        await client.call("get_geocode", {"address": "서울 마포구"})
+    client.startup_timeout_s = 12.5
+    client.call_timeout_s = 3.5
+    session = client.session()
+    assert isinstance(session, MCPSession)
+    assert session._command == "npx"
+    assert session._args == ["-y", "presale-mcp@0.1.0"]
+    assert session._startup_timeout_s == 12.5
+    assert session._call_timeout_s == 3.5
 
 
 def test_mcp_tool_error_is_caught_by_except_mcp_unavailable():
@@ -197,49 +167,198 @@ def test_mcp_tool_error_is_caught_by_except_mcp_unavailable():
         pytest.fail("MCPToolError was not caught by except MCPUnavailable")
 
 
+class _FakeStack:
+    """Stands in for AsyncExitStack in teardown tests -- records whether it was closed instead
+    of requiring a real subprocess to spawn and die."""
+
+    def __init__(self):
+        self.close_count = 0
+
+    async def aclose(self):
+        self.close_count += 1
+
+
+class _FakeBlock:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeResult:
+    def __init__(self, *, isError=False, content=None, structuredContent=None):
+        self.isError = isError
+        self.content = content or []
+        self.structuredContent = structuredContent
+
+
+class _FakeClientSession:
+    def __init__(self, *, result=None, sleep_s=None, raise_exc=None):
+        self._result = result if result is not None else _FakeResult()
+        self._sleep_s = sleep_s
+        self._raise_exc = raise_exc
+
+    async def call_tool(self, name, arguments):
+        if self._raise_exc is not None:
+            raise self._raise_exc
+        if self._sleep_s is not None:
+            await asyncio.sleep(self._sleep_s)
+        return self._result
+
+
+def _bare_session(**timeouts) -> MCPSession:
+    timeouts.setdefault("startup_timeout_s", 20.0)
+    timeouts.setdefault("call_timeout_s", 8.0)
+    return MCPSession("npx", ["-y", "presale-mcp@0.1.0"], {}, **timeouts)
+
+
 @pytest.mark.asyncio
-async def test_a_tool_error_leaves_restart_pending_false_and_the_session_intact(monkeypatch):
-    """A business-level 'no' from a healthy session (e.g. no announcements for a district) must
-    not tear down the subprocess -- only transport/protocol failures or timeouts should."""
-    client = MCPClient(configured_settings())
-    sentinel_session = object()
-    client._session = sentinel_session
+async def test_a_startup_timeout_tears_down_cleanly_and_leaves_nothing_behind(monkeypatch):
+    fake_stack = _FakeStack()
+    monkeypatch.setattr(mcp_client, "AsyncExitStack", lambda: fake_stack)
+    session = _bare_session(startup_timeout_s=0.01)
 
-    async def tool_error_call(name, arguments):
-        raise MCPToolError("해당 자치구에는 공고가 없습니다.")
+    async def timing_out_open(stack):
+        raise TimeoutError("startup budget exceeded")
 
-    monkeypatch.setattr(client, "_session_call", tool_error_call)
-    with pytest.raises(MCPUnavailable) as exc_info:
-        await client.call("search_announcements", {"district": "강남구"})
-    assert isinstance(exc_info.value, MCPToolError)
-    assert client.restart_pending is False
-    assert client._session is sentinel_session  # untouched -- no restart was triggered
+    monkeypatch.setattr(session, "_open", timing_out_open)
+    with pytest.raises(MCPUnavailable):
+        async with session:
+            pass
+    assert fake_stack.close_count == 1
+    assert session._stack is None
+    assert session._session is None
 
 
 @pytest.mark.asyncio
-async def test_call_surfaces_the_tool_provided_error_message(monkeypatch):
+async def test_a_per_call_timeout_does_not_kill_the_whole_session():
+    """A single slow tool call must not tear down the session -- only the try/except inside
+    call() reacts to it; there is no restart flag to flip anymore."""
+    session = _bare_session(call_timeout_s=0.01)
+    session._session = _FakeClientSession(sleep_s=1)
+    with pytest.raises(MCPUnavailable):
+        await session.call("get_geocode", {"address": "서울 마포구"})
+    assert session._session is not None  # the session object itself is untouched
+
+    # A further call against the same (still-open) session works normally.
+    session._session = _FakeClientSession(result=_FakeResult(structuredContent={"documents": []}))
+    result = await session.call("get_geocode", {"address": "서울 마포구"})
+    assert result == {"documents": []}
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_call_failure_translates_to_mcp_unavailable():
+    session = _bare_session()
+    session._session = _FakeClientSession(raise_exc=RuntimeError("broken pipe"))
+    with pytest.raises(MCPUnavailable):
+        await session.call("get_geocode", {"address": "서울 마포구"})
+
+
+@pytest.mark.asyncio
+async def test_cancellation_mid_handshake_still_runs_teardown(monkeypatch):
+    fake_stack = _FakeStack()
+    monkeypatch.setattr(mcp_client, "AsyncExitStack", lambda: fake_stack)
+    session = _bare_session()
+
+    async def cancelled_open(stack):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(session, "_open", cancelled_open)
+    with pytest.raises(asyncio.CancelledError):
+        async with session:
+            pass
+    assert fake_stack.close_count == 1
+
+
+@pytest.mark.asyncio
+async def test_session_context_manager_closes_the_stack_on_success(monkeypatch):
+    fake_stack = _FakeStack()
+    monkeypatch.setattr(mcp_client, "AsyncExitStack", lambda: fake_stack)
+    session = _bare_session()
+
+    async def fake_open(stack):
+        return _FakeClientSession(result=_FakeResult(structuredContent={"documents": []}))
+
+    monkeypatch.setattr(session, "_open", fake_open)
+    async with session as s:
+        result = await s.call("get_geocode", {"address": "서울 마포구"})
+        assert result == {"documents": []}
+    assert fake_stack.close_count == 1
+
+
+@pytest.mark.asyncio
+async def test_session_context_manager_closes_the_stack_on_exception(monkeypatch):
+    fake_stack = _FakeStack()
+    monkeypatch.setattr(mcp_client, "AsyncExitStack", lambda: fake_stack)
+    session = _bare_session()
+
+    async def fake_open(stack):
+        return _FakeClientSession(result=_FakeResult(isError=True, content=[_FakeBlock("문제가 발생했습니다.")]))
+
+    monkeypatch.setattr(session, "_open", fake_open)
+    with pytest.raises(MCPToolError):
+        async with session as s:
+            await s.call("get_geocode", {"address": "서울 마포구"})
+    assert fake_stack.close_count == 1
+
+
+@pytest.mark.asyncio
+async def test_call_surfaces_the_tool_provided_error_message():
     """isError content blocks carry a human-readable explanation (this is the MCP SDK's own
     server-side convention, see Server._make_error_result) -- surface it instead of a generic
     Korean string so the model downstream gets to read why the lookup failed."""
-    client = MCPClient(configured_settings())
-
-    class FakeBlock:
-        text = "해당 자치구는 서울이 아닙니다."
-
-    class FakeResult:
-        isError = True
-        content = [FakeBlock()]
-        structuredContent = None
-
-    class FakeSession:
-        async def call_tool(self, name, arguments):
-            return FakeResult()
-
-    async def fake_ensure_session():
-        return FakeSession()
-
-    monkeypatch.setattr(client, "_ensure_session", fake_ensure_session)
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(isError=True, content=[_FakeBlock("해당 자치구는 서울이 아닙니다.")]))
     with pytest.raises(MCPToolError) as exc_info:
-        await client.call("get_geocode", {"address": "부산 해운대구"})
+        await session.call("get_geocode", {"address": "부산 해운대구"})
     assert str(exc_info.value) == "해당 자치구는 서울이 아닙니다."
-    assert client.restart_pending is False
+
+
+@pytest.mark.asyncio
+async def test_call_falls_back_to_a_generic_message_when_iserror_has_no_text():
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(isError=True, content=[]))
+    with pytest.raises(MCPToolError, match="조회 결과가 없습니다"):
+        await session.call("get_geocode", {"address": "부산 해운대구"})
+
+
+@pytest.mark.asyncio
+async def test_unwrap_prefers_structured_content():
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(
+        structuredContent={"documents": [{"x": "126.9"}]},
+        content=[_FakeBlock('{"documents": "should not be used"}')]))
+    result = await session.call("get_geocode", {"address": "서울 마포구"})
+    assert result == {"documents": [{"x": "126.9"}]}
+
+
+@pytest.mark.asyncio
+async def test_unwrap_parses_a_json_array_text_block_into_items():
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(content=[_FakeBlock('[{"name": "a"}, {"name": "b"}]')]))
+    result = await session.call("search_announcements", {"district": "강남구"})
+    assert result == {"items": [{"name": "a"}, {"name": "b"}]}
+
+
+@pytest.mark.asyncio
+async def test_unwrap_raises_mcp_tool_error_on_unparseable_text():
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(content=[_FakeBlock("이것은 JSON이 아닙니다")]))
+    with pytest.raises(MCPToolError):
+        await session.call("get_geocode", {"address": "서울 마포구"})
+
+
+@pytest.mark.asyncio
+async def test_unwrap_raises_mcp_tool_error_on_a_json_scalar():
+    """A bare JSON string/number/bool doesn't satisfy the 'JSON object or array' contract Tasks
+    4-6's handlers expect; raising here beats handing them a shape they'd KeyError on."""
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(content=[_FakeBlock("42")]))
+    with pytest.raises(MCPToolError):
+        await session.call("get_geocode", {"address": "서울 마포구"})
+
+
+@pytest.mark.asyncio
+async def test_unwrap_returns_an_empty_dict_when_there_are_no_content_blocks_at_all():
+    session = _bare_session()
+    session._session = _FakeClientSession(result=_FakeResult(content=[]))
+    result = await session.call("get_geocode", {"address": "서울 마포구"})
+    assert result == {}
