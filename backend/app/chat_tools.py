@@ -88,6 +88,18 @@ def _first_document(payload: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _https(url: str, fallback: str) -> str:
+    """Provenance URLs must be https; k-apt still serves some http links."""
+    if not url:
+        return fallback
+    return "https://" + url.removeprefix("http://") if url.startswith("http://") else url
+
+
+def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    value = payload.get("items")
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
 class PlaceRefError(Exception):
     """The model passed a place_ref this turn's registry never issued."""
 
@@ -100,9 +112,9 @@ class ChatToolset:
         self.registry = registry
         self._handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = {
             "resolve_seoul_place": self._resolve_seoul_place,
-            # Stub only: Task 5 fills in the real lookup. Registered now so the place_ref
-            # guard tests (which predate the tool's real body) have a handler to call through.
-            "lookup_seoul_complex": self._lookup_seoul_complex_stub,
+            "lookup_seoul_presale": self._lookup_seoul_presale,
+            "lookup_seoul_complex": self._lookup_seoul_complex,
+            "lookup_complex_trades": self._lookup_complex_trades,
         }
 
     def has_handler(self, name: str) -> bool:
@@ -145,9 +157,68 @@ class ChatToolset:
             raise PlaceRefError("먼저 resolve_seoul_place 로 위치를 확인한 뒤 그 place_ref 를 사용하세요.")
         return place
 
-    async def _lookup_seoul_complex_stub(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        self._require_place(arguments)
-        return {"status": "not_implemented"}
+    async def _lookup_seoul_presale(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        place = self._require_place(arguments)
+        radius_m = arguments.get("radius_m")
+        payload = await self.session.call("search_announcement_info",
+                                          {"region_code": place.applyhome_code or place.sgg_code})
+        items = _items(payload)
+        scope_note = (f"청약홈은 자치구(구 단위) 지역코드로만 조회됩니다. {place.district} 전체를 조회한 뒤 "
+                      f"{place.name} 기준 {radius_m}m 로 걸러낸 결과입니다."
+                      if radius_m else f"{place.district} 전체 공고입니다.")
+        if not items:
+            return {"status": "empty", "items": [], "scope_note": scope_note,
+                    "message": f"{place.district}에 등록된 분양공고를 찾지 못했습니다. 청약홈에서 직접 확인해 주세요.",
+                    "citations": [citation(f"청약홈 분양공고 — {place.district}",
+                                           "https://www.applyhome.co.kr/", "청약홈", "lookup_seoul_presale")]}
+
+        enriched = await self.session.call("enrich_complex_info",
+                                           {"house_manage_nos": [item.get("house_manage_no") for item in items
+                                                                 if item.get("house_manage_no")]})
+        by_manage_no = {str(row.get("house_manage_no")): row for row in _items(enriched)}
+        # Build new dicts rather than mutating `item` in place: these dicts came straight out of
+        # the MCP payload, and nothing here guarantees that payload is a private, freshly-allocated
+        # object the caller never looks at again (a cache, a test fixture reused across calls, a
+        # future MCP client that memoizes) -- mutating it would let this handler's enrichment leak
+        # into whatever else holds a reference.
+        items = [{**item, "complex_info": by_manage_no[str(item.get("house_manage_no"))]}
+                 if str(item.get("house_manage_no")) in by_manage_no else item for item in items]
+
+        citations = [citation(f"청약홈 분양공고 — {item.get('house_nm') or place.district}",
+                              _https(item.get("pblanc_url") or "", "https://www.applyhome.co.kr/"),
+                              "청약홈", "lookup_seoul_presale") for item in items]
+        if by_manage_no:
+            citations.append(citation("K-apt 단지 정보", "https://www.k-apt.go.kr/", "K-apt", "lookup_seoul_presale"))
+        return {"status": "ok", "items": items, "scope_note": scope_note, "citations": citations}
+
+    async def _lookup_seoul_complex(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        place = self._require_place(arguments)
+        payload = await self.session.call("get_complex_info", {"latitude": place.latitude, "longitude": place.longitude,
+                                                               "complex_name": place.name, "bjd_code": place.bjd_code})
+        if not payload or not payload.get("kapt_code"):
+            return {"status": "not_found", "complex": None,
+                    "message": f"{place.name} 의 K-apt 단지 정보를 찾지 못했습니다. 아파트 단지가 아닐 수 있습니다.",
+                    "citations": []}
+        return {"status": "ok", "complex": payload,
+                "citations": [citation(f"K-apt 단지 정보 — {payload.get('kapt_name') or place.name}",
+                                       _https(payload.get("source_url") or "", "https://www.k-apt.go.kr/"),
+                                       "K-apt", "lookup_seoul_complex")]}
+
+    async def _lookup_complex_trades(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        place = self._require_place(arguments)
+        months = arguments.get("months") or 12
+        payload = await self.session.call("get_complex_trades", {"bjd_code": place.bjd_code, "sgg_code": place.sgg_code,
+                                                                 "complex_name": place.name, "months": months})
+        items = _items(payload)
+        source = _https(payload.get("source_url") or "", "https://rt.molit.go.kr/")
+        if not items:
+            return {"status": "empty", "items": [], "months": months,
+                    "message": f"{place.name} 의 최근 {months}개월 실거래 신고 내역을 찾지 못했습니다.",
+                    "citations": [citation("국토교통부 실거래가", source, "국토교통부 실거래가", "lookup_complex_trades")]}
+        return {"status": "ok", "items": items, "months": months,
+                "note": "최근 1~2개월은 신고 지연으로 실제보다 적게 보일 수 있습니다.",
+                "citations": [citation(f"국토교통부 실거래가 — {place.name}", source,
+                                       "국토교통부 실거래가", "lookup_complex_trades")]}
 
     async def _resolve_seoul_place(self, arguments: dict[str, Any]) -> dict[str, Any]:
         query = (arguments.get("query") or "").strip()
@@ -204,4 +275,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
      "parameters": {"type": "object", "additionalProperties": False,
                     "properties": {"query": {"type": "string", "description": "지명, 아파트 단지명, 또는 주소"}},
                     "required": ["query"]}},
+    {"name": "lookup_seoul_presale",
+     "description": ("place_ref 가 가리키는 자치구의 청약홈 분양공고와 주택형·분양가를 조회한다. "
+                     "청약홈은 지역코드 단위로만 조회되므로 radius_m 은 조회 후 거리로 걸러낸 것이다. "
+                     "사용자에게 답할 때 이 사실을 scope_note 그대로 전하라."),
+     "parameters": {"type": "object", "additionalProperties": False,
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
+                                   "radius_m": {"type": "integer", "description": "선택. 조회 후 걸러낼 반경(미터)"}},
+                    "required": ["place_ref"]}},
+    {"name": "lookup_seoul_complex",
+     "description": "place_ref 가 가리키는 아파트 단지의 K-apt 개요(세대수·연식·동수·주차대수)를 조회한다. 실거래는 포함하지 않는다.",
+     "parameters": {"type": "object", "additionalProperties": False,
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"}},
+                    "required": ["place_ref"]}},
+    {"name": "lookup_complex_trades",
+     "description": ("place_ref 가 가리키는 단지의 국토교통부 실거래(매매·전월세·분양권)를 조회한다. "
+                     "반환된 금액을 그대로 인용하라. 평당가·증감률을 직접 계산하지 마라."),
+     "parameters": {"type": "object", "additionalProperties": False,
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
+                                   "months": {"type": "integer", "description": "선택. 조회 개월 수. 기본 12"}},
+                    "required": ["place_ref"]}},
 ]
