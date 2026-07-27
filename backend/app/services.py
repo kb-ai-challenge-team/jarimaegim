@@ -372,11 +372,14 @@ class OpenAIResponder:
         payload: dict[str, Any] = {"model": self.model, "input": self._translate(messages), "store": False,
                                     "max_output_tokens": 2000}
         if tools:
-            # `strict` is Required[Optional[bool]] on the Responses API's FunctionToolParam -- the
-            # key must be present even when its value is None, unlike Chat Completions where the
-            # whole field is optional. Sending False keeps the permissive schema behaviour our tool
-            # parameters were written for; omitting the key risks a 400 we cannot see until a real
-            # call is made, and no offline test would catch it.
+            # `strict` MUST stay False. Verified against the live Responses API, not just the SDK
+            # stub: `strict: True` requires `required` to list every key in `properties`, and four
+            # of our schemas deliberately have optional parameters (months, categories, keywords,
+            # radius_m). Flipping this to True 400s on all four -- if you ever want strict schemas,
+            # make every `required` list exhaustive first.
+            # The SDK types `strict` as Required[Optional[bool]], implying the key must always be
+            # present. The server does not agree: omitting it entirely is accepted. We send it
+            # explicitly anyway so the value is a decision on the page rather than a default.
             payload["tools"] = [{"type": "function", "name": tool["name"], "description": tool["description"],
                                  "parameters": tool["parameters"], "strict": False} for tool in tools]
         # Same reasoning-parameter compatibility problem AIService._respond solves for explain(),
