@@ -64,7 +64,8 @@ await panel.locator(".kb-stepnav .kb-primary-sm").click();
 await panel.locator(".kb-candidates, .kb-empty").first().waitFor({ timeout: 30000 });
 const candidateCount = await panel.locator(".kb-candidates li").count();
 if (candidateCount > 0) await panel.locator(".kb-candidates li").first().getByRole("button", { name: "계획 기준으로 확정" }).click();
-const location = { rendered: true, candidateCount, committable: candidateCount === 0 || (await panel.locator(".kb-candidates li").first().innerText()).includes("계획 기준") };
+const demoBadges = await panel.locator(".kb-candidates .demo-badge").count();
+const location = { rendered: true, candidateCount, demoBadges, committable: candidateCount === 0 || (await panel.locator(".kb-candidates li").first().innerText()).includes("계획 기준") };
 
 // 처방 — 근거를 지나 마지막 단계. 공고 조회 응답을 기다린다.
 const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
@@ -124,7 +125,8 @@ const stepperOk = expected.every((label, index) => (stepper.labels[index] || "")
 if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed || !bands.safeState
   || !bands.noInventedTradeAreaCount || !location.rendered || !cost.landsFirst || !cost.bandScreen || !cost.pendingShown
   || !cost.bandTableShown || !funding.safeState || !funding.subsidyGapDisclosed
-  || !location.committable || prescription.blocks !== 3 || !prescription.committedShown
+  || !location.committable || (location.candidateCount > 0 && location.demoBadges === 0)
+  || prescription.blocks !== 3 || !prescription.committedShown
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest
   || !axes.disabledCarryReason) process.exitCode = 1;
