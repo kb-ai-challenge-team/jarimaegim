@@ -37,12 +37,12 @@ export function Landing() {
           <p className="home-lead">업종과 자금 조건을 입력하면 후보 입지, 비용, 공개 지원정보와 실행 계획을 하나의 판단 흐름으로 정리합니다.</p>
 
           <div className="home-hero-actions" aria-label="시작 유형 선택">
-            <Link href="/cases/new?mode=first" className="home-primary-action">
+            <Link href="/kb" className="home-primary-action">
               <span className="home-action-icon" aria-hidden="true"><Store /></span>
               <span><small>별도 계정 없이 시작</small><strong>내 조건 입력하기</strong></span>
               <ArrowRight aria-hidden="true" />
             </Link>
-            <Link href="/cases/new?mode=expand" className="home-secondary-action">
+            <Link href="/kb" className="home-secondary-action">
               <Building2 aria-hidden="true" />
               <span>이전·2호점 검토</span>
               <ChevronRight aria-hidden="true" />
@@ -139,7 +139,7 @@ export function Landing() {
           <h2 id="final-cta-title">내 조건으로 서울의 후보를 확인해 보세요.</h2>
           <p>별도 계정 없이 시작하며, 조건과 문서는 현재 브라우저에서 최대 24시간 이어볼 수 있습니다.</p>
         </div>
-        <Link href="/cases/new?mode=first">내 조건 입력하기 <ArrowRight /></Link>
+        <Link href="/kb">내 조건 입력하기 <ArrowRight /></Link>
       </section>
 
       <footer className="home-footer">
