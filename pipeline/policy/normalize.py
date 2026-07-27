@@ -135,3 +135,76 @@ class KnowledgeDocument:
             "source_as_of": self.source_as_of.isoformat() if self.source_as_of else None,
             "raw": self.raw, "display": self.display, "collected_at": collected_at,
         }
+
+
+def _https(url: str) -> str:
+    if url.startswith("http://"):
+        return "https://" + url.removeprefix("http://")
+    return url
+
+
+PROGRAM_UNKNOWNS = ["공식 원문의 지역·업종·업력·제외 조건을 직접 확인해야 합니다."]
+
+
+def _program_display(*, doc_id: str, category: str, title: str, organization: str, status: str,
+                     application_period: str | None, official_url: str,
+                     source_as_of: date | None) -> dict[str, Any]:
+    """lib/types.ts의 Program과 필드 대 필드로 맞춘 표시용 페이로드.
+
+    matched_conditions는 목록 조회에서 비어 있다. 케이스 조건 없이 비교할 것이 없기
+    때문이고, 조건 비교는 검색 경로(RetrievalService)가 한다.
+    """
+    return {
+        "id": doc_id, "category": category, "title": title, "organization": organization,
+        "status": status, "application_period": application_period,
+        "matched_conditions": [], "unknown_conditions": list(PROGRAM_UNKNOWNS),
+        "official_url": official_url,
+        "source_as_of": source_as_of.isoformat() if source_as_of else None,
+    }
+
+
+def normalize_bizinfo(record: dict[str, Any], *, today: date) -> KnowledgeDocument | None:
+    """기업마당 XML item 하나를 문서로 바꾼다. 제목이나 URL이 없으면 버린다."""
+    title = (record.get("pblancNm") or "").strip()
+    url = _https((record.get("pblancUrl") or "").strip())
+    external_id = (record.get("pblancId") or "").strip()
+    if not title or not url.startswith("https://"):
+        return None
+
+    summary = strip_html(record.get("bsnsSumryCn"))
+    organization = (record.get("jrsdInsttNm") or "").strip() or "기업마당"
+    executor = (record.get("excInsttNm") or "").strip()
+    target = (record.get("trgetNm") or "").strip()
+    realm = (record.get("pldirSportRealmLclasCodeNm") or "").strip()
+    apply_method = (record.get("reqstMthPapersCn") or "").strip()
+    hashtags = (record.get("hashtags") or "").strip()
+
+    # 임베딩에 들어가는 텍스트. 제목과 분류를 앞에 두어 짧은 질의와도 맞물리게 한다.
+    body_text = " ".join(part for part in (
+        title, f"소관 {organization}" if organization else "",
+        f"수행 {executor}" if executor else "",
+        f"지원분야 {realm}" if realm else "",
+        f"지원대상 {target}" if target else "",
+        f"신청방법 {apply_method}" if apply_method else "",
+        summary, hashtags,
+    ) if part).strip()
+
+    start, end = parse_range_dates(record.get("reqstBeginEndDe"))
+    doc_id = f"bizinfo:{external_id or hashlib.sha256(url.encode()).hexdigest()[:20]}"
+    source_as_of = parse_iso_date(record.get("creatPnttm"))
+    period = (record.get("reqstBeginEndDe") or "").strip() or None
+    return KnowledgeDocument(
+        id=doc_id, kind="PROGRAM", provider="기업마당", category="GOVERNMENT",
+        title=title, organization=organization, official_url=url,
+        body_text=body_text, status=resolve_status(end, today),
+        # 지역 필드가 없는 원천이다. 소관기관이 광역지자체명일 때만 확정한다.
+        regions=canonical_regions(organization),
+        application_start=start, application_end=end,
+        source_as_of=source_as_of,
+        raw=record,
+        display=_program_display(doc_id=doc_id, category="GOVERNMENT", title=title,
+                                 organization=organization,
+                                 status=display_status(end, today),
+                                 application_period=period, official_url=url,
+                                 source_as_of=source_as_of),
+    )

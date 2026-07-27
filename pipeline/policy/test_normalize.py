@@ -1,7 +1,17 @@
 from datetime import date
+from pathlib import Path
+from xml.etree import ElementTree
 
-from normalize import (canonical_regions, display_status, parse_compact_date, parse_range_dates,
-                      resolve_status, strip_html)
+from normalize import (canonical_regions, display_status, normalize_bizinfo, parse_compact_date,
+                       parse_range_dates, resolve_status, strip_html)
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def bizinfo_records() -> list[dict[str, str]]:
+    root = ElementTree.fromstring((FIXTURES / "bizinfo.sample.xml").read_bytes())
+    return [{child.tag: (child.text or "").strip() for child in item}
+            for item in root.findall(".//body/items/item")]
 
 
 def test_strip_html_removes_tags_and_entities():
@@ -61,3 +71,56 @@ def test_display_status_never_reports_an_open_window_as_an_eligibility_verdict()
     assert display_status(date(2026, 8, 18), today) == "UNKNOWN"
     assert display_status(None, today) == "UNKNOWN"
     assert display_status(date(2026, 7, 1), today) == "CLOSED"
+
+
+def test_normalize_bizinfo_builds_an_embeddable_document():
+    doc = normalize_bizinfo(bizinfo_records()[0], today=date(2026, 7, 27))
+    assert doc is not None
+    assert doc.kind == "PROGRAM"
+    assert doc.provider == "기업마당"
+    assert doc.id.startswith("bizinfo:PBLN_")
+    assert doc.official_url.startswith("https://")
+    # 본문에 HTML 태그가 남으면 임베딩 품질이 떨어지고 인용문도 깨진다.
+    assert "<" not in doc.body_text
+    assert len(doc.body_text) > 100
+
+
+def test_normalize_bizinfo_reads_the_application_window():
+    doc = normalize_bizinfo(bizinfo_records()[0], today=date(2026, 7, 27))
+    assert doc.application_start == date(2026, 7, 22)
+    assert doc.application_end == date(2026, 8, 18)
+    assert doc.status == "ACTIVE"
+
+
+def test_normalize_bizinfo_takes_region_only_from_the_jurisdiction_field():
+    # 소관기관이 광역지자체명일 때만 지역이 확정된다. 해시태그의 '서울'은 근거가 아니다.
+    doc = normalize_bizinfo({"pblancNm": "제목", "pblancId": "PBLN_1",
+                             "pblancUrl": "https://www.bizinfo.go.kr/x",
+                             "jrsdInsttNm": "대구광역시", "bsnsSumryCn": "<p>내용</p>",
+                             "hashtags": "서울,창업"}, today=date(2026, 7, 27))
+    assert doc.regions == ["대구"]
+
+    doc = normalize_bizinfo({"pblancNm": "제목", "pblancId": "PBLN_2",
+                             "pblancUrl": "https://www.bizinfo.go.kr/x",
+                             "jrsdInsttNm": "중소벤처기업부", "bsnsSumryCn": "<p>내용</p>",
+                             "hashtags": "서울,창업"}, today=date(2026, 7, 27))
+    assert doc.regions is None
+
+
+def test_normalize_bizinfo_rejects_records_without_a_title_or_url():
+    assert normalize_bizinfo({"pblancId": "PBLN_3"}, today=date(2026, 7, 27)) is None
+    assert normalize_bizinfo({"pblancNm": "제목", "pblancUrl": ""}, today=date(2026, 7, 27)) is None
+
+
+def test_normalize_bizinfo_display_matches_the_existing_frontend_contract():
+    doc = normalize_bizinfo(bizinfo_records()[0], today=date(2026, 7, 27))
+    display = doc.display
+    # lib/types.ts의 Program과 필드 대 필드로 맞는다. 유니온 밖 값이 새면 UI가 깨진다.
+    assert set(display) == {"id", "category", "title", "organization", "status",
+                            "application_period", "matched_conditions",
+                            "unknown_conditions", "official_url", "source_as_of"}
+    assert display["status"] == "UNKNOWN"
+    assert display["category"] == "GOVERNMENT"
+    assert display["application_period"] == "2026-07-22 ~ 2026-08-18"
+    assert display["matched_conditions"] == []
+    assert display["unknown_conditions"]
