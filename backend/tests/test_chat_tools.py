@@ -111,3 +111,19 @@ async def test_an_mcp_failure_becomes_an_error_result_not_an_exception():
     result = await toolset(payloads).run("resolve_seoul_place", {"query": "역삼동"})
     assert result["status"] == "error"
     assert "실패" in result["message"]
+
+
+async def test_a_non_dict_argument_payload_is_normalized_not_raised():
+    result = await toolset(GANGNAM).run("resolve_seoul_place", ["not", "a", "dict"])
+    assert result["status"] == "error"
+
+
+async def test_an_unexpected_handler_exception_becomes_an_error_result_not_a_crash():
+    tools = toolset(GANGNAM)
+
+    async def boom(arguments):
+        raise ValueError("something the handler author never anticipated")
+
+    tools._handlers["boom"] = boom
+    result = await tools.run("boom", {})
+    assert result["status"] == "error"
