@@ -1,3 +1,5 @@
+import pytest
+
 from app.config import Settings
 from app.mcp_client import MCPClient
 
@@ -29,10 +31,16 @@ def test_client_is_unavailable_when_a_single_key_is_missing():
         assert client.available is False, f"{missing} 없이 available 이면 안 된다"
 
 
-def test_unavailable_client_reports_a_korean_reason():
-    reason = MCPClient(configured_settings(ipzitalk_mcp_enabled=False)).unavailable_reason
-    assert reason and "" != reason.strip()
-    assert all(ord(char) < 128 or "가" <= char <= "힣" or not char.isalpha() for char in reason)
+@pytest.mark.parametrize("branch,overrides", [
+    ("flag_off", {"ipzitalk_mcp_enabled": False}),
+    ("command_missing", {"ipzitalk_mcp_command": ""}),
+    ("keys_missing", {"kakao_rest_api_key": ""}),
+])
+def test_unavailable_client_reports_a_korean_reason(branch, overrides):
+    reason = MCPClient(configured_settings(**overrides)).unavailable_reason
+    assert reason and reason.strip(), f"{branch}: 이유 문자열이 비어 있다"
+    assert any("가" <= char <= "힣" for char in reason), f"{branch}: 한글이 하나도 없다"
+    assert all(ord(char) < 128 or "가" <= char <= "힣" for char in reason), f"{branch}: 한글/ASCII 이외 문자가 섞여 있다"
 
 
 def test_secrets_never_appear_in_the_unavailable_reason():
