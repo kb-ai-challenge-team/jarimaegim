@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` }];
   },
+  // 랜딩이 /intro 에서 / 로 올라왔다. 배포된 링크가 남아 있을 수 있으므로 경로를 살려 둔다.
+  async redirects() {
+    return [{ source: "/intro", destination: "/", permanent: true }];
+  },
   async headers() {
     return [
       {

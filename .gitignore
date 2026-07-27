@@ -26,3 +26,6 @@ pipeline/raw/
 
 # Tooling worktrees created by other sessions
 .claude/
+
+# 히어로 스크린샷 중간 산출물 (webp 만 커밋한다)
+public/landing/service-screen.png

@@ -92,6 +92,15 @@ class ListingTerms(BaseModel):
     floor: int
 
 
+class DistrictSummary(BaseModel):
+    """One map pin per covered district, shown before the user enters any condition."""
+    district: str
+    count: int = Field(ge=0)
+    median_monthly_rent_krw: int = Field(ge=0)
+    latitude: float
+    longitude: float
+
+
 class Candidate(BaseModel):
     id: str
     name: str
