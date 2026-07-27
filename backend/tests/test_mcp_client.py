@@ -1,6 +1,11 @@
 from app.config import Settings
 from app.mcp_client import MCPClient
 
+SECRETS = {"kakao_rest_api_key": "KAKAO-SECRET-a1b2c3d4e5",
+           "data_go_kr_service_key": "DATAGO-SECRET-f6g7h8i9j0",
+           "naver_maps_client_id": "NAVERID-SECRET-k1l2m3n4o5",
+           "naver_maps_client_secret": "NAVERSECRET-p6q7r8s9t0"}
+
 
 def configured_settings(**overrides) -> Settings:
     base = dict(ipzitalk_mcp_enabled=True, ipzitalk_mcp_command="npx", ipzitalk_mcp_args="-y presale-mcp@0.1.0",
@@ -31,10 +36,14 @@ def test_unavailable_client_reports_a_korean_reason():
 
 
 def test_secrets_never_appear_in_the_unavailable_reason():
-    client = MCPClient(configured_settings(naver_maps_client_secret=""))
-    assert "k" != client.unavailable_reason
-    for secret in ("k", "d", "n"):
-        assert f"={secret}" not in (client.unavailable_reason or "")
+    """The reason names which variable is missing. It must never echo a value."""
+    for missing in SECRETS:
+        client = MCPClient(configured_settings(**{**SECRETS, missing: ""}))
+        reason = client.unavailable_reason or ""
+        assert missing.upper() in reason, f"{missing} 이 빠졌는데 이유에 이름이 없다"
+        for name, value in SECRETS.items():
+            if name != missing:
+                assert value not in reason, f"{name} 값이 이유 문자열에 노출됐다"
 
 
 def test_subprocess_env_carries_every_upstream_key():
