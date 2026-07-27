@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     ai_chat_model: str = ""
     ai_explanation_enabled: bool = True
     ai_daily_request_limit: int = 20
+    ipzitalk_mcp_enabled: bool = False
+    ipzitalk_mcp_command: str = ""
+    ipzitalk_mcp_args: str = ""
+    naver_maps_client_id: str = ""
+    naver_maps_client_secret: str = ""
+
     embedding_model: str = ""
     embedding_dimension: int = 1536
 
@@ -42,6 +48,12 @@ class Settings(BaseSettings):
     @property
     def supabase_configured(self) -> bool:
         return bool(self.supabase_url and self.supabase_service_role_key)
+
+    @property
+    def ipzitalk_configured(self) -> bool:
+        """Every upstream key presale-mcp needs. A partial set would fail at call time, not startup."""
+        return bool(self.ipzitalk_mcp_enabled and self.ipzitalk_mcp_command and self.kakao_rest_api_key
+                    and self.data_go_kr_service_key and self.naver_maps_client_id and self.naver_maps_client_secret)
 
     @property
     def retrieval_configured(self) -> bool:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Any
@@ -6,6 +7,13 @@ from uuid import UUID, uuid4
 from supabase import Client, create_client
 from .config import Settings
 from .models import CaseCreate, CaseInput, CasePatch, CaseRecord
+
+logger = logging.getLogger(__name__)
+
+
+def _today() -> str:
+    """Module-level seam so tests can monkeypatch the clock without touching Repository state."""
+    return datetime.now(UTC).date().isoformat()
 
 
 class Repository:
@@ -16,9 +24,14 @@ class Repository:
         self._lock = RLock()
         self._sessions: dict[UUID, dict[str, Any]] = {}
         self._cases: dict[UUID, CaseRecord] = {}
+        self._daily_turns: dict[str, int] = {}
+        self._daily_turns_day: str = ""
         self.supabase: Client | None = None
         if settings.supabase_configured:
             self.supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)
+            logger.warning("일일 턴 한도(ai_daily_request_limit)는 Supabase 모드에서도 프로세스 로컬 메모리로 집계됩니다: "
+                            "워커 재시작이나 다중 워커 배포에서는 한도가 실제로 적용되지 않습니다. 이는 알려진 한계이며, "
+                            "영구 카운터가 필요하면 별도 마이그레이션(daily_turn_counters 테이블)이 먼저 필요합니다.")
 
     def create_session(self, token_hash: str, expires_at: datetime) -> UUID:
         session_id = uuid4()
@@ -48,6 +61,25 @@ class Repository:
                 if session["token_hash"] == token_hash and session["status"] == "ACTIVE" and session["expires_at"] > now:
                     return session_id
         return None
+
+    def consume_daily_turn(self, session_id: UUID, limit: int) -> bool:
+        """Atomically check-and-increment today's turn count for a session; returns whether the turn is allowed.
+        Process-local in both Supabase and in-memory mode (see the warning logged in __init__) — this is a known
+        gap against production multi-worker deployment, not a silent one. The counter dict is keyed by session id
+        only and wiped whenever the wall-clock day (via the module-level _today seam) advances, so entries never
+        outlive the day they were spent on and cannot grow unbounded across restarts-free long-running processes."""
+        if limit <= 0:
+            return False
+        today = _today()
+        with self._lock:
+            if self._daily_turns_day != today:
+                self._daily_turns.clear()
+                self._daily_turns_day = today
+            spent = self._daily_turns.get(str(session_id), 0)
+            if spent >= limit:
+                return False
+            self._daily_turns[str(session_id)] = spent + 1
+            return True
 
     def create_case(self, owner_session: UUID, payload: CaseCreate) -> CaseRecord:
         now = datetime.now(UTC)
