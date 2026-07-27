@@ -36,7 +36,7 @@
 - `components/kb/KbShell.tsx:87`에 "매물·시세 데이터는 표시하지 않습니다" 안내가 하드코딩되어 있다. 매물이 표시되면 거짓이 된다.
 - `components/ProvenanceBar.tsx`는 6줄짜리 한 줄 컴포넌트이고 `limitations`를 이미 렌더링한다. **Workspace와 KbShell 양쪽이 같은 것을 쓴다** — `ListingService`가 provenance를 채우므로 별도 작업 없이 라벨이 표시된다.
 - 프론트에는 단위 테스트 프레임워크가 없다. 검증은 `scripts/flow-check.mjs`와 `scripts/shell-check.mjs`(둘 다 playwright)로만 한다.
-- 백엔드 pytest는 `backend/tests/`에 있고 `npm run api:test`로 돈다 (현재 59개 통과).
+- 백엔드 pytest는 `backend/tests/`에 있고 `npm run api:test`로 돈다 (현재 59개 통과). **단일 파일을 돌릴 때 `npm run api:test -- <경로>`는 동작하지 않는다** — `api:test`가 `cd backend`를 먼저 하므로 경로가 이중 중첩된다. 대신 `backend/.venv/bin/python -m pytest backend/tests/<파일> -v`를 쓴다.
 
 ---
 
@@ -185,7 +185,7 @@ def test_candidate_carries_listing_terms():
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `npm run api:test -- backend/tests/test_models_listing.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_models_listing.py` -v
 Expected: FAIL — `ImportError: cannot import name 'ListingTerms'`
 
 - [ ] **Step 3: 모델 추가**
@@ -211,7 +211,7 @@ class ListingTerms(BaseModel):
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `npm run api:test -- backend/tests/test_models_listing.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_models_listing.py` -v
 Expected: PASS, 6 tests
 
 전체도 확인: `npm run api:test`
@@ -341,7 +341,7 @@ def test_a_missing_seed_file_yields_an_empty_service(tmp_path):
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `npm run api:test -- backend/tests/test_listings.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_listings.py` -v
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.listings'`
 
 - [ ] **Step 3: 구현**
@@ -437,7 +437,7 @@ class ListingService:
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `npm run api:test -- backend/tests/test_listings.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_listings.py` -v
 Expected: PASS, 11 tests
 
 - [ ] **Step 5: 실제 시드로도 로드되는지 확인**
@@ -535,7 +535,7 @@ def test_a_mismatched_district_is_still_rejected():
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `npm run api:test -- backend/tests/test_api_locations.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_api_locations.py` -v
 Expected: FAIL — `KeyError: 'listing'` 또는 후보 0건 (아직 Kakao 경로를 타므로)
 
 - [ ] **Step 3: 전환**
@@ -578,7 +578,7 @@ async def search_locations(payload: LocationSearch, session_id: UUID = Depends(c
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `npm run api:test -- backend/tests/test_api_locations.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_api_locations.py` -v
 Expected: PASS, 3 tests
 
 전체: `npm run api:test`
@@ -888,7 +888,7 @@ def test_a_case_without_a_listing_still_renders():
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `npm run api:test -- backend/tests/test_pdf_listing.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_pdf_listing.py` -v
 Expected: 첫 테스트 FAIL (라벨이 PDF에 없음)
 
 - [ ] **Step 3: `CaseInput`에 확정 매물 필드 추가**
@@ -942,7 +942,7 @@ async function commitCandidate(id:string){setCommitted(id);setTrace(true);setTim
 
 - [ ] **Step 6: 통과 확인**
 
-Run: `npm run api:test -- backend/tests/test_pdf_listing.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_pdf_listing.py` -v
 Expected: PASS, 2 tests
 
 Run: `npm run typecheck`
@@ -993,7 +993,7 @@ def test_prompt_still_forbids_inventing_numbers():
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `npm run api:test -- backend/tests/test_ai_prompt.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_ai_prompt.py` -v
 Expected: FAIL — `AttributeError: 'AIService' object has no attribute 'build_prompt'`
 
 - [ ] **Step 3: 프롬프트를 메서드로 빼고 문구 추가**
@@ -1016,7 +1016,7 @@ Expected: FAIL — `AttributeError: 'AIService' object has no attribute 'build_p
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `npm run api:test -- backend/tests/test_ai_prompt.py`
+Run: `backend/.venv/bin/python -m pytest backend/tests/test_ai_prompt.py` -v
 Expected: PASS, 2 tests
 
 - [ ] **Step 5: 커밋**
