@@ -22,14 +22,13 @@ from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch,
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .retrieval import RetrievalService
-from .services import AIService, AnalysisService, CostService, LocationService, OfficialSourceService
+from .services import AIService, AnalysisService, CostService, LocationService
 
 settings = get_settings()
 repository = Repository(settings)
 locations = LocationService(settings)
 listings_service = ListingService(settings)
 analyses = AnalysisService(listings_service)
-official_sources = OfficialSourceService(settings)
 knowledge = KnowledgeReader(settings)
 retrieval = RetrievalService(settings)
 ai = AIService(settings)
