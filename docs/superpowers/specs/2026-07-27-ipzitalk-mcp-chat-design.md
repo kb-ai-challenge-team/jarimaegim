@@ -45,7 +45,7 @@ Workspace.tsx ──SSE── POST /api/v1/cases/{id}/messages/stream
                           │
                       chat_tools.py                ← 도구 7종, 서울 가드, citations 생성
                           │
-                      mcp_client.py                ← presale-mcp 서브프로세스 · stdio 세션 · 재시작
+                      mcp_client.py                ← presale-mcp 서브프로세스 · 턴 수명 stdio 세션
                           │
                       presale-mcp@0.1.0            ← 카카오 / 청약홈 / K-apt / 국토부 / 네이버
 ```
@@ -57,17 +57,64 @@ Workspace.tsx ──SSE── POST /api/v1/cases/{id}/messages/stream
 - 기동 조건: `IPZITALK_MCP_ENABLED=true` **그리고** 키 4개(`KAKAO_REST_API_KEY`,
   `NAVER_MAPS_CLIENT_ID`, `NAVER_MAPS_CLIENT_SECRET`, `DATA_GO_KR_SERVICE_KEY`)가 모두
   설정됨. 하나라도 없으면 기동하지 않고 `unavailable` 상태를 보고한다.
-- 키는 서브프로세스 환경변수로만 전달한다. 로그·SSE·에러 메시지에 실리지 않는다.
-- `call(tool_name, arguments) -> dict` — 원시 MCP 도구 하나를 호출한다. 호출당 8초 타임아웃.
-- 서브프로세스가 죽으면 다음 요청에서 1회 재기동을 시도하고, 실패하면 비활성으로 전환한다.
+- 키는 서브프로세스 환경변수로만 전달한다. **부모 환경을 통째로 상속하지 않는다** —
+  `PATH`, `HOME`, `NODE_*`, `NPM_CONFIG_*`, 프록시 변수만 허용목록으로 물려주고 나머지는
+  차단한다. 서드파티 npm 패키지가 `OPENAI_API_KEY`나 Supabase 자격증명을 볼 이유가 없다.
+- 로그·SSE·에러 메시지에 키 값이 실리지 않는다. 어떤 변수가 비었는지 **이름만** 말한다.
 
-**의존:** `Settings`, `mcp` 파이썬 SDK (신규 의존성), Node.js 18+ 런타임.
+**세션은 턴 단위로 소유한다.**
+
+```python
+async with client.session() as session:
+    payload = await session.call(tool_name, arguments)
+```
+
+`MCPClient`는 설정과 게이트만 들고, 세션 상태를 갖지 않는다. `session()`이 반환하는
+`MCPSession`이 서브프로세스 하나를 열고 턴이 끝나면 닫는다. 재기동 개념은 없다 — 실패한
+턴은 그냥 끝나고, 다음 턴이 새로 띄운다.
+
+이유는 anyio의 제약이다. `stdio_client`와 `ClientSession`은 각각 취소 스코프를 여는데,
+anyio는 **스코프를 연 태스크가 닫을 것**을 요구한다. 장수 세션을 여러 요청이 공유하면
+A 태스크가 연 세션을 B 태스크가 닫게 되고, `RuntimeError`가 난다. 턴 단위 소유는 같은
+태스크가 열고 닫으므로 이 문제가 구조적으로 발생하지 않는다.
+
+대안이었던 전용 오너 태스크(웜 서브프로세스 + 큐)는 성능이 낫지만 채택하지 않았다.
+네이버 지도 자격증명이 없어 실제 서브프로세스로 검증할 수 없는 상태에서 동시성 기계를
+넣는 것은 위험하다. 대가는 채팅 턴마다 `npx` 콜드 스타트다. **이 비용은 아직 실측되지
+않았다** — 실측 후 감당하기 어려우면 오너 태스크 방식으로 되돌리는 것이 맞다.
+
+**타임아웃은 두 개로 나뉜다.** 세션 시작 20초(`startup_timeout_s`), 호출당 8초
+(`call_timeout_s`). 콜드 스타트를 데이터 조회와 같은 예산에 묶으면 안 된다.
+
+타임아웃은 **`asyncio.wait_for`가 아니라 `anyio.fail_after`로, 단일 leaf await만** 감싼다
+(`initialize()`, `call_tool()`). 실제 서브프로세스로 검증한 결과다.
+
+| 방식 | 결과 |
+|---|---|
+| `asyncio.wait_for`로 핸드셰이크 전체 | 취소가 `BaseException`이라 정리가 안 돌고 서브프로세스 누수 |
+| `anyio.fail_after`로 핸드셰이크 전체 | 교차 스코프 `RuntimeError` |
+| `anyio.fail_after`로 leaf await만 | 정상 |
+
+프로세스 spawn 자체는 감싸지 않는다. `anyio.open_process`는 즉시 반환하고, 콜드 스타트
+지연은 `initialize()`의 응답 대기에서 드러나기 때문이다.
+
+**모든 시작 실패는 `MCPUnavailable`로 변환한다.** 타임아웃뿐 아니라 `FileNotFoundError`
+(호스트에 `npx` 없음), 핸드셰이크 응답 검증 실패, 파이프 끊김까지 전부. 진짜 취소만
+원본 그대로 통과시킨다. 소비자가 `except MCPUnavailable` 하나로 모든 실패를 잡을 수
+있어야 부록 A 1번(통합 부재 시 명시적 안전 상태)이 성립한다.
+
+**의존:** `Settings`, `mcp` 파이썬 SDK, `anyio`, Node.js 18+ 런타임.
 
 ### 3.2 `backend/app/chat_tools.py`
 
 **책임:** LLM에 노출할 도구 7종의 스키마와 실행 함수. 서울 가드와 `citations` 생성.
 
-**의존:** `mcp_client.MCPClient` 인터페이스, `SEOUL_DISTRICTS`. LLM도 SSE도 모른다.
+**의존:** `mcp_client.MCPSession` 인터페이스(`await session.call(name, args)`), `SEOUL_DISTRICTS`.
+LLM도 SSE도 모른다.
+
+`ChatToolset`은 세션을 소유하지 않고 주입받는다. 세션과 `PlaceRegistry`는 **같은 턴 수명**을
+갖는다 — 둘 다 `async with client.session()` 블록 안에서 살고 함께 사라진다. 도구 핸들러는
+`async with` 블록 밖으로 `call()`을 내보내면 안 된다.
 가짜 MCP 클라이언트를 주입해 단독 테스트할 수 있다.
 
 #### 도구 7종
@@ -237,8 +284,9 @@ SSE 파서는 순수 함수로 분리해 단독 테스트한다.
 | 상황 | 동작 |
 |---|---|
 | `NAVER_MAPS_*` 또는 `DATA_GO_KR_SERVICE_KEY` 미설정 | `mcp_client` 비활성. `turn_start.tools_available: false`, 도구 없이 설명, `integration_status: "not_configured"` |
-| Node/npx 없음 | 기동 시 1회 로그 후 동일하게 비활성 |
-| 서브프로세스 사망 | 다음 요청에서 1회 재기동. 실패 시 비활성 + `"unavailable"` |
+| Node/npx 없음 | 세션 시작이 `MCPUnavailable`로 변환된다. 턴은 도구 없이 진행되고 500이 나지 않는다 |
+| 서브프로세스 사망 | 그 턴만 실패한다. 세션이 턴 수명이므로 다음 턴이 새로 띄운다 — 재기동 로직 자체가 없다 |
+| 도구가 "없음"을 답함 (`isError`) | `MCPToolError`. 세션은 건강하므로 턴을 중단하지 않는다. 빈 결과는 한국 공공데이터 API에서 정상 응답이다 |
 | 개별 도구 실패·타임아웃 | `tool_end status:"error"`, 에러 요지를 도구 결과로 LLM에 전달. **턴은 계속된다** — 나머지 결과로 답할 수 있으면 답한다 |
 | 라운드·시간 상한 초과 | `done`에 부분 응답 + "조회가 길어져 일부만 확인했습니다" + 지금까지의 citations |
 | 클라이언트 연결 끊김 | 서버가 루프 취소 |
