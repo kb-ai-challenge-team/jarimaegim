@@ -4,35 +4,80 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, MapPinned } from "lucide-react";
 import { loadKakaoMaps, type KakaoMapInstance, type KakaoMaps, type KakaoOverlay } from "@/lib/kakao";
 import { EVIDENCE_BADGES } from "@/lib/constants";
-import type { Candidate } from "@/lib/types";
+import type { Candidate, DistrictSummary } from "@/lib/types";
+import { manwon } from "@/lib/format";
 
 const SEOUL_CENTER = { lat: 37.551668, lng: 126.9743216 };
 type MapState = "loading" | "ready" | "missing" | "error";
 
-/** Builds the KB-style split pill: white label half + graded value half. */
+/**
+ * Builds the KB-style split pill: white label half + graded value half.
+ *
+ * Only the focused marker shows its name and lease terms. Measured on production, fifteen
+ * full-width labels in one district pile into a 211x187px clump where every one overlaps
+ * another and only the focused label is readable. Unfocused markers collapse to rank plus
+ * grade, which is narrow enough to sit apart; the full detail stays one click away and is
+ * always present in the candidate list beside the map.
+ *
+ * The aria-label carries the whole thing either way — the collapse is visual only.
+ */
 function markerNode(candidate: Candidate, rank: number, isFocused: boolean, onFocus: (id: string) => void) {
   const node = document.createElement("button");
   node.type = "button";
   node.className = "kb-marker";
   node.dataset.grade = candidate.evidence_grade;
-  if (isFocused) node.dataset.focused = "true";
-  node.setAttribute("aria-label", `${candidate.name} ${EVIDENCE_BADGES[candidate.evidence_grade]}`);
+  if (candidate.listing) node.dataset.demo = "true";
+  if (isFocused) node.dataset.focused = "true"; else node.dataset.compact = "true";
+  const listing = candidate.listing;
+  const spoken = listing ? ` ${listing.area_m2}제곱미터 보증금 ${manwon(listing.deposit_krw)}원 월세 ${manwon(listing.monthly_rent_krw)}원 시연용 데이터` : "";
+  node.setAttribute("aria-label", `${rank}. ${candidate.name} ${EVIDENCE_BADGES[candidate.evidence_grade]}${spoken}`);
+  const head = document.createElement("span");
+  head.className = "kb-marker-head";
   const name = document.createElement("span");
   name.className = "kb-marker-name";
-  name.textContent = `${rank}. ${candidate.name}`;
+  name.textContent = isFocused ? `${rank}. ${candidate.name}` : String(rank);
   const value = document.createElement("span");
   value.className = "kb-marker-value";
   value.textContent = candidate.evidence_grade;
-  node.append(name, value);
+  head.append(name, value);
+  node.append(head);
+  if (listing && isFocused) {
+    const chip = document.createElement("span");
+    chip.className = "kb-marker-demo";
+    chip.textContent = "시연용";
+    name.append(chip);
+    const line = document.createElement("span");
+    line.className = "kb-marker-terms";
+    line.textContent = `${listing.area_m2}㎡ · 보 ${manwon(listing.deposit_krw)} / 월 ${manwon(listing.monthly_rent_krw)}`;
+    node.append(line);
+  }
   node.addEventListener("click", (event) => { event.stopPropagation(); onFocus(candidate.id); });
   return node;
 }
 
-export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: Candidate[]; focused: string | null; onFocus: (id: string) => void; aiActive: boolean }) {
+/** Landing pin: one per covered district, before any condition is entered. */
+function summaryNode(entry: DistrictSummary, onSelect: (district: string) => void) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "kb-district-pin";
+  node.setAttribute("aria-label", `${entry.district} 시연용 매물 ${entry.count}건, 월세 중앙값 ${manwon(entry.median_monthly_rent_krw)}원. 눌러서 매물 보기`);
+  const name = document.createElement("strong");
+  name.textContent = entry.district;
+  const count = document.createElement("span");
+  count.textContent = `${entry.count}건`;
+  const rent = document.createElement("small");
+  rent.textContent = `월 ${manwon(entry.median_monthly_rent_krw)}`;
+  node.append(name, count, rent);
+  node.addEventListener("click", (event) => { event.stopPropagation(); onSelect(entry.district); });
+  return node;
+}
+
+export function KbMap({ candidates, summary, focused, onFocus, onSelectDistrict, aiActive }: { candidates: Candidate[]; summary: DistrictSummary[]; focused: string | null; onFocus: (id: string) => void; onSelectDistrict: (district: string) => void; aiActive: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const mapsRef = useRef<KakaoMaps | null>(null);
   const overlaysRef = useRef<KakaoOverlay[]>([]);
+  const summaryOverlaysRef = useRef<KakaoOverlay[]>([]);
   const key = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
   const [state, setState] = useState<MapState>(key ? "loading" : "missing");
 
@@ -67,7 +112,7 @@ export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: 
       const overlay = new maps.CustomOverlay({
         position: new maps.LatLng(candidate.latitude, candidate.longitude),
         content: markerNode(candidate, index + 1, isFocused, onFocus),
-        yAnchor: 1.35, zIndex: isFocused ? 90 : 10, clickable: true
+        yAnchor: 1.15, zIndex: isFocused ? 90 : 10, clickable: true
       });
       overlay.setMap(map);
       return overlay;
@@ -78,6 +123,27 @@ export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: 
       if (!bounds.isEmpty()) map.setBounds(bounds, 80, 80, 80, 80);
     }
   }, [candidates, focused, onFocus, state]);
+
+  // District summary pins. Cleared as soon as candidates exist, so the two pin kinds
+  // never share the map.
+  useEffect(() => {
+    const maps = mapsRef.current, map = mapRef.current;
+    if (!maps || !map) return;
+    summaryOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+    summaryOverlaysRef.current = [];
+    if (candidates.length > 0 || summary.length === 0) return;
+    summaryOverlaysRef.current = summary.map((entry) => {
+      const overlay = new maps.CustomOverlay({
+        position: new maps.LatLng(entry.latitude, entry.longitude),
+        content: summaryNode(entry, onSelectDistrict), yAnchor: 1.1, zIndex: 20, clickable: true
+      });
+      overlay.setMap(map);
+      return overlay;
+    });
+    const bounds = new maps.LatLngBounds();
+    summary.forEach((entry) => bounds.extend(new maps.LatLng(entry.latitude, entry.longitude)));
+    if (!bounds.isEmpty()) map.setBounds(bounds, 100, 100, 100, 100);
+  }, [summary, candidates.length, onSelectDistrict, state]);
 
   useEffect(() => {
     const maps = mapsRef.current, map = mapRef.current;

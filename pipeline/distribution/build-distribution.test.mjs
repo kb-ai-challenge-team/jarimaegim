@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { buildDistribution } from "./build-distribution.mjs";
+
+function priceRows(count, { sigungu = "강남구", area = 40, rent = 1_800_000 } = {}) {
+  return Array.from({ length: count }, (_, index) => ({
+    sigungu, area_m2: area + index, monthly_rent_krw: rent + index * 10_000,
+  }));
+}
+
+test("구별 면적 분위수를 낸다", () => {
+  const result = buildDistribution(priceRows(20));
+  assert.ok(result.districts["강남구"].area.p50 > 0);
+  assert.equal(result.districts["강남구"].area.n, 20);
+});
+
+test("면적구간별 월세 분위수를 낸다", () => {
+  const result = buildDistribution(priceRows(20, { area: 34 }));
+  const band = result.districts["강남구"].bands["M"];
+  assert.ok(band.monthly_rent_krw.p10 <= band.monthly_rent_krw.p90);
+  assert.equal(band.label, "33~66㎡");
+});
+
+test("보증금 배수는 측정하지 않는다", () => {
+  const result = buildDistribution(priceRows(20, { area: 34 }));
+  assert.equal(result.districts["강남구"].bands["M"].deposit_multiple, undefined);
+});
+
+test("표본 5건 미만 구간은 상위 구간으로 병합한다", () => {
+  const rows = [...priceRows(20, { area: 34 }), ...priceRows(3, { area: 100 })];
+  const result = buildDistribution(rows);
+  const bands = result.districts["강남구"].bands;
+  assert.equal(bands["XL"], undefined);
+  assert.ok(bands["L"] || bands["M"]);
+  assert.ok(result.merges.some((entry) => entry.district === "강남구" && entry.from === "XL"));
+});
+
+test("모든 구간이 5건 미만이면 구 전체를 하나로 합친다", () => {
+  const rows = [...priceRows(3, { area: 34 }), ...priceRows(3, { area: 100 })];
+  const result = buildDistribution(rows);
+  const bands = result.districts["강남구"].bands;
+  assert.equal(Object.keys(bands).length, 1);
+  assert.equal(Object.values(bands)[0].n, 6);
+});
+
+test("구 전체 병합에서도 이동 건수를 정확히 기록한다", () => {
+  // S=2, L=10: neither band is small enough to trigger the cascading fold on its own
+  // (S has no smaller band to fold into; L has 10, above MIN_BAND_SAMPLES), so this only
+  // reaches the district-collapse branch, not the earlier fold loop.
+  const rows = [...priceRows(2, { area: 20 }), ...priceRows(10, { area: 70 })];
+  const result = buildDistribution(rows);
+  const bands = result.districts["강남구"].bands;
+  assert.equal(Object.keys(bands).length, 1);
+  assert.equal(Object.values(bands)[0].n, 12);
+  const merge = result.merges.find((entry) => entry.district === "강남구" && entry.from === "S");
+  assert.ok(merge, "S 구간 병합 기록이 있어야 한다");
+  assert.equal(merge.into, "L");
+  assert.equal(merge.moved, 2);
+});
+
+test("가격 행이 없으면 거부한다", () => {
+  assert.throws(() => buildDistribution([]), /empty/);
+});
+
+test("구 표본이 5건 미만이면 거부한다", () => {
+  assert.throws(() => buildDistribution(priceRows(4, { area: 34 })), /at least 5/);
+});
+
+test("월세가 0인 행은 거부한다", () => {
+  const rows = [...priceRows(20, { area: 34 }), { sigungu: "강남구", area_m2: 40, monthly_rent_krw: 0, deposit_krw: 10_000_000 }];
+  assert.throws(() => buildDistribution(rows), /monthly_rent_krw/);
+});

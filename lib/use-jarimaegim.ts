@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, formatKrw } from "./constants";
-import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
 // 순서는 조건 → 자금 → 입지 → 근거 → 처방. 금융이 입지보다 먼저 도는 것이 단계 순서에 드러난다.
 export type FlowStep = "ask" | "confirm" | "bands" | "recommend" | "evidence" | "prescribe";
@@ -69,6 +69,8 @@ export function useJarimaegim() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [locationState, setLocationState] = useState<LocationState>("idle");
   const [focused, setFocused] = useState<string | null>(null);
+  const [summary, setSummary] = useState<DistrictSummary[]>([]);
+  const [overviewDistrict, setOverviewDistrict] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Record<string, AnalysisResult>>({});
   const [programs, setPrograms] = useState<Program[]>([]);
   const [programState, setProgramState] = useState<LocationState>("idle");
@@ -95,6 +97,10 @@ export function useJarimaegim() {
   const traceOrigin = useRef(0);
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
+
+  // Landing overview. A failure leaves the map empty rather than breaking the shell —
+  // the summary is orientation, not something the flow depends on.
+  useEffect(() => { api.getListingSummary().then((result) => setSummary(result.districts)).catch(() => setSummary([])); }, []);
 
   /** Anonymous session is minted lazily; an existing cookie answers 409 and is reused as-is. */
   const ensureSession = useCallback(() => {
@@ -164,9 +170,11 @@ export function useJarimaegim() {
     };
   }), []);
 
-  /** Shared 입지 조회 leg. Emits the search/grade steps and rethrows so the caller owns the failure. */
+  /** Shared 입지 조회 leg. Emits the search/grade steps and rethrows so the caller owns the failure.
+   *  Single funnel for condition-driven population — clearing overviewDistrict here (rather than in
+   *  each caller) keeps a stale district label from surviving into a real AI search result. */
   const runSearch = useCallback(async (record: CaseRecord) => {
-    setLocationState("loading"); setCandidates([]); setFocused(null);
+    setOverviewDistrict(null); setLocationState("loading"); setCandidates([]); setFocused(null);
     const result = await api.searchLocations(record.id, record.inputs);
     settleStep("search", "done", result.status === "success" ? `응답 ${result.candidates.length}건` : result.message || "조건에 맞는 공식 장소가 없습니다.");
     setCandidates(result.candidates);
@@ -175,6 +183,22 @@ export function useJarimaegim() {
     if (result.message) setError(result.message);
     settleStep("grade", result.candidates.length > 0 ? "done" : "skipped", gradeNote(result.candidates));
   }, [settleStep]);
+
+  /** Expand one district's listings from the overview. No case exists yet, so this uses the public route. */
+  const selectOverviewDistrict = useCallback(async (district: string) => {
+    setOverviewDistrict(district);
+    setLocationState("loading");
+    try {
+      const result = await api.getListings(district, 15);
+      setCandidates(result.candidates);
+      setLocationState(result.status);
+      setFocused(result.candidates[0]?.id ?? null);
+    } catch { setLocationState("error"); }
+  }, []);
+
+  const clearOverviewDistrict = useCallback(() => {
+    setOverviewDistrict(null); setCandidates([]); setFocused(null); setLocationState("idle");
+  }, []);
 
   /** 조달 밴드 산출. 후보와 무관하게 사용자 조건만으로 계산되므로 입지 조회보다 먼저 실행한다. */
   const runBands = useCallback(async (record: CaseRecord, input: BandForm) => {
@@ -344,7 +368,7 @@ export function useJarimaegim() {
 
   const reset = useCallback(() => {
     setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
-    setCandidates([]); setLocationState("idle"); setFocused(null); setAnalysis({});
+    setCandidates([]); setLocationState("idle"); setFocused(null); setOverviewDistrict(null); setAnalysis({});
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
     setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle");
     setCommitted(null); setDocuments({}); setDocBusy(""); setDocNotice(""); setTraceOpen(false);
@@ -352,6 +376,7 @@ export function useJarimaegim() {
 
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
+    summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,

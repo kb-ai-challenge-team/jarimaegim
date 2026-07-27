@@ -19,6 +19,8 @@ page.on("response", response => {
 await page.goto(`${base}/start`, { waitUntil: "networkidle" });
 await page.getByRole("link", { name: "처음 창업 조건 입력" }).click();
 await page.getByLabel("업종 필수").fill("카페");
+// 시연용 매물이 존재하는 다섯 개 자치구 중 하나를 골라야 후보 목록을 실제로 검증할 수 있다. 기본값(종로구)은 커버 대상이 아니다.
+await page.getByLabel(/지역/).selectOption("강남구");
 const numericInputs = page.locator('input[type="number"]');
 await numericInputs.nth(0).fill("100000000");
 await numericInputs.nth(1).fill("70000000");
@@ -27,7 +29,9 @@ await page.getByRole("button", { name: "이 조건으로 후보 찾기" }).click
 await page.waitForURL(/\/cases\/[0-9a-f-]+\/explore/);
 await page.waitForSelector(".service-shell");
 const workspaceUrl = page.url();
-const onboarding = { url: workspaceUrl, title: await page.locator(".case-title strong").textContent(), integrationPending: await page.locator(".empty-state").isVisible() };
+const onboarding = { url: workspaceUrl, title: await page.locator(".case-title strong").textContent() };
+await page.waitForSelector(".candidate-row, .empty-state");
+const listings = { rows: await page.locator(".candidate-row").count(), badges: await page.locator(".candidate-row .demo-badge").count() };
 
 await page.getByRole("button", { name: "비용", exact: true }).first().click();
 await page.waitForSelector(".cost-editor");
@@ -126,7 +130,7 @@ const copilot = {
   streamEndpointUsed: Boolean(streamResponse) && streamResponse.ok() && /event-stream/.test(streamResponse.headers()["content-type"] || "")
 };
 
-const result = { onboarding, cost, funding, bands, axes, document: documentResult, copilot, errors };
+const result = { onboarding, listings, cost, funding, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !onboarding.integrationPending || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
+if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;

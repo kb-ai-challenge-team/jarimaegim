@@ -16,6 +16,16 @@ artifacts/
 *.sqlite
 *.sqlite3
 tsconfig.tsbuildinfo
+# Next regenerates this on every dev/build and flips its import between the two
+# modes, so tracking it made the deploy script's clean-tree check fail after any build.
+next-env.d.ts
 *.pem
 *.pfx
 scripts/.tmp-*
+pipeline/raw/
+
+# Tooling worktrees created by other sessions
+.claude/
+
+# 히어로 스크린샷 중간 산출물 (webp 만 커밋한다)
+public/landing/service-screen.png

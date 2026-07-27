@@ -44,7 +44,7 @@ export function KbShell() {
 
   return <div className="kb-app" data-ai={aiActive ? "open" : "closed"} data-panel={panelOpen ? "open" : "closed"} data-chat={chatVisible ? "open" : "closed"}>
     <nav className="kb-gnb" aria-label="주요 메뉴">
-      <span className="kb-logo" aria-label="KB부동산">KB</span>
+      <span className="kb-logo" aria-label="KB 자리매김">KB</span>
       <button type="button" className="kb-gnb-ai" aria-current={aiActive && panelOpen ? "page" : undefined} aria-expanded={aiActive && panelOpen} onClick={() => selectView("ai")}>
         <span className="kb-ai-badge" aria-hidden="true">AI</span><span>자리매김</span>
       </button>
@@ -70,7 +70,7 @@ export function KbShell() {
     </div>}
 
     <main className="kb-stage" id="main-content">
-      <KbMap candidates={aiActive ? flow.candidates : []} focused={flow.focused} onFocus={flow.setFocused} aiActive={aiActive} />
+      <KbMap candidates={aiActive ? flow.candidates : []} summary={aiActive ? flow.summary : []} focused={flow.focused} onFocus={flow.setFocused} onSelectDistrict={flow.selectOverviewDistrict} aiActive={aiActive} />
 
       <div className="kb-filters">
         <button className="kb-filter-icon" aria-label="필터 설정" onClick={() => outOfScope("필터")}><SlidersHorizontal aria-hidden="true" /></button>
@@ -84,7 +84,9 @@ export function KbShell() {
         <button aria-label="축소" onClick={() => outOfScope("지도 축소 버튼")}><Minus aria-hidden="true" /></button>
       </div>
 
-      {flow.candidates.length === 0 && flow.trace.state !== "running" && <div className="kb-stage-notice"><strong>매물·시세 데이터는 표시하지 않습니다</strong><p>KB부동산 API가 연동되지 않아 값을 만들어 채우지 않습니다. 왼쪽 <em>자리매김</em>에서 조건을 입력하면 추천 입지가 이 지도에 표시됩니다.</p></div>}
+      {flow.candidates.length === 0 && flow.summary.length > 0 && flow.trace.state !== "running" && <div className="kb-stage-notice"><strong>시연용 매물 데이터입니다</strong><p>실제 임대 매물이 아니며 계약 대상이 아닙니다. 지도의 자치구를 누르면 그 구의 매물을 볼 수 있고, 왼쪽 <em>자리매김</em>에서 조건을 입력하면 조건에 맞는 매물만 남습니다.</p></div>}
+      {flow.candidates.length === 0 && flow.summary.length === 0 && flow.trace.state !== "running" && <div className="kb-stage-notice"><strong>매물 데이터를 불러오지 못했습니다</strong><p>연결을 확인한 뒤 새로고침해 주세요. 값을 만들어 채우지 않습니다.</p></div>}
+      {flow.overviewDistrict && flow.candidates.length > 0 && <div className="kb-stage-notice compact"><strong>{flow.overviewDistrict} 시연용 매물 {flow.candidates.length}곳</strong><button type="button" className="kb-ghost" onClick={flow.clearOverviewDistrict}>전체 자치구 보기</button></div>}
     </main>
 
     {chatVisible && <JarimaegimChat flow={flow} />}
