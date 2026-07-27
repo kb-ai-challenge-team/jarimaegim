@@ -1,6 +1,9 @@
 import asyncio
+import json
 import pytest
 from app.chat_stream import ChatStreamer, StreamLimits, _summarize
+from app.config import Settings
+from app.services import AIService, OpenAIResponder
 
 
 class FakeToolset:
@@ -239,3 +242,174 @@ def test_summarize_reports_the_message_for_non_countable_statuses():
     summarizing them as a count (e.g. '0건') would hide *why* nothing came back."""
     assert _summarize({"status": "not_found", "message": "단지를 찾지 못했습니다."}) == "단지를 찾지 못했습니다."
     assert _summarize({"status": "error", "message": "조회에 실패했습니다."}) == "조회에 실패했습니다."
+
+
+# --- OpenAIResponder: the {text, tool_calls} adapter over the Responses API ---
+
+def ai_service(**overrides):
+    base = dict(openai_api_key="sk-test", ai_chat_model="gpt-5", ai_explanation_enabled=True)
+    base.update(overrides)
+    return AIService(Settings(**base))
+
+
+def test_responder_is_none_without_a_key():
+    assert ai_service(openai_api_key="").responder() is None
+
+
+def test_responder_is_none_when_explanation_is_disabled():
+    assert ai_service(ai_explanation_enabled=False).responder() is None
+
+
+def test_responder_exists_when_configured():
+    assert isinstance(ai_service().responder(), OpenAIResponder)
+
+
+def test_responder_flattens_openai_tool_calls():
+    class FakeResponse:
+        output_text = "확인했습니다."
+        output = [type("Call", (), {"type": "function_call", "call_id": "c1", "name": "resolve_seoul_place",
+                                    "arguments": '{"query": "강남구"}'})()]
+
+    parsed = OpenAIResponder._parse(FakeResponse())
+    assert parsed["text"] == "확인했습니다."
+    assert parsed["tool_calls"] == [{"id": "c1", "name": "resolve_seoul_place", "arguments": {"query": "강남구"}}]
+
+
+def test_responder_survives_unparseable_tool_arguments():
+    class FakeResponse:
+        output_text = ""
+        output = [type("Call", (), {"type": "function_call", "call_id": "c1", "name": "resolve_seoul_place",
+                                    "arguments": "not json"})()]
+
+    assert OpenAIResponder._parse(FakeResponse())["tool_calls"][0]["arguments"] == {}
+
+
+def test_responder_ignores_non_function_output_items():
+    class FakeResponse:
+        output_text = "안녕하세요."
+        output = [type("Reasoning", (), {"type": "reasoning"})()]
+
+    assert OpenAIResponder._parse(FakeResponse())["tool_calls"] == []
+
+
+# The Responses API's `input` array does not accept ChatStreamer's Chat-Completions-shaped
+# messages (assistant messages carrying a nested `tool_calls` list; tool results carrying
+# `tool_call_id`) -- function calls and their outputs are each a distinct top-level item there
+# (`function_call` / `function_call_output`), never a field nested inside a role:assistant or
+# role:tool message. These tests pin down `_translate`, the layer that bridges the two shapes;
+# deleting it (passing `messages` straight through as `input`) would make every one of them fail,
+# either on the assertion shape or because the OpenAI SDK's TypedDicts don't match at all.
+
+def test_translate_turns_plain_messages_into_responses_message_items():
+    items = OpenAIResponder._translate([{"role": "system", "content": "시스템"}, {"role": "user", "content": "질문"}])
+    assert items == [{"type": "message", "role": "system", "content": "시스템"},
+                     {"type": "message", "role": "user", "content": "질문"}]
+
+
+def test_translate_turns_an_assistant_tool_call_into_a_standalone_function_call_item():
+    items = OpenAIResponder._translate(
+        [{"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "resolve_seoul_place",
+                                                              "arguments": {"query": "강남구"}}]}])
+    assert items == [{"type": "function_call", "call_id": "c1", "name": "resolve_seoul_place",
+                      "arguments": json.dumps({"query": "강남구"}, ensure_ascii=False)}]
+
+
+def test_translate_turns_a_tool_result_into_a_function_call_output_item():
+    """The Responses API's FunctionCallOutput item takes the result text under `output`, keyed to
+    the call by `call_id` -- not `content`/`tool_call_id`, which is Chat-Completions vocabulary."""
+    items = OpenAIResponder._translate([{"role": "tool", "tool_call_id": "c1", "content": "<<<TOOL_RESULT\n{}\nTOOL_RESULT>>>"}])
+    assert items == [{"type": "function_call_output", "call_id": "c1", "output": "<<<TOOL_RESULT\n{}\nTOOL_RESULT>>>"}]
+
+
+def test_translate_keeps_an_assistant_message_with_both_text_and_tool_calls_as_two_items():
+    """A round can, in principle, carry commentary text alongside its tool_calls (ChatStreamer
+    stores whatever `turn.get('text')` was, unconditionally). Both must survive translation: the
+    text as a message item, the call as its own function_call item -- not one item with both,
+    since the Responses API has no such combined shape."""
+    items = OpenAIResponder._translate(
+        [{"role": "assistant", "content": "확인 중입니다.",
+          "tool_calls": [{"id": "c1", "name": "resolve_seoul_place", "arguments": {}}]}])
+    assert {"type": "message", "role": "assistant", "content": "확인 중입니다."} in items
+    assert any(item.get("type") == "function_call" and item.get("call_id") == "c1" for item in items)
+    assert len(items) == 2
+
+
+class FakeResponsesAPI:
+    """Records every kwargs dict `.create()` was called with; replays `error` on the first call
+    only (mirroring a transient reasoning-parameter rejection that succeeds on retry), else
+    returns `response`."""
+
+    def __init__(self, response, error=None):
+        self.response, self.error, self.calls = response, error, []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None and len(self.calls) == 1:
+            raise self.error
+        return self.response
+
+
+class FakeOpenAIClient:
+    def __init__(self, response, error=None):
+        self.responses = FakeResponsesAPI(response, error)
+
+
+def _fake_response(text="", tool_calls=()):
+    return type("FakeResponse", (), {"output_text": text, "output": list(tool_calls)})()
+
+
+async def test_respond_sends_translated_input_and_low_reasoning_effort_by_default():
+    client = FakeOpenAIClient(_fake_response(text="ok"))
+    responder = OpenAIResponder(client, "gpt-5")
+    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}]
+    tools = [{"name": "resolve_seoul_place", "description": "d",
+             "parameters": {"type": "object", "properties": {}, "required": []}}]
+    result = await responder.respond(messages, tools)
+    assert result["text"] == "ok"
+    kwargs = client.responses.calls[0]
+    assert kwargs["model"] == "gpt-5"
+    assert kwargs["input"] == OpenAIResponder._translate(messages)
+    assert kwargs["reasoning"] == {"effort": "low"}
+    assert kwargs["store"] is False
+    assert kwargs["tools"] == [{"type": "function", "name": "resolve_seoul_place", "description": "d",
+                               "parameters": {"type": "object", "properties": {}, "required": []}}]
+
+
+async def test_respond_omits_the_tools_key_when_no_tools_are_available():
+    client = FakeOpenAIClient(_fake_response(text="ok"))
+    responder = OpenAIResponder(client, "gpt-5")
+    await responder.respond([{"role": "user", "content": "hi"}], [])
+    assert "tools" not in client.responses.calls[0]
+
+
+async def test_respond_retries_without_reasoning_when_the_installed_sdk_rejects_the_kwarg():
+    """Mirrors AIService._respond's own compatibility fallback: some installed SDK builds raise
+    TypeError for an unrecognized `reasoning` kwarg before any network call happens."""
+    client = FakeOpenAIClient(_fake_response(text="ok"), error=TypeError("unexpected keyword argument 'reasoning'"))
+    responder = OpenAIResponder(client, "gpt-5")
+    result = await responder.respond([{"role": "user", "content": "hi"}], [])
+    assert result["text"] == "ok"
+    assert len(client.responses.calls) == 2
+    assert "reasoning" not in client.responses.calls[1]
+
+
+async def test_respond_retries_without_reasoning_when_the_configured_model_rejects_the_parameter():
+    """A non-reasoning model can reject `reasoning` server-side instead of at the SDK layer -- an
+    ordinary Exception whose message names the parameter, not a TypeError."""
+    client = FakeOpenAIClient(_fake_response(text="ok"), error=Exception("Unsupported parameter: 'reasoning'"))
+    responder = OpenAIResponder(client, "gpt-5")
+    result = await responder.respond([{"role": "user", "content": "hi"}], [])
+    assert result["text"] == "ok"
+    assert len(client.responses.calls) == 2
+
+
+async def test_respond_propagates_errors_unrelated_to_reasoning():
+    """An error that has nothing to do with the reasoning kwarg (auth failure, rate limit, ...)
+    must not be silently retried and swallowed -- ChatStreamer's own `except Exception` around
+    `respond()` is what turns this into an UPSTREAM_UNAVAILABLE event; if this method swallowed it
+    instead, the loop would treat a real outage as if the model had simply answered nothing."""
+    client = FakeOpenAIClient(_fake_response(), error=RuntimeError("rate limited"))
+    responder = OpenAIResponder(client, "gpt-5")
+    with pytest.raises(RuntimeError):
+        await responder.respond([{"role": "user", "content": "hi"}], [])
+    assert len(client.responses.calls) == 1

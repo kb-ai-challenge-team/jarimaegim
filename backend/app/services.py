@@ -343,3 +343,83 @@ class AIService:
             if "reasoning" not in str(exc):
                 raise
             return await self.client.responses.create(**common)
+
+    def responder(self) -> "OpenAIResponder | None":
+        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+            return None
+        return OpenAIResponder(self.client, self.settings.ai_chat_model)
+
+
+class OpenAIResponder:
+    """Adapts the Responses API to the `{text, tool_calls}` shape ChatStreamer's tool loop expects.
+
+    `messages` arrives from ChatStreamer already shaped like Chat Completions history -- an
+    assistant message carries a nested `tool_calls` list, a tool result carries `tool_call_id` --
+    because that is the shape the loop naturally accumulates as it runs. The Responses API's
+    `input` array does not accept that shape: a function call and its result are each their own
+    top-level item (`function_call` / `function_call_output`), never a field nested inside a
+    role:assistant or role:tool message (confirmed against this environment's installed
+    openai.types.responses.response_input_param -- ResponseFunctionToolCallParam and
+    FunctionCallOutput are distinct sibling members of the ResponseInputItemParam union, not
+    sub-fields of EasyInputMessageParam). `_translate` rebuilds each Chat-Completions-shaped
+    message into the Responses API item(s) it corresponds to.
+    """
+
+    def __init__(self, client: AsyncOpenAI, model: str):
+        self.client, self.model = client, model
+
+    async def respond(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+        payload: dict[str, Any] = {"model": self.model, "input": self._translate(messages), "store": False,
+                                    "max_output_tokens": 2000}
+        if tools:
+            payload["tools"] = [{"type": "function", "name": tool["name"], "description": tool["description"],
+                                 "parameters": tool["parameters"]} for tool in tools]
+        # Same reasoning-parameter compatibility problem AIService._respond solves for explain(),
+        # and the same fix, in the same order: TypeError means this SDK build's `responses.create`
+        # doesn't accept `reasoning` as a keyword at all (a local, unconditional signature
+        # mismatch) so it is checked first and retried without further inspection; an ordinary
+        # Exception that *names* "reasoning" means the configured model rejected the parameter
+        # server-side, which also warrants a retry; anything else is a real failure (auth, rate
+        # limit, context length, ...) that must propagate so ChatStreamer's `except Exception`
+        # reports it as UPSTREAM_UNAVAILABLE instead of this method silently eating it.
+        try:
+            response = await self.client.responses.create(**payload, reasoning={"effort": "low"})
+        except TypeError:
+            response = await self.client.responses.create(**payload)
+        except Exception as exc:
+            if "reasoning" not in str(exc):
+                raise
+            response = await self.client.responses.create(**payload)
+        return self._parse(response)
+
+    @staticmethod
+    def _translate(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role")
+            if role == "tool":
+                items.append({"type": "function_call_output", "call_id": message.get("tool_call_id"),
+                             "output": message.get("content") or ""})
+                continue
+            content = message.get("content") or ""
+            if content:
+                items.append({"type": "message", "role": role, "content": content})
+            for call in message.get("tool_calls") or []:
+                items.append({"type": "function_call", "call_id": call.get("id"), "name": call.get("name") or "",
+                             "arguments": json.dumps(call.get("arguments") or {}, ensure_ascii=False)})
+        return items
+
+    @staticmethod
+    def _parse(response: Any) -> dict[str, Any]:
+        calls = []
+        for item in getattr(response, "output", None) or []:
+            if getattr(item, "type", None) != "function_call":
+                continue
+            try:
+                arguments = json.loads(getattr(item, "arguments", "") or "{}")
+            except (TypeError, ValueError):
+                arguments = {}
+            calls.append({"id": getattr(item, "call_id", None) or getattr(item, "id", None),
+                          "name": getattr(item, "name", ""),
+                          "arguments": arguments if isinstance(arguments, dict) else {}})
+        return {"text": (getattr(response, "output_text", "") or "").strip(), "tool_calls": calls}
