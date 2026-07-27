@@ -1,10 +1,16 @@
-"""Stage 2 - gate the crawled rent distribution against a public-data baseline.
+"""Stage 2 - a self-consistency gate over the aggregated rent distribution.
 
-The baseline is the median monthly rent per square metre from the Seoul Metro
-underground shopping arcade dataset (OA-12927, as of 2025-12-31). Underground
-arcades and ground-floor storefronts sit at genuinely different price levels,
-so the tolerance is wide. This gate catches order-of-magnitude mistakes; it
-does not certify that the rents are accurate.
+This was designed as an independent cross-check: crawled rents compared against
+public data. The crawl was dropped, and the rents now come from the same Seoul
+Metro underground arcade dataset (OA-12927, as of 2025-12-31) that supplies the
+baseline. Baseline and subject are therefore the same source, and the comparison
+is no longer independent.
+
+What it still catches is a bug in the aggregation path - columns read in the
+wrong order, a station-to-district mapping that slipped, a district dropped
+entirely. Any of those pushes a district's rent per square metre far away from
+the source-wide median. It does not certify that the rents are accurate, and it
+cannot, because there is nothing here to check them against.
 """
 from __future__ import annotations
 
@@ -47,11 +53,15 @@ def summarize(districts: dict) -> dict:
 
 def render_report(report: dict, merges: list) -> str:
     lines = [
-        "# 시세 분포 교차검증 리포트", "",
-        f"기준선: 서울교통공사 지하상가 임대정보 ㎡당 월임대료 중앙값 {BASELINE_KRW_PER_M2:,}원 (기준일 2025-12-31)",
+        "# 시세 분포 자기일관성 리포트", "",
+        "> **이 리포트는 독립적인 교차검증이 아니다.** 임대료 표본과 기준선이 같은 출처",
+        "> (서울교통공사 지하상가 임대정보 OA-12927)에서 나오므로, 비교 대상은 자기 자신이다.",
+        "> 여기서 잡히는 것은 집계 경로의 버그뿐이다 — 컬럼을 뒤바꿔 읽거나, 역-자치구 매핑이",
+        "> 어긋나거나, 특정 구가 통째로 빠지는 경우. 시세의 정확성은 보증하지 않으며,",
+        "> 대조할 독립 출처가 없으므로 보증할 수도 없다.", "",
+        f"기준선: 출처 전체의 ㎡당 월임대료 중앙값 {BASELINE_KRW_PER_M2:,}원 (기준일 2025-12-31)",
         f"허용 범위: {RATIO_MIN}× ~ {RATIO_MAX}×", "",
-        "지하상가와 지상 1층 상가는 시세대가 다르므로 범위를 넓게 잡았다.",
-        "이 게이트는 자릿수 오류를 잡는 안전망이며 시세의 정확성을 보증하지 않는다.", "",
+        "자치구별 실제 시세 차이가 존재하므로 범위를 좁히지 않았다.", "",
         "| 자치구 | 대표 구간 | 표본 | 면적 P50 | 월세 P50 | ㎡당 | 배수 | 판정 |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]

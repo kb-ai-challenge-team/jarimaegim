@@ -32,7 +32,7 @@ def median_per_m2(text: str) -> float:
     values = []
     for row in csv.DictReader(io.StringIO(text)):
         try:
-            area = float(row["면적㎡"])
+            area = float(row["면적(제곱미터)"])
             rent = float(row["월임대료"])
         except (KeyError, TypeError, ValueError):
             continue

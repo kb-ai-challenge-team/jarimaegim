@@ -114,6 +114,9 @@ async function main() {
     notice: "시연용 생성 데이터입니다. 실제 임대 매물이 아니며 계약 대상이 아닙니다.",
     method: "위치는 실제 상가 좌표이나 면적·보증금·월세는 시세 분포에서 독립 샘플링한 값입니다.",
     deposit_basis: "보증금은 실측이 아니라 월세의 10~20배라는 관행 배수를 가정해 산출한 값입니다.",
+    // _band_label exists so tests can find the band a listing was drawn from. Strip it here
+    // so it never reaches the published artefact.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     listings: listings.map(({ _band_label, ...rest }) => rest),
   };
   await fs.mkdir(dirname(OUTPUT), { recursive: true });
