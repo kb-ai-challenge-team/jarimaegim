@@ -270,15 +270,16 @@ SSE 파서는 순수 함수로 분리해 단독 테스트한다.
 
 ## 9. 테스트
 
-- **`backend/tests/` 신설.** `pytest`는 이미 `requirements.txt`에 있다. 가짜 MCP 클라이언트를
-  주입해 검증한다.
+- **`backend/tests/`에 추가.** 이 디렉터리는 이미 존재하고 테스트 7개와 `backend/pytest.ini`,
+  `npm run api:test` 스크립트가 갖춰져 있다 (CLAUDE.md의 "there is no pytest suite"는 오래된
+  서술이다). 기존 테스트들의 방식대로 가짜 MCP 클라이언트를 주입해 검증한다.
   - 서울 밖 지명 → `out_of_scope`, 하위 MCP 호출 0회
   - 다른 턴의 `place_ref` → 거절
   - citations 필수 필드(`source_name`, `collected_at`, `official_url`, `tool`) 생성
   - 라운드 상한 초과 → 부분 응답 + 지금까지의 citations
   - 키 없음 → `tools_available: false`
   - 도구 하나가 실패해도 턴이 계속된다
-- `package.json`에 `npm run api:test` 추가. 기존 `api:check`(compileall)는 유지한다.
+- `npm run api:test`와 `npm run api:check`는 이미 있다. 스크립트를 새로 만들 필요가 없다.
 - `lib/api.ts`의 SSE 파서를 순수 함수로 분리해 `node --test`로 검증한다 (기존
   `scripts/*.test.mjs` 방식과 동일).
 - `scripts/flow-check.mjs`에 "스트림 경로에서도 no-key 폴백 메시지가 나온다" 단언을 추가한다.
