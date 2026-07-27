@@ -2,6 +2,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -9,11 +11,14 @@ from uuid import UUID, uuid4
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from .chat_stream import ChatStreamer, StreamLimits
+from .chat_tools import ChatToolset, PlaceRegistry
 from .config import get_settings
 from .document_store import DocumentStore, render_case_pdf
 from .funding import compute_bands
+from .mcp_client import MCPClient, MCPUnavailable
 from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
                      DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
                      PrivacyRequestCreate, Provenance, SessionCreate)
@@ -21,12 +26,15 @@ from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .services import AIService, AnalysisService, CostService, IntegrationError, LocationService, OfficialSourceService
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 repository = Repository(settings)
 locations = LocationService(settings)
 analyses = AnalysisService(locations)
 official_sources = OfficialSourceService(settings)
 ai = AIService(settings)
+mcp_client = MCPClient(settings)
 document_store = DocumentStore(settings.document_storage_dir)
 policy_params = PolicyParams.load(settings.policy_params_path)
 
@@ -143,8 +151,14 @@ async def integration_status():
         "bizinfo": bool(settings.bizinfo_api_key and settings.bizinfo_api_url),
         "kstartup": bool(settings.kstartup_api_key and settings.kstartup_api_url),
         "finlife": bool(settings.finlife_api_key and settings.finlife_api_url),
+        "ipzitalk": mcp_client.available,
     }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled},
-        "axes": analysis_axes()}
+        "axes": analysis_axes(),
+        "limits": {"chat_daily_turns": {
+            "per_session": settings.ai_daily_request_limit,
+            "scope": "process_local",
+            "note": "다중 워커·재시작 환경에서는 이 한도가 실제로 적용되지 않는 알려진 한계입니다 (세션별 카운터가 프로세스 메모리에만 있습니다).",
+        }}}
 
 
 @app.post("/api/v1/sessions/anonymous", status_code=201)
@@ -295,6 +309,79 @@ async def create_message(case_id: UUID, payload: MessageCreate, session_id: UUID
         raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "이 화면에서는 대화의 조건 변경을 자동 적용하지 않습니다."})
     summary = f"업종 {case.inputs.industry}, 지역 {case.inputs.district}, 사업단계 {case.inputs.business_stage.value}. 현재 화면의 공식 출처와 수치 외에는 생성 금지."
     return await ai.explain(payload.content, summary)
+
+
+def sse_frame(event: dict[str, Any]) -> str:
+    # default=str: a tool result payload originates from an upstream MCP server this backend does
+    # not control, so it is never guaranteed to be built only from JSON-native types. Coercing
+    # anything json.dumps would otherwise reject (e.g. a stray Decimal) to its str() representation
+    # keeps this frame emittable instead of raising mid-stream, after headers are already sent and
+    # an HTTPException can no longer do anything useful.
+    return f"event: {event['event']}\ndata: {json.dumps(event['data'], ensure_ascii=False, default=str)}\n\n"
+
+
+@app.post("/api/v1/cases/{case_id}/messages/stream")
+async def create_message_stream(case_id: UUID, payload: MessageCreate, session_id: UUID = Depends(current_session)):
+    # Ownership, then consent, then the metered daily-turn consumption -- in that order, so a
+    # request that was always going to be refused (unknown/foreign case, or an attempted case-patch)
+    # never spends a turn out of the session's daily budget first.
+    case = owned_case(session_id, case_id)
+    if payload.confirmed_case_patch:
+        raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "이 화면에서는 대화의 조건 변경을 자동 적용하지 않습니다."})
+    if not repository.consume_daily_turn(session_id, settings.ai_daily_request_limit):
+        raise HTTPException(429, {"code": "RATE_LIMITED", "message": "오늘 사용할 수 있는 AI 대화 횟수를 모두 사용했습니다."})
+
+    summary = f"업종 {case.inputs.industry}, 지역 {case.inputs.district}, 사업단계 {case.inputs.business_stage.value}. 현재 화면의 공식 출처와 수치 외에는 생성 금지."
+    responder = ai.responder()
+
+    async def frames():
+        # Everything below runs after the 200 + SSE headers are already on the wire, so an
+        # HTTPException here would do nothing useful -- every failure path (including a bug we
+        # didn't anticipate) must end in an `error` SSE event instead of an unhandled exception
+        # that would just truncate the stream.
+        try:
+            if responder is None:
+                yield sse_frame({"event": "turn_start", "data": {"tools_available": False}})
+                yield sse_frame({"event": "done", "data": {
+                    "message": "AI 설명 키가 아직 설정되지 않았습니다. 후보와 분석 화면의 저장된 공식 근거는 계속 확인할 수 있습니다.",
+                    "citations": [], "integration_status": "not_configured"}})
+                return
+
+            if mcp_client.available:
+                # The MCP session is turn-scoped by design (see MCPSession's docstring): it must be
+                # opened, used for every tool call, and closed inside one `async with` in the same
+                # task -- this generator's task -- never handed out to live across turns. So the
+                # toolset can only be constructed here, wrapping the whole streamer.run() loop,
+                # rather than once at module scope alongside `mcp_client` itself.
+                try:
+                    async with mcp_client.session() as mcp_session:
+                        toolset = ChatToolset(mcp_session, PlaceRegistry())
+                        streamer = ChatStreamer(responder, toolset, StreamLimits())
+                        async for event in streamer.run(payload.content, summary):
+                            yield sse_frame(event)
+                        return
+                except MCPUnavailable as exc:
+                    # Spawn/handshake failed (e.g. npx missing, presale-mcp misbehaving). The turn
+                    # must still produce a complete, valid stream -- degrade to a tools-free turn
+                    # rather than a 500 or a stream that stops mid-way.
+                    logger.warning("ipzitalk MCP 세션을 열지 못해 도구 없이 진행합니다: %s", type(exc).__name__)
+
+            streamer = ChatStreamer(responder, None, StreamLimits())
+            async for event in streamer.run(payload.content, summary):
+                yield sse_frame(event)
+        except Exception as exc:
+            # Containment boundary of last resort, mirroring chat_tools.ChatToolset.run(): log only
+            # the exception type, never its message or any request content, and never let it escape
+            # as a raw, stream-truncating crash.
+            logger.warning("채팅 스트림 처리 중 예기치 않은 오류: %s", type(exc).__name__)
+            yield sse_frame({"event": "error", "data": {"code": "UPSTREAM_UNAVAILABLE",
+                             "message": "요청을 처리하는 중 문제가 발생했습니다.", "retryable": True}})
+
+    # No `Connection: keep-alive` header: Starlette/uvicorn already keep an HTTP/1.1 connection
+    # alive by default, and the `Connection` header has no meaning on HTTP/2 (RFC 7540 forbids it
+    # as a connection-specific header) -- setting it here would be a no-op at best.
+    return StreamingResponse(frames(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/v1/documents", status_code=201)
