@@ -372,8 +372,13 @@ class OpenAIResponder:
         payload: dict[str, Any] = {"model": self.model, "input": self._translate(messages), "store": False,
                                     "max_output_tokens": 2000}
         if tools:
+            # `strict` is Required[Optional[bool]] on the Responses API's FunctionToolParam -- the
+            # key must be present even when its value is None, unlike Chat Completions where the
+            # whole field is optional. Sending False keeps the permissive schema behaviour our tool
+            # parameters were written for; omitting the key risks a 400 we cannot see until a real
+            # call is made, and no offline test would catch it.
             payload["tools"] = [{"type": "function", "name": tool["name"], "description": tool["description"],
-                                 "parameters": tool["parameters"]} for tool in tools]
+                                 "parameters": tool["parameters"], "strict": False} for tool in tools]
         # Same reasoning-parameter compatibility problem AIService._respond solves for explain(),
         # and the same fix, in the same order: TypeError means this SDK build's `responses.create`
         # doesn't accept `reasoning` as a keyword at all (a local, unconditional signature

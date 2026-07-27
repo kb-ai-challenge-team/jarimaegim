@@ -371,8 +371,10 @@ async def test_respond_sends_translated_input_and_low_reasoning_effort_by_defaul
     assert kwargs["input"] == OpenAIResponder._translate(messages)
     assert kwargs["reasoning"] == {"effort": "low"}
     assert kwargs["store"] is False
+    # `strict` is Required[Optional[bool]] on FunctionToolParam -- the key has to be there.
     assert kwargs["tools"] == [{"type": "function", "name": "resolve_seoul_place", "description": "d",
-                               "parameters": {"type": "object", "properties": {}, "required": []}}]
+                               "parameters": {"type": "object", "properties": {}, "required": []},
+                               "strict": False}]
 
 
 async def test_respond_omits_the_tools_key_when_no_tools_are_available():
