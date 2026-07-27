@@ -10,6 +10,8 @@ from supabase import Client, create_client
 from .config import Settings
 from .models import Candidate, DistrictSummary, ListingTerms, Provenance
 
+SUPABASE_PAGE = 1000
+
 DEFAULT_SEED_PATH = Path(__file__).resolve().parents[2] / "data" / "listings.seoul.json"
 
 LIMITATIONS = [
@@ -46,7 +48,15 @@ class ListingService:
     def _load_supabase(self) -> list[dict[str, Any]]:
         try:
             client: Client = create_client(self.settings.supabase_url, self.settings.supabase_service_role_key)
-            rows = client.table("listings").select("*").execute().data or []
+            # PostgREST caps an unranged select at 1000 rows and says nothing about the ones it
+            # dropped. At 275 listings that was invisible; at 1045 it silently truncated a whole
+            # district. Page until a batch comes back short.
+            rows: list[dict[str, Any]] = []
+            while True:
+                batch = client.table("listings").select("*").range(len(rows), len(rows) + SUPABASE_PAGE - 1).execute().data or []
+                rows.extend(batch)
+                if len(batch) < SUPABASE_PAGE:
+                    break
         except Exception as exc:
             # Public reference data. A missing or unreadable table must not take down the whole API,
             # so fall back to the committed seed, which holds the content the seeding script uploads.

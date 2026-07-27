@@ -112,3 +112,32 @@ def test_construction_never_raises_when_both_sources_are_unavailable(tmp_path):
     assert service.covered_districts() == set()
     candidates, status, message = service.search("강남구", budget_krw=None, limit=15)
     assert candidates == [] and status == "empty" and message is not None
+
+
+def test_supabase_reads_every_page_not_just_the_first(monkeypatch, tmp_path):
+    """PostgREST caps an unranged select at 1000 rows. The loader must page past that."""
+    import app.listings as listings_module
+
+    total = 2300
+    fake_rows = [{
+        "id": f"demo-강남구-{index:04d}", "name": "상가", "address": "서울 강남구", "district": "강남구",
+        "latitude": 37.5, "longitude": 127.0, "listing_kind": "DEMO_SYNTHETIC", "deposit_krw": 10_000_000,
+        "monthly_rent_krw": 1_000_000, "maintenance_fee_krw": None, "area_m2": 30.0, "floor": 1,
+    } for index in range(total)]
+
+    class FakeQuery:
+        def select(self, *_a, **_k): return self
+        def range(self, start, end):
+            self._slice = fake_rows[start:end + 1]
+            return self
+        def execute(self):
+            return type("R", (), {"data": self._slice})()
+
+    class FakeClient:
+        def table(self, _name): return FakeQuery()
+
+    monkeypatch.setattr(listings_module, "create_client", lambda *_a, **_k: FakeClient())
+    service = ListingService(Settings(supabase_url="https://example.test", supabase_service_role_key="k"),
+                             seed_path=tmp_path / "unused.json")
+    candidates, _, _ = service.search("강남구", budget_krw=None, limit=9999)
+    assert len(candidates) == total, "the loader stopped before the last page"
