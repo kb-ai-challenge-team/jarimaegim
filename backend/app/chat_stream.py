@@ -97,9 +97,11 @@ class ChatStreamer:
                 return
 
             messages.append({"role": "assistant", "content": turn.get("text") or "", "tool_calls": calls})
+            break_index: int | None = None
             for index, call in enumerate(calls):
                 if spent_calls >= self.limits.max_tool_calls:
                     truncated = True
+                    break_index = index
                     logger.warning("chat tool 호출 한도 도달: 이번 응답의 남은 호출 %d건을 건너뜁니다.",
                                    len(calls) - index)
                     break
@@ -130,6 +132,18 @@ class ChatStreamer:
                 messages.append({"role": "tool", "tool_call_id": call.get("id"),
                                  "content": f"<<<TOOL_RESULT\n{json.dumps(result, ensure_ascii=False)}\nTOOL_RESULT>>>"})
             if truncated:
+                # The assistant message appended above declares every call in `calls`, but the
+                # budget ran out partway through executing them -- calls[break_index:] were never
+                # run and so never got a matching tool-result message above. Nothing downstream of
+                # this loop replays `messages` today, but leaving those calls unpaired would be a
+                # malformed transcript for *any* future consumer: the Responses API (and the Chat
+                # Completions API) both reject a function/tool call with no matching result message
+                # in the same input. A synthetic "skipped" result keeps every declared tool_call id
+                # paired with a role:tool entry, whatever shape `messages` is next passed through.
+                for skipped in calls[break_index:]:
+                    messages.append({"role": "tool", "tool_call_id": skipped.get("id"),
+                                     "content": json.dumps({"status": "skipped", "message": LIMIT_MESSAGE},
+                                                            ensure_ascii=False)})
                 break
 
         if truncated:

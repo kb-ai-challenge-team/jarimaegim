@@ -91,6 +91,44 @@ async def test_the_loop_stops_at_the_raw_call_limit():
     assert events[-1]["event"] == "done"
 
 
+def _declared_and_fulfilled_tool_call_ids(messages):
+    """Every tool_call id an assistant message declares vs. every id a role:tool message answers.
+    `messages` is the same list object ChatStreamer mutates in place and hands to `llm.respond`
+    each round, so inspecting any captured reference after the run finishes sees the final state
+    -- including the truncated round's synthetic skipped-result entries, even though that round's
+    own `respond()` call happened before they were appended."""
+    declared = {call["id"] for message in messages if message["role"] == "assistant"
+                for call in message.get("tool_calls", [])}
+    fulfilled = {message["tool_call_id"] for message in messages if message["role"] == "tool"}
+    return declared, fulfilled
+
+
+async def test_a_truncated_round_still_pairs_every_declared_tool_call_with_a_tool_result():
+    """Regression test for the carried-over Task 7 bug: when the raw call-budget runs out mid
+    round, ChatStreamer used to append an assistant message declaring all of that round's
+    tool_calls while only appending role:tool results for the executed subset. Reverting the
+    chat_stream.py fix (dropping the synthetic skipped-result loop) makes `declared` a strict
+    superset of `fulfilled` here, so this assertion fails without the fix."""
+    calls = [{"id": f"c{i}", "name": "resolve_seoul_place", "arguments": {}} for i in range(5)]
+    llm = FakeLLM([{"text": "", "tool_calls": calls}])
+    streamer = ChatStreamer(llm, FakeToolset(), StreamLimits(max_rounds=1, max_tool_calls=2))
+    await collect(streamer)
+    declared, fulfilled = _declared_and_fulfilled_tool_call_ids(llm.prompts[0][0])
+    assert declared == {"c0", "c1", "c2", "c3", "c4"}
+    assert declared == fulfilled
+
+
+async def test_an_untruncated_multi_round_conversation_pairs_every_declared_tool_call_with_a_tool_result():
+    llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "resolve_seoul_place", "arguments": {}}]},
+                   {"text": "", "tool_calls": [{"id": "c2", "name": "resolve_seoul_place", "arguments": {}}]},
+                   {"text": "다 됐습니다.", "tool_calls": []}])
+    streamer = ChatStreamer(llm, FakeToolset(), StreamLimits())
+    await collect(streamer)
+    declared, fulfilled = _declared_and_fulfilled_tool_call_ids(llm.prompts[-1][0])
+    assert declared == {"c1", "c2"}
+    assert declared == fulfilled
+
+
 async def test_a_failing_tool_does_not_end_the_turn():
     tools = FakeToolset({"resolve_seoul_place": {"status": "error", "message": "조회에 실패했습니다."}})
     llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "resolve_seoul_place", "arguments": {}}]},
