@@ -122,7 +122,7 @@ LLM도 SSE도 모른다.
 | 도구 | 입력 | 하는 일 | 내부 MCP 원시 호출 | citations 원천 |
 |---|---|---|---|---|
 | `resolve_seoul_place` | `query: str` | 지명·단지명·주소를 좌표·자치구·법정동코드로 해석하고 `place_ref` 토큰 발급 | `get_address` → `get_geocode` → `get_region_code` | 카카오 로컬 |
-| `lookup_seoul_presale` | `place_ref`, `radius_m?` | 분양공고 + 주택형·분양가 조회 | `search_announcement_info` → `enrich_complex_info` | 청약홈, K-apt |
+| `lookup_seoul_presale` | `place_ref` | 자치구 전체 분양공고 + 주택형·분양가 조회 | `search_announcement_info` → `enrich_complex_info` | 청약홈, K-apt |
 | `lookup_seoul_complex` | `place_ref` | 단지 개요(세대수·연식·주차·승강기) | `get_complex_info` | K-apt |
 | `lookup_complex_trades` | `place_ref`, `months?` | 매매·전월세·분양권 실거래 | `get_complex_trades` | 국토부 실거래가 |
 | `scan_nearby_facilities` | `place_ref`, `categories?`, `keywords?`, `radius_m?` | 반경 내 지하철·학교·마트·업종 검색 | `search_by_nearby_category` ∥ `search_by_nearby_keyword` | 카카오 로컬 |
@@ -134,10 +134,17 @@ LLM도 SSE도 모른다.
 `resolve_seoul_place`가 이미 법정동코드·시군구코드·청약홈 지역코드를 확보해 `place_ref`에
 담아두므로, `lookup_seoul_presale`은 `get_region_code`를 다시 호출하지 않는다.
 
-`lookup_seoul_presale`의 `radius_m`은 청약홈 API가 지역코드 기준이라 서버측 필터가 아니다.
-지역코드로 조회한 뒤 `place_ref` 좌표로부터의 거리로 걸러낸다. 도구 설명문에 이 사실을
-명시해, AI가 "반경 3km 공고를 조회했다"가 아니라 "구 단위로 조회한 뒤 3km로 걸렀다"로
-답하게 한다.
+**`lookup_seoul_presale`에는 반경 파라미터가 없다.** 청약홈은 지역코드 단위로만 조회되고,
+`search_announcement_info`가 돌려주는 공고 레코드에는 좌표가 없다. 거리로 거르려면 공고마다
+지오코딩을 한 번씩 더 해야 하는데, 그 비용을 치를 만한 요구가 없다.
+
+초안에는 `radius_m` 파라미터가 있었고 `scope_note`가 "반경 3km로 걸러낸 결과입니다"라고
+말했다. **실제로는 아무것도 걸러내지 않았다.** 도구가 자기 출력에 대해 사실이 아닌 설명을
+붙이고 모델이 그것을 사용자에게 전달하는 구조였다 — 부록 A 1번 위반이다. 크래시가 아니라
+조용히 틀린 답이라 테스트도 통과했다(문자열만 확인했으므로).
+
+파라미터를 지우고 주장을 거뒀다. `scope_note`는 이제 사실만 말한다: 청약홈은 자치구
+단위로 조회되며 결과는 그 구 전체다. 지킬 수 없는 파라미터를 모델에게 제안하지 않는다.
 
 #### `place_ref` 토큰
 
