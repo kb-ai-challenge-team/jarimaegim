@@ -138,12 +138,13 @@ async function chatStream(caseId: string, content: string, handlers: ChatStreamH
       }
     }
     if (!settled) {
-      // The reader loop above only exits early via `break` when `done` reached true (the
-      // connection closed) without ever seeing a `done`/`error` SSE event -- flush the decoder's
-      // internal buffer in case a truncated connection cut off mid-multi-byte-character, and feed
-      // any trailing decoded text through the parser in case a final frame was sitting unflushed.
-      // A well-formed stream always closes right after its own trailing "\n\n", so this is a no-op
-      // on the happy path and only matters for a truncated one.
+      // Defensive no-op, not a recovery path. The loop reached here because the connection closed
+      // without a `done`/`error` event. `{stream: true}` already reassembles multi-byte characters
+      // split across ordinary chunk boundaries, so the only way bytes remain buffered here is a
+      // connection severed mid-character -- which necessarily also severed the frame's trailing
+      // "\n\n". Flushing replaces the dangling bytes with U+FFFD rather than recovering them, and
+      // without a terminator the parser still cannot complete a frame. What actually reports this
+      // case is the `!settled` throw below. Kept so a stray complete frame is not silently dropped.
       const trailing = decoder.decode();
       if (trailing) {
         for (const frame of parser.push(trailing)) {
@@ -180,6 +181,9 @@ export const api = {
   getKbProducts: () => request<{ items: KbProduct[]; status: string; message?: string }>("/products/kb"),
   createCostPlan: (caseId: string, items: { key: string; label: string; min_krw: number | null; max_krw: number | null; source_type: string }[]) => request<CostPlan>("/cost-plans", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, items }) }),
   fundingBands: (caseId: string, inputs: FundingBandInput) => request<FundingBandResult>("/funding-bands", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, ...inputs }) }),
+  // Non-streaming, no tools. `AIService.explain` always returns `citations: []` -- the Citation[]
+  // type is what the envelope permits, not what this endpoint delivers. Use chatStream for sourced
+  // answers.
   chat: (caseId: string, content: string) => request<{ message: string; citations: Citation[]; integration_status: string }>(`/cases/${caseId}/messages`, { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ client_message_id: requestId(), content, base_case_version: 1, confirmed_case_patch: [], locale: "ko-KR" }) }),
   chatStream: (caseId: string, content: string, handlers: ChatStreamHandlers, signal?: AbortSignal) => chatStream(caseId, content, handlers, signal),
   createDocument: (caseId: string, template: string) => request<DocumentRecord>("/documents", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, template, confirmed: true }) }),
