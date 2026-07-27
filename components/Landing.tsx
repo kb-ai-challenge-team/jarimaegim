@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -8,24 +9,22 @@ import {
   ChevronRight,
   Database,
   FileCheck2,
+  LayoutDashboard,
   MapPinned,
-  Search,
   ShieldCheck,
-  Sparkles,
   Store,
 } from "lucide-react";
+
+import { BrandLockup } from "@/components/BrandLockup";
 
 export function Landing() {
   return (
     <main id="main-content" className="home-page">
       <header className="home-header">
         <div className="home-header-inner">
-          <Link href="/" className="home-brand" aria-label="자리매김 홈">
-            <span className="brand-symbol" aria-hidden="true" />
-            <span className="wordmark-partner">KB부동산 ×</span>
-            <strong>자리매김</strong>
-          </Link>
+          <BrandLockup href="/" />
           <nav aria-label="보조 메뉴">
+            <Link href="/kb" className="home-nav-link">연동 화면</Link>
             <Link href="/privacy-policy" className="home-nav-link">서비스 원칙</Link>
           </nav>
         </div>
@@ -33,7 +32,7 @@ export function Landing() {
 
       <section className="home-hero" aria-labelledby="home-title">
         <div className="home-hero-copy">
-          <p className="home-kicker"><span aria-hidden="true" /> KB부동산과 함께 보는 서울 창업 입지</p>
+          <BrandLockup size="lg" tagline />
           <h1 id="home-title">창업할 곳,<br />느낌보다 <em>근거로</em> 고르세요.</h1>
           <p className="home-lead">업종과 자금 조건을 입력하면 후보 입지, 비용, 공개 지원정보와 실행 계획을 하나의 판단 흐름으로 정리합니다.</p>
 
@@ -57,40 +56,17 @@ export function Landing() {
           </ul>
         </div>
 
-        <aside className="home-decision-card" aria-label="자리매김 의사결정 흐름 미리보기">
-          <header>
-            <div><span>DECISION BRIEF</span><h2>창업 의사결정서</h2></div>
-            <strong><i aria-hidden="true" /> 근거 확인 가능</strong>
-          </header>
-
-          <div className="home-case-strip" aria-label="예시 창업 조건">
-            <span><small>업종</small><b>카페</b></span>
-            <span><small>지역</small><b>마포구</b></span>
-            <span><small>총예산</small><b>1억 원</b></span>
-          </div>
-
-          <ol className="home-decision-steps">
-            <li className="active">
-              <span className="home-step-number">01</span>
-              <div><small>후보 탐색</small><strong>공식 위치 데이터로 찾기</strong><p>지도와 목록에서 같은 후보를 확인합니다.</p></div>
-              <Search aria-hidden="true" />
-            </li>
-            <li>
-              <span className="home-step-number">02</span>
-              <div><small>범위 구분</small><strong>가능한 판단과 한계 나누기</strong><p>데이터가 없는 항목은 이유와 함께 표시합니다.</p></div>
-              <FileCheck2 aria-hidden="true" />
-            </li>
-            <li>
-              <span className="home-step-number">03</span>
-              <div><small>실행 연결</small><strong>비용·공고·할 일 정리</strong><p>검토 결과를 다음 행동으로 이어갑니다.</p></div>
-              <Sparkles aria-hidden="true" />
-            </li>
-          </ol>
-
-          <footer>
-            <span><Database /> 공공데이터 출처·기준일 표시</span>
-            <small>SAMPLE / 서울 마포구</small>
-          </footer>
+        {/* 손으로 그린 목업이 아니라 scripts/capture-hero-shot.mjs 가 실제 흐름을 돌려 캡처한 화면이다. */}
+        <aside className="home-service-shot">
+          <figure>
+            <div className="home-shot-chrome" aria-hidden="true"><i /><i /><i /><span>자리매김 · 입지 추천</span></div>
+            <Image src="/landing/service-screen.webp" width={1600} height={1000} priority sizes="(max-width:1099px) 92vw, 56vw" alt="자리매김이 KB부동산 화면 안에서 마포구 카페 조건에 맞는 후보 상가를 지도 마커와 목록으로 함께 보여주고, 후보마다 근거 등급과 출처를 붙인 실제 서비스 화면" />
+            <figcaption>실제 서비스 화면입니다. 표시된 매물은 시연용 데이터이며 실제 임대 매물이 아닙니다.</figcaption>
+          </figure>
+          <ul className="home-shot-notes" aria-label="화면에서 확인할 수 있는 것">
+            <li><ShieldCheck aria-hidden="true" /> 후보마다 근거 등급</li>
+            <li><Database aria-hidden="true" /> 출처·기준일 표시</li>
+          </ul>
         </aside>
       </section>
 
@@ -132,6 +108,15 @@ export function Landing() {
         </div>
       </section>
 
+      <section className="home-kb-demo" aria-labelledby="kb-demo-title">
+        <div>
+          <span className="home-section-label">화면 연동 시연</span>
+          <h2 id="kb-demo-title">부동산 탐색 화면에서<br />이어서 검토합니다.</h2>
+          <p>매물을 보던 화면 안에서 자리매김을 열어 조건과 근거를 확인하는 흐름을 시연합니다. 실제 제휴나 데이터 연동을 나타내지 않으며, 공개데이터로 확인할 수 있는 범위만 표시합니다.</p>
+        </div>
+        <Link href="/kb"><LayoutDashboard aria-hidden="true" /> 연동 화면 보기 <ArrowRight aria-hidden="true" /></Link>
+      </section>
+
       <section className="home-guardrail" aria-labelledby="guardrail-title">
         <div className="home-guardrail-copy">
           <span className="home-guardrail-icon"><ShieldCheck /></span>
@@ -158,7 +143,7 @@ export function Landing() {
       </section>
 
       <footer className="home-footer">
-        <div className="home-brand"><span className="brand-symbol" aria-hidden="true" /><span className="wordmark-partner">KB부동산 ×</span><strong>자리매김</strong></div>
+        <BrandLockup />
         <p>공개데이터 기반 참고정보로 금융 승인, 매출 또는 지원사업 선정을 보장하지 않습니다.</p>
         <Link href="/privacy-policy">개인정보·서비스 원칙</Link>
       </footer>

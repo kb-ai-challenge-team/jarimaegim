@@ -15,7 +15,7 @@ const statusBody = await (await page.request.get(`${base}/api/v1/status`)).json(
 const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis => axis.enabled || Boolean(axis.disabled_reason)) };
 const subsidyConfigured = Boolean(statusBody.integrations.bizinfo || statusBody.integrations.kstartup);
 
-await page.goto(base, { waitUntil: "networkidle" });
+await page.goto(`${base}/kb`, { waitUntil: "networkidle" });
 await page.waitForSelector(".kb-ai-panel");
 const panel = page.locator(".kb-ai-panel");
 const stepper = { labels: await panel.locator(".kb-stepper li").allTextContents() };
