@@ -159,13 +159,15 @@ class ChatToolset:
 
     async def _lookup_seoul_presale(self, arguments: dict[str, Any]) -> dict[str, Any]:
         place = self._require_place(arguments)
-        radius_m = arguments.get("radius_m")
         payload = await self.session.call("search_announcement_info",
                                           {"region_code": place.applyhome_code or place.sgg_code})
         items = _items(payload)
-        scope_note = (f"청약홈은 자치구(구 단위) 지역코드로만 조회됩니다. {place.district} 전체를 조회한 뒤 "
-                      f"{place.name} 기준 {radius_m}m 로 걸러낸 결과입니다."
-                      if radius_m else f"{place.district} 전체 공고입니다.")
+        # 청약홈 has no per-announcement coordinate to filter by (search_announcement_info returns
+        # house_nm/pblanc_url/rcrit_pblanc_de/house_manage_no/supply_types, nothing spatial), so this
+        # is always the whole 자치구's list -- never narrowed to place.name or any radius. Say so
+        # plainly rather than implying a filter this handler doesn't perform.
+        scope_note = (f"청약홈은 자치구(구 단위) 지역코드로만 조회됩니다. {place.district} 전체 분양공고이며, "
+                      f"특정 지점이나 반경으로 좁혀진 결과가 아닙니다.")
         if not items:
             return {"status": "empty", "items": [], "scope_note": scope_note,
                     "message": f"{place.district}에 등록된 분양공고를 찾지 못했습니다. 청약홈에서 직접 확인해 주세요.",
@@ -198,7 +200,7 @@ class ChatToolset:
         if not payload or not payload.get("kapt_code"):
             return {"status": "not_found", "complex": None,
                     "message": f"{place.name} 의 K-apt 단지 정보를 찾지 못했습니다. 아파트 단지가 아닐 수 있습니다.",
-                    "citations": []}
+                    "citations": [citation("K-apt 단지 검색", "https://www.k-apt.go.kr/", "K-apt", "lookup_seoul_complex")]}
         return {"status": "ok", "complex": payload,
                 "citations": [citation(f"K-apt 단지 정보 — {payload.get('kapt_name') or place.name}",
                                        _https(payload.get("source_url") or "", "https://www.k-apt.go.kr/"),
@@ -277,11 +279,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "required": ["query"]}},
     {"name": "lookup_seoul_presale",
      "description": ("place_ref 가 가리키는 자치구의 청약홈 분양공고와 주택형·분양가를 조회한다. "
-                     "청약홈은 지역코드 단위로만 조회되므로 radius_m 은 조회 후 거리로 걸러낸 것이다. "
-                     "사용자에게 답할 때 이 사실을 scope_note 그대로 전하라."),
+                     "청약홈은 자치구 단위 지역코드로만 조회되므로 결과는 항상 해당 구 전체이며 "
+                     "특정 지점이나 반경으로 좁혀지지 않는다. 이 사실을 scope_note 그대로 사용자에게 전하라."),
      "parameters": {"type": "object", "additionalProperties": False,
-                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
-                                   "radius_m": {"type": "integer", "description": "선택. 조회 후 걸러낼 반경(미터)"}},
+                    "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"}},
                     "required": ["place_ref"]}},
     {"name": "lookup_seoul_complex",
      "description": "place_ref 가 가리키는 아파트 단지의 K-apt 개요(세대수·연식·동수·주차대수)를 조회한다. 실거래는 포함하지 않는다.",

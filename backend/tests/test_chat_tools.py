@@ -177,11 +177,14 @@ async def test_presale_lookup_reports_an_empty_result_rather_than_inventing_one(
     assert "확인" in result["message"]
 
 
-async def test_presale_lookup_reports_the_radius_filter_as_post_filtering():
+async def test_presale_lookup_states_the_scope_is_the_whole_district():
     tools = ChatToolset(FakeSession(PRESALE), PlaceRegistry())
     resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
-    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"], "radius_m": 3000})
-    assert "구 단위" in result["scope_note"]
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    assert "강남구" in result["scope_note"]
+    assert "전체" in result["scope_note"]
+    # No distance filter is actually applied -- the note must say so, not claim one happened.
+    assert "좁혀진 결과가 아닙니다" in result["scope_note"]
 
 
 async def test_complex_lookup_returns_the_overview_without_touching_trades():
@@ -193,6 +196,16 @@ async def test_complex_lookup_returns_the_overview_without_touching_trades():
     assert result["complex"]["kapt_da_cnt"] == 480
     assert "get_complex_trades" not in [name for name, _ in session.calls]
     assert any(item["source_name"] == "K-apt" for item in result["citations"])
+
+
+async def test_complex_not_found_still_cites_kapt():
+    payloads = {**GANGNAM, "get_complex_info": {}}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_complex", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "not_found"
+    assert any(item["source_name"] == "K-apt" for item in result["citations"])
+    assert result["citations"][0]["official_url"].startswith("https://")
 
 
 async def test_complex_citation_urls_are_upgraded_to_https():
