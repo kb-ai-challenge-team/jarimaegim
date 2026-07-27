@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 from supabase import Client, create_client
 
 from .config import Settings
-from .models import Candidate, ListingTerms, Provenance
+from .models import Candidate, DistrictSummary, ListingTerms, Provenance
 
 DEFAULT_SEED_PATH = Path(__file__).resolve().parents[2] / "data" / "listings.seoul.json"
 
@@ -77,6 +78,21 @@ class ListingService:
 
     def covered_districts(self) -> set[str]:
         return set(self._by_district)
+
+    def summary(self) -> list[DistrictSummary]:
+        """Per-district aggregate for the landing map. Median rather than mean so one
+        expensive unit does not drag a district's headline number."""
+        entries = []
+        for district in sorted(self._by_district):
+            bucket = self._by_district[district]
+            entries.append(DistrictSummary(
+                district=district,
+                count=len(bucket),
+                median_monthly_rent_krw=round(median(c.listing.monthly_rent_krw for c in bucket)),
+                latitude=sum(c.latitude for c in bucket) / len(bucket),
+                longitude=sum(c.longitude for c in bucket) / len(bucket),
+            ))
+        return entries
 
     def get(self, candidate_id: str) -> Candidate | None:
         return self._by_id.get(candidate_id)
