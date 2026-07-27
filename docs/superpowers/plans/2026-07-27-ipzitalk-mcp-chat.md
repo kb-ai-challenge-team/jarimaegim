@@ -70,6 +70,32 @@
 
 ---
 
+## 테스트 규율 — 모든 태스크에 적용
+
+이 계획을 실행하는 중에 같은 결함이 두 번 나왔다. **테스트가 인접한 사실을 확인하고 정작
+주장하는 동작은 확인하지 않는** 패턴이다.
+
+- `radius_m`: `scope_note`에 `"구 단위"` 문자열이 있는지만 봤다. 필터링이 실제로
+  일어났는지는 아무도 묻지 않았고, 실제로는 일어나지 않았다.
+- 보강 조인: citation의 `source_name`과 `house_nm`만 봤다. `complex_info`가 붙었는지는
+  확인하지 않았다.
+
+두 경우 모두 **해당 코드를 통째로 지워도 테스트가 통과한다.**
+
+그러므로 이 계획의 테스트를 쓰거나 고칠 때마다 다음을 자문한다.
+
+1. **이 테스트가 검증하려는 코드를 지우면 이 테스트가 실패하는가?** 아니면 테스트가 잘못됐다.
+2. **메시지 문자열에 대한 단언이 동작에 대한 단언을 대신하고 있지 않은가?** 문구 확인은
+   문구가 있다는 것만 증명한다.
+3. **검증이 불가능한 것이라면**(예: 프롬프트가 모델의 행동을 바꾸는지) 테스트 이름과
+   docstring이 실제로 보장하는 범위까지만 주장하도록 좁힌다. 이름이 과장하면 다음 사람이
+   그 보장을 믿는다.
+
+계획서에 적힌 테스트 코드도 예외가 아니다. 위 기준에 미달하면 **고쳐서 쓰고, 무엇을 왜
+바꿨는지 보고한다.**
+
+---
+
 ## Task 1: 설정과 의존성
 
 **Files:**
@@ -1413,7 +1439,10 @@ async def test_an_llm_failure_emits_an_error_event():
     assert events[-1]["data"]["retryable"] is True
 
 
-async def test_the_system_prompt_forbids_calculation_and_injection():
+async def test_the_system_prompt_carries_the_calculation_and_injection_rules():
+    """Asserts only that the instructions reach the model. It does NOT prove the model obeys
+    them -- nothing at this layer can. The guardrail that actually holds is that the tools
+    return raw upstream values and compute nothing (Tasks 5-6)."""
     llm = FakeLLM([{"text": "안녕하세요.", "tool_calls": []}])
     await collect(ChatStreamer(llm, FakeToolset(), StreamLimits()))
     system = llm.prompts[0][0][0]["content"]
