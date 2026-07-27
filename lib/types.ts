@@ -38,6 +38,15 @@ export interface Provenance {
   limitations: string[];
 }
 
+export interface ListingTerms {
+  listing_kind: "DEMO_SYNTHETIC";
+  deposit_krw: number;
+  monthly_rent_krw: number;
+  maintenance_fee_krw?: number | null;
+  area_m2: number;
+  floor: number;
+}
+
 export interface Candidate {
   id: string;
   name: string;
@@ -50,6 +59,7 @@ export interface Candidate {
   display_label: string;
   context_signals: ContextSignal[];
   provenance: Provenance;
+  listing?: ListingTerms | null;
 }
 
 export interface ContextSignal {
