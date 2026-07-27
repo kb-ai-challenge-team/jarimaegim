@@ -48,6 +48,15 @@ export interface ListingTerms {
   floor: number;
 }
 
+/** One landing-map pin per covered district, shown before any condition is entered. */
+export interface DistrictSummary {
+  district: string;
+  count: number;
+  median_monthly_rent_krw: number;
+  latitude: number;
+  longitude: number;
+}
+
 export interface Candidate {
   id: string;
   name: string;
