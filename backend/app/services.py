@@ -1,14 +1,12 @@
 from __future__ import annotations
-import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import quote
-from uuid import UUID, uuid4
+from uuid import uuid4
 import httpx
 from openai import AsyncOpenAI
 from .config import Settings
-from .models import AnalysisResult, Candidate, ContextSignal, CostItem, CostPlanCreate, LocationSearch, Provenance
+from .models import AnalysisResult, Candidate, ContextSignal, CostPlanCreate, LocationSearch, Provenance
 
 
 KAKAO_LOCAL_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
@@ -105,209 +103,6 @@ class CostService:
         }
 
 
-class OfficialSourceService:
-    PROVIDERS = (
-        ("GOVERNMENT", "기업마당", "bizinfo_api_url", "bizinfo_api_key"),
-        ("GOVERNMENT", "K-Startup", "kstartup_api_url", "kstartup_api_key"),
-        ("PRIVATE", "금융상품 한눈에", "finlife_api_url", "finlife_api_key"),
-    )
-
-    def __init__(self, settings: Settings):
-        self.settings = settings
-
-    @staticmethod
-    def _resolved_url(template: str, key: str) -> str:
-        return template.replace("{api_key}", quote(key, safe="")) if "{api_key}" in template else template
-
-    @staticmethod
-    def _response_payload(response: httpx.Response) -> Any:
-        try:
-            return response.json()
-        except ValueError:
-            from xml.etree import ElementTree
-
-            try:
-                root = ElementTree.fromstring(response.content)
-            except ElementTree.ParseError:
-                return {}
-            items = [
-                {child.tag: (child.text or "").strip() for child in item}
-                for item in root.findall(".//body/items/item")
-            ]
-            return {"items": items}
-
-    async def programs(self) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0), follow_redirects=False) as client:
-            for category, provider, url_name, key_name in self.PROVIDERS:
-                template = getattr(self.settings, url_name)
-                key = getattr(self.settings, key_name)
-                if not template or not key:
-                    continue
-                if not template.startswith("https://"):
-                    continue
-                try:
-                    response = await client.get(self._resolved_url(template, key), headers={"Accept": "application/json", "X-Api-Key": key})
-                    response.raise_for_status()
-                    payload = self._response_payload(response)
-                    for record in self._extract_records(payload):
-                        normalized = self._normalize(record, category, provider)
-                        if normalized and normalized["official_url"].startswith("https://"):
-                            results.append(normalized)
-                except (httpx.HTTPError, ValueError, TypeError):
-                    continue
-        # Providers occasionally repeat the same record across pages or option rows.
-        unique: dict[str, dict[str, Any]] = {}
-        for item in results:
-            unique.setdefault(item["id"], item)
-        order = {"GOVERNMENT": 0, "POLICY_FUND": 1, "GUARANTEE": 2, "PRIVATE": 3}
-        return sorted(unique.values(), key=lambda item: order[item["category"]])[:50]
-
-    # FSS 금융상품 한눈에 공시. The per-API spec pages are still "콘텐츠 준비중", so every endpoint and
-    # source page below was confirmed against the live service rather than published documentation.
-    # Treat a shape change as expected: each category fails closed to nothing rather than guessing.
-    KB_FIN_CO_NO = "0010927"
-    KB_MAX_PAGES = 5
-    KB_CATEGORIES = (
-        ("BUSINESS_LOAN", "개인사업자대출", "busiLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/indvlBusi/list.do?menuNo=700072"),
-        ("CREDIT_LOAN", "개인신용대출", "creditLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/indvCrdt/list.do?menuNo=700009"),
-        ("MORTGAGE_LOAN", "주택담보대출", "mortgageLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/houseMortgage/list.do?menuNo=700007"),
-        ("RENT_LOAN", "전세자금대출", "rentHouseLoanProductsSearch", "LOAN", "https://finlife.fss.or.kr/finlife/ldng/rentHouse/list.do?menuNo=700008"),
-        ("DEPOSIT", "정기예금", "depositProductsSearch", "SAVING", "https://finlife.fss.or.kr/finlife/svings/fxdDpst/list.do?menuNo=700002"),
-        ("SAVING", "적금", "savingProductsSearch", "SAVING", "https://finlife.fss.or.kr/finlife/svings/instsav/list.do?menuNo=700003"),
-    )
-
-    async def kb_products(self) -> list[dict[str, Any]]:
-        """Every KB국민은행 product the FSS discloses. Returns [] when the base URL or key is unset."""
-        base = self.settings.finlife_api_base_url.rstrip("/")
-        key = self.settings.finlife_api_key
-        if not base or not key or not base.startswith("https://"):
-            return []
-        results: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0), follow_redirects=False) as client:
-            for category, label, endpoint, kind, source_url in self.KB_CATEGORIES:
-                try:
-                    records, options = await self._fetch_kb_category(client, f"{base}/{endpoint}.json?auth={quote(key, safe='')}&topFinGrpNo=020000")
-                except (httpx.HTTPError, ValueError, TypeError):
-                    continue
-                rates: dict[str, dict[str, Any]] = {}
-                for option in options:
-                    code = str(option.get("fin_prdt_cd") or "")
-                    if code and code not in rates:
-                        rates[code] = option
-                for record in records:
-                    if str(record.get("fin_co_no") or "") != self.KB_FIN_CO_NO:
-                        continue
-                    item = self._normalize_kb_product(record, rates, category, label, kind, source_url)
-                    if item:
-                        results.append(item)
-        return results
-
-    async def _fetch_kb_category(self, client: httpx.AsyncClient, url: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        records: list[dict[str, Any]] = []
-        options: list[dict[str, Any]] = []
-        for page in range(1, self.KB_MAX_PAGES + 1):
-            response = await client.get(f"{url}&pageNo={page}", headers={"Accept": "application/json"})
-            response.raise_for_status()
-            result = (self._response_payload(response) or {}).get("result") or {}
-            if str(result.get("err_cd") or "000") != "000":
-                break
-            records.extend(item for item in (result.get("baseList") or []) if isinstance(item, dict))
-            options.extend(item for item in (result.get("optionList") or []) if isinstance(item, dict))
-            if page >= int(result.get("max_page_no") or page):
-                break
-        return records, options
-
-    @staticmethod
-    def _rate(option: dict[str, Any], *fields: str) -> float | None:
-        for field in fields:
-            value = option.get(field)
-            if value in (None, "", "-"):
-                continue
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                continue
-        return None
-
-    def _normalize_kb_product(self, record: dict[str, Any], rates: dict[str, dict[str, Any]], category: str, label: str, kind: str, source_url: str) -> dict[str, Any] | None:
-        name = self._first(record, ("fin_prdt_nm",))
-        code = self._first(record, ("fin_prdt_cd",))
-        if not name or not code:
-            return None
-        option = rates.get(code, {})
-        if kind == "LOAN":
-            rate_min = self._rate(option, "lend_rate_min")
-            rate_max = self._rate(option, "lend_rate_max")
-            rate_avg = self._rate(option, "lend_rate_avg", "crdt_grad_avg")
-            rate_kind = "대출금리"
-            limit = self._first(record, ("loan_limit",))
-        else:
-            rate_min = self._rate(option, "intr_rate")
-            rate_max = self._rate(option, "intr_rate2")
-            rate_avg = None
-            rate_kind = "저축금리"
-            limit = self._first(record, ("max_limit",))
-        return {
-            "id": f"kb-{category.lower()}-{code}", "name": name, "category": category, "category_label": label,
-            "organization": self._first(record, ("kor_co_nm",)) or "KB국민은행",
-            "product_type": self._first(record, ("fin_prdt_type_nm",)) or None,
-            "rate_kind": rate_kind, "rate_min": rate_min, "rate_max": rate_max, "rate_avg": rate_avg,
-            "rate_type": self._first(record, ("lend_rate_type", "intr_rate_type_nm")) or None,
-            "loan_limit": None if limit in ("", "기타", "0") else limit,
-            "join_way": self._first(record, ("join_way",)) or None,
-            "repay_type": self._first(record, ("rpay_type",)) or None,
-            "source_as_of": self._first(record, ("dcls_month",)) or None,
-            "official_url": source_url,
-            "unknown_conditions": ["공시 금리는 기준월 범위이며 실제 적용 금리·한도가 아닙니다.", "자격과 심사 결과는 KB국민은행에서 직접 확인해야 합니다."]
-        }
-
-    @staticmethod
-    def _extract_records(payload: Any) -> list[dict[str, Any]]:
-        if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
-        if not isinstance(payload, dict):
-            return []
-        for key in ("items", "item", "baseList", "data", "result", "results", "body"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-            if isinstance(value, dict):
-                nested = OfficialSourceService._extract_records(value)
-                if nested:
-                    return nested
-        return []
-
-    @staticmethod
-    def _first(record: dict[str, Any], keys: tuple[str, ...]) -> str:
-        for key in keys:
-            value = record.get(key)
-            if value not in (None, ""):
-                return str(value).strip()
-        return ""
-
-    def _normalize(self, record: dict[str, Any], category: str, provider: str) -> dict[str, Any] | None:
-        title = self._first(record, ("title", "name", "pblancNm", "bizPbancNm", "biz_pbanc_nm", "supt_biz_titl_nm", "titl_nm", "fin_prdt_nm"))
-        url = self._first(record, ("official_url", "url", "detailUrl", "pblancUrl", "detl_pg_url", "biz_gdnc_url", "biz_aply_url", "homepage_url"))
-        if not url and provider == "금융상품 한눈에":
-            url = "https://finlife.fss.or.kr/"
-        if not title or not url:
-            return None
-        if url.startswith("http://"):
-            url = "https://" + url.removeprefix("http://")
-        organization = self._first(record, ("organization", "agency", "jrsdInsttNm", "insttNm", "pbanc_ntrp_nm", "sprv_inst", "kor_co_nm")) or provider
-        period = self._first(record, ("application_period", "period", "reqstBeginEndDe", "pbanc_rcpt_bgng_dt", "pbanc_rcpt_end_dt", "dcls_strt_day", "dcls_end_day"))
-        source_date = self._first(record, ("source_as_of", "updated_at", "creatPnttm", "fstm_reg_dt", "anncmnt_dt", "dcls_month", "fin_co_subm_day"))
-        # Provider ids are only unique within a provider, and finlife product codes repeat across banks
-        # (WR0002F, for example). Namespace by provider and organisation so list keys stay unique.
-        seed = self._first(record, ("id", "pblancId", "biz_pbanc_sn", "pbanc_sn", "fin_prdt_cd")) or f"{title}:{url}"
-        record_id = hashlib.sha256(f"{provider}:{organization}:{seed}".encode()).hexdigest()[:24]
-        return {"id": record_id, "category": category, "title": title, "organization": organization,
-                "status": "UNKNOWN", "application_period": period or None, "matched_conditions": [],
-                "unknown_conditions": ["공식 원문의 지역·업종·업력·제외 조건을 직접 확인해야 합니다."],
-                "official_url": url, "source_as_of": source_date or None}
-
-
 class AIService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -349,3 +144,91 @@ class AIService:
             if "reasoning" not in str(exc):
                 raise
             return await self.client.responses.create(**common)
+
+    def responder(self) -> "OpenAIResponder | None":
+        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+            return None
+        return OpenAIResponder(self.client, self.settings.ai_chat_model)
+
+
+class OpenAIResponder:
+    """Adapts the Responses API to the `{text, tool_calls}` shape ChatStreamer's tool loop expects.
+
+    `messages` arrives from ChatStreamer already shaped like Chat Completions history -- an
+    assistant message carries a nested `tool_calls` list, a tool result carries `tool_call_id` --
+    because that is the shape the loop naturally accumulates as it runs. The Responses API's
+    `input` array does not accept that shape: a function call and its result are each their own
+    top-level item (`function_call` / `function_call_output`), never a field nested inside a
+    role:assistant or role:tool message (confirmed against this environment's installed
+    openai.types.responses.response_input_param -- ResponseFunctionToolCallParam and
+    FunctionCallOutput are distinct sibling members of the ResponseInputItemParam union, not
+    sub-fields of EasyInputMessageParam). `_translate` rebuilds each Chat-Completions-shaped
+    message into the Responses API item(s) it corresponds to.
+    """
+
+    def __init__(self, client: AsyncOpenAI, model: str):
+        self.client, self.model = client, model
+
+    async def respond(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+        payload: dict[str, Any] = {"model": self.model, "input": self._translate(messages), "store": False,
+                                    "max_output_tokens": 2000}
+        if tools:
+            # `strict` MUST stay False. Verified against the live Responses API, not just the SDK
+            # stub: `strict: True` requires `required` to list every key in `properties`, and four
+            # of our schemas deliberately have optional parameters (months, categories, keywords,
+            # radius_m). Flipping this to True 400s on all four -- if you ever want strict schemas,
+            # make every `required` list exhaustive first.
+            # The SDK types `strict` as Required[Optional[bool]], implying the key must always be
+            # present. The server does not agree: omitting it entirely is accepted. We send it
+            # explicitly anyway so the value is a decision on the page rather than a default.
+            payload["tools"] = [{"type": "function", "name": tool["name"], "description": tool["description"],
+                                 "parameters": tool["parameters"], "strict": False} for tool in tools]
+        # Same reasoning-parameter compatibility problem AIService._respond solves for explain(),
+        # and the same fix, in the same order: TypeError means this SDK build's `responses.create`
+        # doesn't accept `reasoning` as a keyword at all (a local, unconditional signature
+        # mismatch) so it is checked first and retried without further inspection; an ordinary
+        # Exception that *names* "reasoning" means the configured model rejected the parameter
+        # server-side, which also warrants a retry; anything else is a real failure (auth, rate
+        # limit, context length, ...) that must propagate so ChatStreamer's `except Exception`
+        # reports it as UPSTREAM_UNAVAILABLE instead of this method silently eating it.
+        try:
+            response = await self.client.responses.create(**payload, reasoning={"effort": "low"})
+        except TypeError:
+            response = await self.client.responses.create(**payload)
+        except Exception as exc:
+            if "reasoning" not in str(exc):
+                raise
+            response = await self.client.responses.create(**payload)
+        return self._parse(response)
+
+    @staticmethod
+    def _translate(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role")
+            if role == "tool":
+                items.append({"type": "function_call_output", "call_id": message.get("tool_call_id"),
+                             "output": message.get("content") or ""})
+                continue
+            content = message.get("content") or ""
+            if content:
+                items.append({"type": "message", "role": role, "content": content})
+            for call in message.get("tool_calls") or []:
+                items.append({"type": "function_call", "call_id": call.get("id"), "name": call.get("name") or "",
+                             "arguments": json.dumps(call.get("arguments") or {}, ensure_ascii=False)})
+        return items
+
+    @staticmethod
+    def _parse(response: Any) -> dict[str, Any]:
+        calls = []
+        for item in getattr(response, "output", None) or []:
+            if getattr(item, "type", None) != "function_call":
+                continue
+            try:
+                arguments = json.loads(getattr(item, "arguments", "") or "{}")
+            except (TypeError, ValueError):
+                arguments = {}
+            calls.append({"id": getattr(item, "call_id", None) or getattr(item, "id", None),
+                          "name": getattr(item, "name", ""),
+                          "arguments": arguments if isinstance(arguments, dict) else {}})
+        return {"text": (getattr(response, "output_text", "") or "").strip(), "tool_calls": calls}

@@ -14,6 +14,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:kakao-tools": "node --test scripts/update-kakao-map-key.test.mjs scripts/check-kakao-sdk.test.mjs",
+    "test:sse": "node --test scripts/sse-parser.test.mjs",
+    "test:chat-stream": "node --import ./scripts/register-ts-extensionless-resolve.mjs --test scripts/chat-stream-dispatch.test.mjs",
     "api:check": "backend/.venv/bin/python -m compileall -q backend/app",
     "api:test": "cd backend && .venv/bin/python -m pytest",
     "config:update-kakao-map-key": "node scripts/update-kakao-map-key.mjs",
@@ -23,6 +25,7 @@
     "pipeline:collect": "node pipeline/collect/fetch-prices.mjs && node pipeline/collect/fetch-coords.mjs",
     "pipeline:build": "node pipeline/distribution/build-distribution.mjs && node pipeline/synthesize/build-listings.mjs",
     "pipeline:verify": "backend/.venv/bin/python pipeline/verify/cross_check.py",
+    "pipeline:policy-index": "backend/.venv/bin/python pipeline/policy/index.py",
     "seed:listings": "node scripts/seed-listings.mjs",
     "test:pipeline": "node --test pipeline/lib/*.test.mjs pipeline/distribution/*.test.mjs pipeline/synthesize/*.test.mjs",
     "deploy": "bash scripts/deploy.sh"

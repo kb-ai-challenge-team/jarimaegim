@@ -1,0 +1,370 @@
+"""원시 응답 레코드를 KnowledgeDocument로 바꾼다.
+
+이 모듈은 순수함수만 담는다. 네트워크도 시계도 건드리지 않으므로 오늘 날짜가 필요한
+함수는 today를 인자로 받는다. 원천이 모양을 바꾸면 test_normalize.py가 먼저 깨진다.
+
+문서 하나는 두 가지 텍스트를 낳는다. body_text는 임베딩에 들어가고, display는 프론트가
+이미 쓰고 있는 Program·KbProduct 모양 그대로다. 둘을 같은 곳에서 만들어야 어긋나지 않는다.
+"""
+from __future__ import annotations
+
+import hashlib
+import re
+from dataclasses import dataclass
+from datetime import date
+from typing import Any
+
+_TAG = re.compile(r"<[^>]+>")
+# 블록이 끝나는 자리에만 공백을 넣는다. </b> 같은 인라인 태그까지 공백으로 바꾸면
+# '중소기업입니다'가 '중소기업 입니다'가 되어 인용문이 원문과 달라진다.
+_BLOCK_BOUNDARY = re.compile(r"</(?:p|div|li|tr|h[1-6]|table|ul|ol)\s*>|<br\s*/?>", re.IGNORECASE)
+_ENTITIES = (("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&#39;", "'"), ("&nbsp;", " "))
+
+# 광역지자체 표기를 짧은 형태로 모은다. 여기에 없는 문자열은 지역으로 인정하지 않는다.
+_REGION_ALIASES = {
+    "서울": "서울", "서울특별시": "서울", "부산": "부산", "부산광역시": "부산",
+    "대구": "대구", "대구광역시": "대구", "인천": "인천", "인천광역시": "인천",
+    "광주": "광주", "광주광역시": "광주", "대전": "대전", "대전광역시": "대전",
+    "울산": "울산", "울산광역시": "울산", "세종": "세종", "세종특별자치시": "세종",
+    "경기": "경기", "경기도": "경기", "강원": "강원", "강원도": "강원", "강원특별자치도": "강원",
+    "충북": "충북", "충청북도": "충북", "충남": "충남", "충청남도": "충남",
+    "전북": "전북", "전라북도": "전북", "전북특별자치도": "전북",
+    "전남": "전남", "전라남도": "전남", "경북": "경북", "경상북도": "경북",
+    "경남": "경남", "경상남도": "경남", "제주": "제주", "제주특별자치도": "제주",
+    "전국": "전국",
+}
+
+
+def strip_html(value: str | None) -> str:
+    text = _BLOCK_BOUNDARY.sub(" ", value or "")
+    text = _TAG.sub("", text)
+    for entity, char in _ENTITIES:
+        text = text.replace(entity, char)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def parse_compact_date(value: str | None) -> date | None:
+    """'20260812' 형식만 읽는다. 다른 형식은 추측하지 않고 None을 낸다."""
+    text = (value or "").strip()
+    if len(text) != 8 or not text.isdigit():
+        return None
+    try:
+        return date(int(text[:4]), int(text[4:6]), int(text[6:]))
+    except ValueError:
+        return None
+
+
+def parse_iso_date(value: str | None) -> date | None:
+    text = (value or "").strip()[:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def parse_range_dates(value: str | None) -> tuple[date | None, date | None]:
+    """'2026-07-22 ~ 2026-08-18'을 두 날짜로 가른다."""
+    text = (value or "").strip()
+    if "~" not in text:
+        return (None, None)
+    head, _, tail = text.partition("~")
+    return (parse_iso_date(head.strip()), parse_iso_date(tail.strip()))
+
+
+# 원천이 실제로 쓰는 구분자들. 'ㆍ'(U+318D)는 '대구ㆍ경북'처럼 기업마당이 즐겨 쓰는데
+# 가운뎃점(U+00B7)과 다른 문자다. 빠뜨리면 다지역 공고가 통째로 '지역 미상'이 된다.
+_REGION_SEPARATORS = re.compile(r"[,/·ㆍ‧・]")
+# 기업마당 공고명은 '[서울] 2026년 …' 꼴로 지역을 앞에 붙인다. 발행자가 명시한 값이므로
+# 읽어도 되지만, 지역명으로 해석되지 않는 접두어([창업] 등)는 매핑에서 자연히 걸러진다.
+_TITLE_REGION_PREFIX = re.compile(r"^\[([^\]]{1,20})\]")
+
+
+def canonical_regions(value: str | None) -> list[str] | None:
+    """지역 문자열을 짧은 표기 목록으로 바꾼다. 하나도 못 맞추면 None(=제한 미상)."""
+    tokens = [token.strip() for token in _REGION_SEPARATORS.split(value or "") if token.strip()]
+    mapped = sorted({_REGION_ALIASES[token] for token in tokens if token in _REGION_ALIASES})
+    return mapped or None
+
+
+def title_prefix_regions(title: str | None) -> list[str] | None:
+    """공고명 앞의 '[서울]' 같은 대괄호 접두어에서 지역을 읽는다."""
+    match = _TITLE_REGION_PREFIX.match((title or "").strip())
+    return canonical_regions(match.group(1)) if match else None
+
+
+def resolve_status(application_end: date | None, today: date) -> str:
+    """원천이 준 날짜의 산술이지 판단이 아니다. 날짜가 없으면 UNKNOWN으로 남는다."""
+    if application_end is None:
+        return "UNKNOWN"
+    return "CLOSED" if application_end < today else "ACTIVE"
+
+
+def display_status(application_end: date | None, today: date) -> str:
+    """프론트 Program.status용 값.
+
+    테이블의 status는 접수창이 열려 있는지를 뜻하고 프론트의 status는 자격 사전판정
+    결과를 뜻한다. 접수 중이라는 사실은 자격이 있다는 뜻이 아니므로 ACTIVE를 잇지 않고
+    UNKNOWN으로 둔다. 마감일이 지난 것만 CLOSED다 — 그건 날짜의 산술이다.
+    """
+    if application_end is not None and application_end < today:
+        return "CLOSED"
+    return "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class KnowledgeDocument:
+    id: str
+    kind: str
+    provider: str
+    category: str
+    title: str
+    organization: str
+    official_url: str
+    body_text: str
+    status: str
+    raw: dict[str, Any]
+    # 프론트가 이미 쓰는 Program/KbProduct 모양. 엔드포인트가 이걸 그대로 반환한다.
+    display: dict[str, Any]
+    regions: list[str] | None = None
+    business_age_limit_years: int | None = None
+    application_start: date | None = None
+    application_end: date | None = None
+    source_as_of: date | None = None
+
+    @property
+    def content_sha256(self) -> str:
+        return hashlib.sha256(self.body_text.encode("utf-8")).hexdigest()
+
+    def to_row(self, *, collected_at: str, embedding: list[float] | None,
+               embedding_model: str | None) -> dict[str, Any]:
+        return {
+            "id": self.id, "kind": self.kind, "provider": self.provider, "category": self.category,
+            "title": self.title, "organization": self.organization, "official_url": self.official_url,
+            "body_text": self.body_text, "content_sha256": self.content_sha256,
+            "embedding": embedding, "embedding_model": embedding_model,
+            "regions": self.regions, "business_age_limit_years": self.business_age_limit_years,
+            "application_start": self.application_start.isoformat() if self.application_start else None,
+            "application_end": self.application_end.isoformat() if self.application_end else None,
+            "status": self.status,
+            "source_as_of": self.source_as_of.isoformat() if self.source_as_of else None,
+            "raw": self.raw, "display": self.display, "collected_at": collected_at,
+        }
+
+
+def _https(url: str) -> str:
+    if url.startswith("http://"):
+        return "https://" + url.removeprefix("http://")
+    return url
+
+
+PROGRAM_UNKNOWNS = ["공식 원문의 지역·업종·업력·제외 조건을 직접 확인해야 합니다."]
+
+
+def _program_display(*, doc_id: str, category: str, title: str, organization: str, status: str,
+                     application_period: str | None, official_url: str,
+                     source_as_of: date | None) -> dict[str, Any]:
+    """lib/types.ts의 Program과 필드 대 필드로 맞춘 표시용 페이로드.
+
+    matched_conditions는 목록 조회에서 비어 있다. 케이스 조건 없이 비교할 것이 없기
+    때문이고, 조건 비교는 검색 경로(RetrievalService)가 한다.
+    """
+    return {
+        "id": doc_id, "category": category, "title": title, "organization": organization,
+        "status": status, "application_period": application_period,
+        "matched_conditions": [], "unknown_conditions": list(PROGRAM_UNKNOWNS),
+        "official_url": official_url,
+        "source_as_of": source_as_of.isoformat() if source_as_of else None,
+    }
+
+
+def normalize_bizinfo(record: dict[str, Any], *, today: date) -> KnowledgeDocument | None:
+    """기업마당 XML item 하나를 문서로 바꾼다. 제목이나 URL이 없으면 버린다."""
+    title = (record.get("pblancNm") or "").strip()
+    url = _https((record.get("pblancUrl") or "").strip())
+    external_id = (record.get("pblancId") or "").strip()
+    if not title or not url.startswith("https://"):
+        return None
+
+    summary = strip_html(record.get("bsnsSumryCn"))
+    organization = (record.get("jrsdInsttNm") or "").strip() or "기업마당"
+    executor = (record.get("excInsttNm") or "").strip()
+    target = (record.get("trgetNm") or "").strip()
+    realm = (record.get("pldirSportRealmLclasCodeNm") or "").strip()
+    apply_method = (record.get("reqstMthPapersCn") or "").strip()
+    hashtags = (record.get("hashtags") or "").strip()
+
+    # 임베딩에 들어가는 텍스트. 제목과 분류를 앞에 두어 짧은 질의와도 맞물리게 한다.
+    body_text = " ".join(part for part in (
+        title, f"소관 {organization}" if organization else "",
+        f"수행 {executor}" if executor else "",
+        f"지원분야 {realm}" if realm else "",
+        f"지원대상 {target}" if target else "",
+        f"신청방법 {apply_method}" if apply_method else "",
+        summary, hashtags,
+    ) if part).strip()
+
+    start, end = parse_range_dates(record.get("reqstBeginEndDe"))
+    doc_id = f"bizinfo:{external_id or hashlib.sha256(url.encode()).hexdigest()[:20]}"
+    source_as_of = parse_iso_date(record.get("creatPnttm"))
+    period = (record.get("reqstBeginEndDe") or "").strip() or None
+    return KnowledgeDocument(
+        id=doc_id, kind="PROGRAM", provider="기업마당", category="GOVERNMENT",
+        title=title, organization=organization, official_url=url,
+        body_text=body_text, status=resolve_status(end, today),
+        # 지역 전용 필드가 없는 원천이다. 소관기관이 광역지자체명이면 그것을 쓰고,
+        # 아니면 공고명 접두어를 읽는다. 둘 다 발행자가 명시한 값이다.
+        regions=canonical_regions(organization) or title_prefix_regions(title),
+        application_start=start, application_end=end,
+        source_as_of=source_as_of,
+        raw=record,
+        display=_program_display(doc_id=doc_id, category="GOVERNMENT", title=title,
+                                 organization=organization,
+                                 status=display_status(end, today),
+                                 application_period=period, official_url=url,
+                                 source_as_of=source_as_of),
+    )
+
+
+_AGE_LIMIT = re.compile(r"(\d+)\s*년")
+
+
+def parse_business_age_limit(value: str | None) -> int | None:
+    """'7년미만,10년미만'에서 가장 넓은 상한을 뽑는다. 숫자가 없으면 None."""
+    years = [int(match) for match in _AGE_LIMIT.findall(value or "")]
+    return max(years) if years else None
+
+
+def normalize_kstartup(record: dict[str, Any], *, today: date) -> KnowledgeDocument | None:
+    title = str(record.get("biz_pbanc_nm") or "").strip()
+    url = _https(str(record.get("detl_pg_url") or record.get("biz_aply_url") or "").strip())
+    external_id = str(record.get("pbanc_sn") or "").strip()
+    if not title or not url.startswith("https://"):
+        return None
+
+    summary = strip_html(str(record.get("pbanc_ctnt") or ""))
+    target = strip_html(str(record.get("aply_trgt_ctnt") or ""))
+    excluded = strip_html(str(record.get("aply_excl_trgt_ctnt") or ""))
+    classification = str(record.get("supt_biz_clsfc") or "").strip()
+    region_text = str(record.get("supt_regin") or "").strip()
+    organization = str(record.get("pbanc_ntrp_nm") or "").strip() or "K-Startup"
+
+    body_text = " ".join(part for part in (
+        title,
+        f"소관 {organization}" if organization else "",
+        f"지원분야 {classification}" if classification else "",
+        f"지원지역 {region_text}" if region_text else "",
+        f"신청대상 {target}" if target else "",
+        f"신청제외 {excluded}" if excluded else "",
+        summary,
+    ) if part).strip()
+
+    end = parse_compact_date(str(record.get("pbanc_rcpt_end_dt") or ""))
+    start = parse_compact_date(str(record.get("pbanc_rcpt_bgng_dt") or ""))
+    doc_id = f"kstartup:{external_id or hashlib.sha256(url.encode()).hexdigest()[:20]}"
+    period = f"{start.isoformat()} ~ {end.isoformat()}" if start and end else None
+    return KnowledgeDocument(
+        id=doc_id, kind="PROGRAM", provider="K-Startup", category="GOVERNMENT",
+        title=title, organization=organization, official_url=url,
+        body_text=body_text, status=resolve_status(end, today),
+        regions=canonical_regions(region_text),
+        business_age_limit_years=parse_business_age_limit(str(record.get("biz_enyy") or "")),
+        application_start=start, application_end=end,
+        source_as_of=None,
+        raw=record,
+        display=_program_display(doc_id=doc_id, category="GOVERNMENT", title=title,
+                                 organization=organization,
+                                 status=display_status(end, today),
+                                 application_period=period, official_url=url,
+                                 source_as_of=None),
+    )
+
+
+KB_UNKNOWNS = [
+    "공시 금리는 기준월 범위이며 실제 적용 금리·한도가 아닙니다.",
+    "자격과 심사 결과는 KB국민은행에서 직접 확인해야 합니다.",
+]
+
+
+def _rate_value(option: dict[str, Any], *fields: str) -> float | None:
+    for name in fields:
+        value = option.get(name)
+        if value in (None, "", "-"):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _rate(option: dict[str, Any], *fields: str) -> str | None:
+    value = _rate_value(option, *fields)
+    return None if value is None else f"{value:g}"
+
+
+def normalize_kb_product(record: dict[str, Any], option: dict[str, Any], *, category: str,
+                         label: str, kind_of_rate: str, source_url: str) -> KnowledgeDocument | None:
+    """finlife 공시 레코드를 문장화한다. 만들어 내는 것은 문장 구조뿐이고 값은 전부 공시에서 온다."""
+    name = str(record.get("fin_prdt_nm") or "").strip()
+    code = str(record.get("fin_prdt_cd") or "").strip()
+    if not name or not code:
+        return None
+
+    organization = str(record.get("kor_co_nm") or "KB국민은행").strip()
+    if kind_of_rate == "LOAN":
+        low, high = _rate(option, "lend_rate_min"), _rate(option, "lend_rate_max")
+        average = _rate(option, "lend_rate_avg", "crdt_grad_avg")
+        rate_label, limit = "대출금리", str(record.get("loan_limit") or "").strip()
+    else:
+        low, high = _rate(option, "intr_rate"), _rate(option, "intr_rate2")
+        average, rate_label = None, "저축금리"
+        limit = str(record.get("max_limit") or "").strip()
+
+    parts = [f"{organization} {label} 상품 '{name}'."]
+    if low and high:
+        parts.append(f"{rate_label} 연 {low}~{high}%.")
+    elif low:
+        parts.append(f"{rate_label} 연 {low}%.")
+    if average:
+        parts.append(f"평균 {average}%.")
+    rate_type = str(record.get("lend_rate_type") or record.get("intr_rate_type_nm") or "").strip()
+    if rate_type:
+        parts.append(f"금리방식 {rate_type}.")
+    if limit and limit not in ("기타", "0"):
+        parts.append(f"한도 {limit}.")
+    join_way = str(record.get("join_way") or "").strip()
+    if join_way:
+        parts.append(f"가입방법 {join_way}.")
+    repay = str(record.get("rpay_type") or "").strip()
+    if repay:
+        parts.append(f"상환방식 {repay}.")
+    product_type = str(record.get("fin_prdt_type_nm") or record.get("crdt_prdt_type_nm") or "").strip()
+    if product_type:
+        parts.append(f"상품유형 {product_type}.")
+
+    dcls_month = str(record.get("dcls_month") or "").strip()
+    source_as_of = None
+    if len(dcls_month) == 6 and dcls_month.isdigit():
+        source_as_of = date(int(dcls_month[:4]), int(dcls_month[4:]), 1)
+
+    doc_id = f"kb-{category.lower()}-{code}"
+    display = {
+        "id": doc_id, "name": name, "category": category, "category_label": label,
+        "rate_kind": rate_label, "organization": organization,
+        "product_type": product_type or None,
+        "rate_min": _rate_value(option, "lend_rate_min") if kind_of_rate == "LOAN" else _rate_value(option, "intr_rate"),
+        "rate_max": _rate_value(option, "lend_rate_max") if kind_of_rate == "LOAN" else _rate_value(option, "intr_rate2"),
+        "rate_avg": _rate_value(option, "lend_rate_avg", "crdt_grad_avg") if kind_of_rate == "LOAN" else None,
+        "rate_type": rate_type or None,
+        "loan_limit": None if limit in ("", "기타", "0") else limit,
+        "join_way": join_way or None,
+        "repay_type": repay or None,
+        "source_as_of": source_as_of.isoformat() if source_as_of else None,
+        "official_url": source_url, "unknown_conditions": list(KB_UNKNOWNS),
+    }
+    return KnowledgeDocument(
+        id=doc_id, kind="KB_PRODUCT", provider="금융상품 한눈에",
+        category=category, title=name, organization=organization, official_url=source_url,
+        body_text=" ".join(parts), status="UNKNOWN", source_as_of=source_as_of, raw=record,
+        display=display,
+    )

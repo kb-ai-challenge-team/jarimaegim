@@ -61,3 +61,54 @@ Stage 3은 `SYNTHESIS_SEED = 20260727`로 완전히 결정된다. 같은 입력�
 ## 실행 이력
 
 - 2026-07-27 Stage 0~3 최초 실행. 표본 371건 → 매물 275건, Stage 2 게이트 통과(0.73×~1.33×).
+
+---
+
+# 정책공고·KB상품 인덱스
+
+설계 문서: `docs/superpowers/specs/2026-07-27-policy-kb-rag-design.md`
+
+지원사업 공고와 KB 금융상품 공시를 임베딩해 Supabase `knowledge_documents`에 넣는다.
+백엔드의 `/programs`·`/products/kb`·`/knowledge/search`가 이 테이블만 읽는다.
+
+## 출처
+
+크롤링은 쓰지 않는다. 임베딩할 본문이 API 응답에 이미 실려 온다.
+
+| 원천 | 본문 필드 | 형식 |
+| --- | --- | --- |
+| 기업마당 | `bsnsSumryCn` (HTML) | XML |
+| K-Startup | `pbanc_ctnt`, `aply_trgt_ctnt`, `aply_excl_trgt_ctnt` | JSON |
+| 금융상품 한눈에 | **없음.** 구조화 필드를 문장화한다 | JSON |
+
+문서 하나가 최대 약 950자라 청킹하지 않는다. 문서 1건 = 임베딩 1개다.
+
+## 스테이지
+
+| 단계 | 명령 | 입력 | 출력 |
+| --- | --- | --- | --- |
+| 수집·임베딩 | `npm run pipeline:policy-index` | 공공 API 3종 | Supabase `knowledge_documents` |
+| 확인 | `backend/.venv/bin/python pipeline/policy/verify_index.py` | Supabase | 표준출력 리포트 |
+
+테스트: `cd pipeline/policy && ../../backend/.venv/bin/python -m pytest` (32개)
+
+운영 서버는 `deploy/ter-doctor-policy-index.timer`가 하루 한 번 돌린다.
+
+## 두 번 돌려야 알 수 있는 것
+
+두 번째 실행에서 `임베딩 대상 0건`이 나와야 정상이다. 0이 아니면 차분이 깨진 것이고,
+매 회차 전량 재임베딩되고 있다는 뜻이다.
+
+`--reembed`는 임베딩 모델을 바꿀 때만 쓴다. 인덱스에 다른 모델의 벡터가 섞이면
+유사도가 의미를 잃으므로, 스크립트는 불일치를 감지하면 멈추고 이 플래그를 요구한다.
+
+## prune
+
+이번 회차에 관측되지 않은 문서는 삭제한다. 원천이 목록에서 내렸다는 것 말고는 아는 게
+없으므로 "종료된 공고"라고 주장하지 않고 인덱스에서 뺀다. 단 **해당 provider의 수집이
+완전히 성공했을 때만** 그 provider의 문서를 지운다.
+
+## 실행 이력
+
+- 2026-07-27 최초 실행. 문서 1,843건(기업마당 1,501 · K-Startup 265 · KB상품 77),
+  임베딩 결측 0건. 공고 1,766건 중 지역 확정 1,312건(74.3%).

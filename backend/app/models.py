@@ -288,3 +288,31 @@ class FundingBandResult(BaseModel):
             if self.bands or self.break_even is not None:
                 raise ValueError("integration_pending result must not contain computed values")
         return self
+
+
+class RetrievedDocument(BaseModel):
+    id: str
+    kind: Literal["PROGRAM", "KB_PRODUCT"]
+    title: str
+    organization: str
+    official_url: str
+    provider: str
+    category: str
+    excerpt: str
+    similarity: float
+    source_as_of: str | None = None
+    collected_at: str | None = None
+    application_start: str | None = None
+    application_end: str | None = None
+    # 코드가 구조화 필드를 비교한 결과만 들어간다. 유사도는 여기 오지 않는다.
+    matched_conditions: list[str] = Field(default_factory=list)
+    unknown_conditions: list[str] = Field(default_factory=list)
+    # 불변조건 3. 모든 데이터 표면은 출처를 달고 나간다. ProvenanceBar가 그대로 렌더한다.
+    provenance: Provenance
+
+
+class RetrievalResponse(BaseModel):
+    items: list[RetrievedDocument] = Field(default_factory=list)
+    status: Literal["success", "integration_pending", "unavailable"]
+    message: str | None = None
+    evidence_grade: Literal["C"] = "C"

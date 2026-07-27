@@ -72,6 +72,33 @@ const funding = {
     : await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible().catch(() => false)
 };
 
+// 의미 검색. 키 없는 머신에서는 integration_pending 이 정상이므로 "결과가 나온다"를 단언하지
+// 않는다. 검색창이 있고, 제출해도 에러 없이 정해진 상태 중 하나로 착지하는지까지만 본다.
+await page.getByPlaceholder("예: 임차료 지원, 청년 창업 보증").fill("임차료 지원");
+await page.locator("form.policy-search button[type=submit]").click();
+await page.waitForFunction(
+  () => Boolean(window.document.querySelector(".retrieved-list article, .full-empty h1, .inline-alert.error")),
+  null, { timeout: 40000 });
+const retrievedItems = await page.locator(".retrieved-list article").all();
+let retrievedWithEvidence = 0;
+for (const item of retrievedItems) {
+  const hasSource = await item.locator('a[href^="http"]').count() > 0;
+  const hasExcerpt = await item.locator("blockquote").count() > 0;
+  const hasProvenance = await item.locator(".provenance").count() > 0;
+  if (hasSource && hasExcerpt && hasProvenance) retrievedWithEvidence += 1;
+}
+const searchText = await page.locator(".plan-page").innerText();
+const search = {
+  resultCount: retrievedItems.length,
+  // 결과가 있으면 모두 원문·발췌·출처를 갖춰야 하고, 없으면 이유를 밝힌 빈 상태여야 한다
+  safeState: retrievedItems.length > 0
+    ? retrievedWithEvidence === retrievedItems.length && searchText.includes("근거 등급 C")
+    : await page.getByText("검색 결과가 없습니다").isVisible().catch(() => false),
+  // 유사도 수치는 화면에 나오면 안 된다 (점수로 오해된다)
+  hidesSimilarity: !/0\.\d{2}/.test(searchText)
+};
+if (retrievedItems.length > 0) await page.locator(".retrieved-list header button").click();
+
 const caseId = workspaceUrl.match(/\/cases\/([0-9a-f-]{36})/)?.[1];
 const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
   data: { case_id: caseId, industry: "카페", area_pyeong: 15, deposit_krw: 100000000, monthly_rent_krw: 2500000,
@@ -97,24 +124,40 @@ const documentToast = (await page.locator(".toast").textContent()) || "";
 const documentResult = { sessionScoped: documentToast.includes("익명 세션") };
 
 const aiConfigured = Boolean(statusBody.integrations.openai);
+const ipzitalkConfigured = Boolean(statusBody.integrations.ipzitalk);
 const caseBefore = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
 
 const chat = page.locator("#chat");
 await chat.fill("공식 출처를 알려줘");
+// 패널이 실제로 스트리밍 엔드포인트(POST .../messages/stream)를 호출하는지 네트워크에서 직접 확인한다.
+// 이걸 확인하지 않으면, 패널이 예전 단발성 api.chat()으로 조용히 되돌아가는 회귀가 벌어져도 아래의 다른
+// 단언들은 그대로 통과해 버린다 — 이 단언이 없으면 그 회귀를 잡을 방법이 없다.
+const streamResponsePromise = page.waitForResponse(response => response.request().method() === "POST" && /\/messages\/stream$/.test(new URL(response.url()).pathname), { timeout: 15000 }).catch(() => null);
 await page.locator(".chat-composer button").click();
+const streamResponse = await streamResponsePromise;
 await page.waitForFunction(() => window.document.querySelectorAll(".chat-message").length >= 3);
+// 진행 표시가 턴이 끝난 뒤에도 계속 도는 채로 남아있으면, 앱이 실제로 하고 있지 않은 일을 하고 있다고
+// 보여주는 것이다 — 실행 중(running) 상태의 tool-activity 행도, 범용 진행 문구도 남아있으면 안 된다.
+const progressCleared = await page.waitForFunction(() => !document.querySelector(".tool-progress") && document.querySelectorAll(".tool-activity-item:not(.ok):not(.error)").length === 0, null, { timeout: 10000 }).then(() => true).catch(() => false);
 const reply = (await page.locator(".chat-message").last().textContent()) || "";
+const citationLinks = await page.locator(".citation-list a").count();
 const caseAfter = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
 const copilot = {
   aiConfigured,
+  ipzitalkConfigured,
   // 키가 없으면 폴백 고지가, 있으면 실제 답변이 와야 한다. 둘 다 정상 상태다.
   safeState: aiConfigured ? reply.trim().length > 0 : reply.includes("키"),
   // 부록 A 불변조건 4 — 대화는 케이스 조건을 바꿀 수 없다. 키 유무와 무관하게 항상 성립해야 한다.
   caseUnchanged: caseAfter.version === caseBefore.version
-    && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs)
+    && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs),
+  // 부록 A 불변조건 1 — ipzitalk 도구 연동이 없으면 인용은 도구 호출 결과에서 나올 수 없으므로 하나도
+  // 렌더링되어서는 안 된다. 도구가 연동되어 있으면 실제 인용 유무는 이 스크립트의 관심사가 아니다.
+  noFabricatedCitations: ipzitalkConfigured ? true : citationLinks === 0,
+  noOrphanedProgress: progressCleared,
+  streamEndpointUsed: Boolean(streamResponse) && streamResponse.ok() && /event-stream/.test(streamResponse.headers()["content-type"] || "")
 };
 
-const result = { onboarding, listings, cost, funding, bands, axes, document: documentResult, copilot, errors };
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged) process.exitCode = 1;
+if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !search.safeState || !search.hidesSimilarity || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
