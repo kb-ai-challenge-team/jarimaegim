@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 
 import pytest
 
@@ -229,6 +230,29 @@ async def test_a_startup_timeout_tears_down_cleanly_and_leaves_nothing_behind(mo
 
 
 @pytest.mark.asyncio
+async def test_an_ordinary_startup_failure_degrades_to_mcp_unavailable_not_the_raw_type(monkeypatch):
+    """FileNotFoundError is what a missing/misconfigured `npx` on PATH raises -- an entirely
+    ordinary misconfiguration, made more likely by the allowlisted env. It must degrade to the
+    same MCPUnavailable every other startup/call failure does, not sail past chat_tools.py's
+    `except MCPUnavailable` as a raw exception and surface as an unhandled 500."""
+    fake_stack = _FakeStack()
+    monkeypatch.setattr(mcp_client, "AsyncExitStack", lambda: fake_stack)
+    session = _bare_session()
+
+    async def missing_npx_open(stack):
+        raise FileNotFoundError("npx not found on PATH")
+
+    monkeypatch.setattr(session, "_open", missing_npx_open)
+    with pytest.raises(MCPUnavailable) as exc_info:
+        async with session:
+            pass
+    assert not isinstance(exc_info.value, MCPToolError)  # a startup failure, not a tool answer
+    assert fake_stack.close_count == 1
+    assert session._stack is None
+    assert session._session is None
+
+
+@pytest.mark.asyncio
 async def test_a_per_call_timeout_does_not_kill_the_whole_session():
     """A single slow tool call must not tear down the session -- only the try/except inside
     call() reacts to it; there is no restart flag to flip anymore."""
@@ -362,3 +386,40 @@ async def test_unwrap_returns_an_empty_dict_when_there_are_no_content_blocks_at_
     session._session = _FakeClientSession(result=_FakeResult(content=[]))
     result = await session.call("get_geocode", {"address": "서울 마포구"})
     assert result == {}
+
+
+# A real child process (this interpreter, sleeping) standing in for a hung `npx` -- writes its
+# own pid to a file before blocking, so the test can confirm afterward that it was actually
+# reaped rather than merely assuming stdio_client's SIGTERM/SIGKILL escalation worked.
+_SLOW_CHILD_SCRIPT = "import os, sys, time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\ntime.sleep(100)\n"
+
+
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_a_real_startup_timeout_reaps_the_child_process(tmp_path):
+    """The one regression check against a real subprocess for the hardest bug in this file.
+    Every other teardown/cancellation test in this module uses _FakeStack / _FakeClientSession /
+    a monkeypatched _open -- those verify Python control flow, which is worth having, but none of
+    them exercise the actual anyio/mcp nested-cancel-scope interaction that the whole turn-scoped
+    rework exists to get right. That property was established by hand against a real subprocess
+    during development; without this test it would live only in a docstring, and a future mcp or
+    anyio version bump could silently regress it."""
+    pidfile = tmp_path / "child.pid"
+    session = MCPSession(sys.executable, ["-c", _SLOW_CHILD_SCRIPT, str(pidfile)], {},
+                        startup_timeout_s=0.5, call_timeout_s=8.0)
+
+    with pytest.raises(MCPUnavailable):
+        async with session:
+            pass  # never reached -- initialize() never gets a response from a plain sleep(100)
+
+    # Give the child a moment to have written its pid before the 0.5s budget fired; on any
+    # normal machine this trails interpreter startup (~20ms) by a wide margin.
+    for _ in range(50):
+        if pidfile.exists():
+            break
+        await asyncio.sleep(0.02)
+    assert pidfile.exists(), "child process never started -- a test-setup problem, not a teardown failure"
+    pid = int(pidfile.read_text())
+
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)  # signal 0: raises if (and only if) the pid is gone

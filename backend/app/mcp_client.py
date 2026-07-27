@@ -130,7 +130,7 @@ class MCPSession:
     that will eventually close them raises "Attempted to exit cancel scope in a different task
     than it was entered in" on the very first restart under concurrency. `anyio.fail_after`
     instead scopes the cancellation to the *current* task, so it composes safely with those
-    nested scopes -- verified directly against a real subprocess via the installed mcp SDK.
+    nested scopes.
 
     A second, less obvious rule follows from the same fact: the timeout must wrap only a single
     leaf await (`initialize()`, `call_tool()`), never the `stack.enter_async_context(...)` calls
@@ -140,7 +140,16 @@ class MCPSession:
     `@asynccontextmanager` generator can't be safely unwound by an outer scope's cancellation.
     Spawning the process (entering `stdio_client`) is a fast, effectively non-blocking syscall;
     the actual cold-start delay of a `npx` install surfaces inside `initialize()`'s wait for the
-    handshake response, which is exactly where the budget is applied.
+    handshake response, which is exactly where the budget is applied. See
+    test_a_real_startup_timeout_reaps_the_child_process for the regression check against a real
+    subprocess.
+
+    Caller contract: `call()` must not be awaited after the `async with` block that produced this
+    session has exited, and must not be handed to a detached task spawned from inside that block
+    and awaited from there concurrently with the block's own exit -- either way reintroduces a
+    second task touching the same cancel scopes this class exists to keep single-task, and
+    `__aexit__`/`_stack.aclose()` racing a still-in-flight `call()` is exactly the failure mode
+    turn-scoping was meant to rule out.
     """
 
     def __init__(self, command: str, args: list[str], env: dict[str, str], *,
@@ -170,8 +179,20 @@ class MCPSession:
         except TimeoutError as exc:
             logger.warning("ipzitalk MCP 세션 시작 타임아웃: timeout_s=%.1f", self._startup_timeout_s)
             raise MCPUnavailable(f"ipzitalk 도구 시작이 {round(self._startup_timeout_s)}초 안에 끝나지 않았습니다.") from exc
+        except Exception as exc:
+            # Any ordinary failure during spawn/handshake -- npx missing from PATH
+            # (FileNotFoundError), a malformed InitializeResult from a misbehaving server
+            # (pydantic.ValidationError), a pipe breaking mid-handshake (ConnectionResetError)
+            # -- must degrade to the same explicit, catchable MCPUnavailable that call() already
+            # raises for its failures. Letting any of these escape as their raw type would sail
+            # past every `except MCPUnavailable` Tasks 4-6 write their handlers around and surface
+            # as an unhandled 500, which is exactly the crash this project's first hard rule
+            # (§ Appendix A) forbids. The exception type is logged, never put in the user-facing
+            # message.
+            logger.warning("ipzitalk MCP 세션 시작 실패: %s", type(exc).__name__)
+            raise MCPUnavailable("ipzitalk 도구를 시작하지 못했습니다.") from exc
         except BaseException as exc:
-            # Catch everything -- including CancelledError -- purely to log that a startup
+            # Catch everything else -- i.e. genuine cancellation -- purely to log that a startup
             # attempt failed before it leaves no trace. Never converted: re-raised unchanged so
             # cancellation semantics reach the caller intact.
             logger.warning("ipzitalk MCP 세션 시작 실패: %s", type(exc).__name__)
