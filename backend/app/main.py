@@ -14,12 +14,14 @@ from pydantic import BaseModel
 from .config import get_settings
 from .document_store import DocumentStore, render_case_pdf
 from .funding import compute_bands
+from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
                      DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
-                     PrivacyRequestCreate, Provenance, SessionCreate)
+                     PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
+from .retrieval import RetrievalService
 from .services import AIService, AnalysisService, CostService, LocationService, OfficialSourceService
 
 settings = get_settings()
@@ -28,6 +30,8 @@ locations = LocationService(settings)
 listings_service = ListingService(settings)
 analyses = AnalysisService(listings_service)
 official_sources = OfficialSourceService(settings)
+knowledge = KnowledgeReader(settings)
+retrieval = RetrievalService(settings)
 ai = AIService(settings)
 document_store = DocumentStore(settings.document_storage_dir)
 policy_params = PolicyParams.load(settings.policy_params_path)
@@ -141,11 +145,13 @@ async def integration_status():
         "kakao_map": bool(settings.next_public_kakao_map_js_key),
         "kakao_local": bool(settings.kakao_rest_api_key),
         "openai": bool(settings.openai_api_key and settings.ai_chat_model and settings.ai_explanation_enabled),
+        "retrieval": settings.retrieval_configured,
         "seoul_data": bool(settings.seoul_open_data_key and settings.seoul_commercial_api_url),
         "bizinfo": bool(settings.bizinfo_api_key and settings.bizinfo_api_url),
         "kstartup": bool(settings.kstartup_api_key and settings.kstartup_api_url),
         "finlife": bool(settings.finlife_api_key and settings.finlife_api_url),
     }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled},
+        "knowledge_index": await knowledge.freshness(),
         "axes": analysis_axes()}
 
 
@@ -262,29 +268,47 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
 @app.get("/api/v1/programs")
 async def list_programs(case_id: UUID = Query(), session_id: UUID = Depends(current_session)):
     owned_case(session_id, case_id)
-    items = await official_sources.programs()
-    return {"items": items, "status": "success" if items else "integration_pending", "message": None if items else "검증된 공식 API endpoint와 키가 설정되면 공고를 표시합니다."}
+    items = await knowledge.programs()
+    return {"items": items, "status": "success" if items else "integration_pending",
+            "message": None if items else EMPTY_PROGRAMS}
 
 
 @app.get("/api/v1/programs/catalog")
 async def list_program_catalog(session_id: UUID = Depends(current_session)):
     """Case-independent view of the same official notices — the 정책 tab browses them without a case."""
-    items = await official_sources.programs()
-    return {"items": items, "status": "success" if items else "integration_pending", "message": None if items else "검증된 공식 API endpoint와 키가 설정되면 공고를 표시합니다."}
+    items = await knowledge.programs()
+    return {"items": items, "status": "success" if items else "integration_pending",
+            "message": None if items else EMPTY_PROGRAMS}
 
 
 @app.get("/api/v1/products/kb")
 async def list_kb_products(session_id: UUID = Depends(current_session)):
-    items = await official_sources.kb_products()
+    items = await knowledge.kb_products()
     return {"items": items, "status": "success" if items else "integration_pending",
-            "message": None if items else "KB 금융상품 공시를 불러오지 못했습니다. 공시 endpoint 연결 상태를 확인해 주세요."}
+            "message": None if items else EMPTY_PRODUCTS}
 
 
 @app.get("/api/v1/products")
 async def list_products(case_id: UUID = Query(), session_id: UUID = Depends(current_session)):
     owned_case(session_id, case_id)
-    items = [item for item in await official_sources.programs() if item["category"] == "PRIVATE"]
+    items = await knowledge.kb_products()
     return {"items": items, "status": "success" if items else "integration_pending"}
+
+
+@app.get("/api/v1/knowledge/search", response_model=RetrievalResponse)
+async def search_knowledge_documents(q: str = Query(min_length=1, max_length=300),
+                                     kind: str | None = Query(default=None),
+                                     district: str | None = Query(default=None),
+                                     limit: int = Query(default=8, ge=1, le=20),
+                                     session_id: UUID = Depends(current_session)):
+    """의미 검색. 유사도는 순서에만 관여하고 자격 판정은 구조화 필드 비교로만 한다."""
+    if kind and kind not in ("PROGRAM", "KB_PRODUCT"):
+        raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "알 수 없는 문서 종류입니다."})
+    if district and district not in SEOUL_DISTRICTS:
+        raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "서울 25개 자치구만 지원합니다."})
+    # 서울 스코프. 전국 공고는 서울 창업자에게도 유효하므로 함께 본다.
+    regions = ["서울", "전국"] if district else None
+    return await retrieval.search(q, kinds=[kind] if kind else None, regions=regions, limit=limit)
 
 
 @app.post("/api/v1/cases/{case_id}/messages")
