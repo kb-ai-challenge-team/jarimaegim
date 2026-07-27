@@ -43,6 +43,21 @@ test("모든 구간이 5건 미만이면 구 전체를 하나로 합친다", () 
   assert.equal(Object.values(bands)[0].n, 6);
 });
 
+test("구 전체 병합에서도 이동 건수를 정확히 기록한다", () => {
+  // S=2, L=10: neither band is small enough to trigger the cascading fold on its own
+  // (S has no smaller band to fold into; L has 10, above MIN_BAND_SAMPLES), so this only
+  // reaches the district-collapse branch, not the earlier fold loop.
+  const rows = [...priceRows(2, { area: 20 }), ...priceRows(10, { area: 70 })];
+  const result = buildDistribution(rows);
+  const bands = result.districts["강남구"].bands;
+  assert.equal(Object.keys(bands).length, 1);
+  assert.equal(Object.values(bands)[0].n, 12);
+  const merge = result.merges.find((entry) => entry.district === "강남구" && entry.from === "S");
+  assert.ok(merge, "S 구간 병합 기록이 있어야 한다");
+  assert.equal(merge.into, "L");
+  assert.equal(merge.moved, 2);
+});
+
 test("가격 행이 없으면 거부한다", () => {
   assert.throws(() => buildDistribution([]), /empty/);
 });

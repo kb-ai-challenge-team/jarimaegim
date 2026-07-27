@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, LISTINGS_PER_DISTRICT, SYNTHESIS_SEED, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
+import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, ASSUMED_MAINTENANCE_FEE_RATE, LISTINGS_PER_DISTRICT, SYNTHESIS_SEED, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
 import { sampleFromQuantiles } from "../lib/quantile.mjs";
 import { createRng, shuffle } from "../lib/rng.mjs";
 
@@ -83,7 +83,7 @@ export function buildListings({ distribution, coordsByDistrict, perDistrict }) {
           listing_kind: "DEMO_SYNTHETIC",
           deposit_krw: deposit,
           monthly_rent_krw: monthlyRent,
-          maintenance_fee_krw: roundTo(monthlyRent * 0.08, 10_000),
+          maintenance_fee_krw: roundTo(monthlyRent * ASSUMED_MAINTENANCE_FEE_RATE, 10_000),
           area_m2: areaM2,
           floor: record.floor,
         },
@@ -107,13 +107,25 @@ async function main() {
   const listings = buildListings({
     distribution, coordsByDistrict: await readCoords(), perDistrict: LISTINGS_PER_DISTRICT,
   });
+
+  // buildListings() itself deliberately emits whatever it can when coordinates run short
+  // (pinned by the "좌표가 모자라면 있는 만큼만 낸다" test). The operational entry point is
+  // where a short run must fail loudly instead of silently shipping fewer listings.
+  const countsByDistrict = {};
+  for (const listing of listings) countsByDistrict[listing.district] = (countsByDistrict[listing.district] ?? 0) + 1;
+  console.log(`구별 매물 수: ${JSON.stringify(countsByDistrict)}`);
+  const short = TARGET_DISTRICTS.filter((district) => (countsByDistrict[district] ?? 0) < LISTINGS_PER_DISTRICT);
+  if (short.length > 0) {
+    throw new Error(`구별 매물 수가 부족합니다 (필요: ${LISTINGS_PER_DISTRICT}): ${short.map((d) => `${d}=${countsByDistrict[d] ?? 0}`).join(", ")}`);
+  }
+
   const payload = {
     generated_at: new Date().toISOString(),
     seed: SYNTHESIS_SEED,
     listing_kind: "DEMO_SYNTHETIC",
     notice: "시연용 생성 데이터입니다. 실제 임대 매물이 아니며 계약 대상이 아닙니다.",
-    method: "위치는 실제 상가 좌표이나 면적·보증금·월세는 시세 분포에서 독립 샘플링한 값입니다.",
-    deposit_basis: "보증금은 실측이 아니라 월세의 10~20배라는 관행 배수를 가정해 산출한 값입니다.",
+    method: "위치는 실제 상가 좌표입니다. 면적과 월세는 서울교통공사 지하상가 임대정보의 실측 분포에서 독립 샘플링했습니다.",
+    assumed: "보증금(월세의 10~20배), 관리비(월세의 8%), 층(1층)은 실측 출처가 없어 가정한 값입니다.",
     // _band_label exists so tests can find the band a listing was drawn from. Strip it here
     // so it never reaches the published artefact.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

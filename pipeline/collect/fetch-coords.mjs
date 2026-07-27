@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { TARGET_DISTRICTS } from "../lib/constants.mjs";
+import { ASSUMED_FLOOR, LISTINGS_PER_DISTRICT, TARGET_DISTRICTS } from "../lib/constants.mjs";
 import { pickRawFields } from "../lib/raw-record.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -86,8 +86,9 @@ async function collectDistrict(apiKey, district) {
             sido: "서울",
             sigungu: district,
             dong,
-            // Kakao keyword search does not return a floor. 1 is a stated default, not measured data.
-            floor: 1,
+            // Kakao keyword search does not return a floor. ASSUMED_FLOOR is a declared
+            // assumption, not measured data - see its doc comment in lib/constants.mjs.
+            floor: ASSUMED_FLOOR,
             // Kakao keyword search does not return an area either. 0.1 is a placeholder that exists
             // only to satisfy the raw-record whitelist and to seed Stage 3's resampling collision
             // guard (which compares against the coordinate's original area to avoid regenerating the
@@ -122,6 +123,13 @@ async function main() {
     await fs.writeFile(outPath, body);
     const shortfall = records.length < TARGET_PER_DISTRICT ? ` SHORTFALL: below target of ${TARGET_PER_DISTRICT}` : "";
     console.log(`${district}: ${records.length} unique coordinates written, ${rejected} rejected by validation${shortfall}`);
+    // TARGET_PER_DISTRICT (70) is a soft goal, logged above as a warning. LISTINGS_PER_DISTRICT
+    // (55) is what Stage 3 actually consumes per district - falling short of it means a future
+    // run would silently emit fewer listings than promised, so that must fail the build.
+    if (records.length < LISTINGS_PER_DISTRICT) {
+      console.error(`${district}: only ${records.length} coordinates, below the ${LISTINGS_PER_DISTRICT} Stage 3 requires`);
+      process.exitCode = 1;
+    }
   }
 }
 

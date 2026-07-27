@@ -26,6 +26,19 @@ export const LISTINGS_PER_DISTRICT = 55;
  */
 export const ASSUMED_DEPOSIT_MULTIPLE = { min: 10, max: 20 };
 
+/**
+ * Kakao Local does not return a floor, so every collected coordinate is treated as
+ * ground floor. This is a declared assumption, not measured data, and it reaches the
+ * generated listings verbatim - both the floor field and the display name.
+ */
+export const ASSUMED_FLOOR = 1;
+
+/**
+ * Maintenance fee has no measured source either. Korean storefront leases commonly
+ * bill it at roughly eight percent of the monthly rent. Declared assumption.
+ */
+export const ASSUMED_MAINTENANCE_FEE_RATE = 0.08;
+
 export function bandForArea(areaM2) {
   const band = AREA_BANDS.find((candidate) => areaM2 >= candidate.min && areaM2 < candidate.max);
   if (!band) throw new Error(`No band found for area ${areaM2}`);

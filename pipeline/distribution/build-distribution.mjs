@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, MIN_BAND_SAMPLES, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
+import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, ASSUMED_FLOOR, ASSUMED_MAINTENANCE_FEE_RATE, MIN_BAND_SAMPLES, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
 import { quantileSet } from "../lib/quantile.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -45,11 +45,14 @@ export function buildDistribution(rows) {
     // If the smallest surviving band is still short, collapse the district into one band.
     const surviving = AREA_BANDS.filter((band) => grouped.get(band.key).length > 0);
     if (surviving.length > 0 && grouped.get(surviving[0].key).length < MIN_BAND_SAMPLES) {
+      // Capture counts before the buckets are cleared below - grouped.set(band.key, []) would
+      // otherwise make every subsequent length read come back 0.
+      const counts = new Map(surviving.map((band) => [band.key, grouped.get(band.key).length]));
       const all = surviving.flatMap((band) => grouped.get(band.key));
       for (const band of surviving) grouped.set(band.key, []);
       grouped.set(surviving[surviving.length - 1].key, all);
       for (const band of surviving.slice(0, -1)) {
-        merges.push({ district, from: band.key, into: surviving[surviving.length - 1].key, moved: 0 });
+        merges.push({ district, from: band.key, into: surviving[surviving.length - 1].key, moved: counts.get(band.key) });
       }
     }
 
@@ -84,7 +87,12 @@ async function main() {
   const payload = {
     generated_at: new Date().toISOString(),
     source: { kind: "one_time_crawl", note: "개별 매물 가격은 저장하지 않고 분위수만 남깁니다." },
-    assumptions: { deposit_multiple: ASSUMED_DEPOSIT_MULTIPLE, note: "보증금은 실측 출처가 없어 관행 배수로 가정한 값입니다." },
+    assumptions: {
+      deposit_multiple: ASSUMED_DEPOSIT_MULTIPLE,
+      maintenance_fee_rate: ASSUMED_MAINTENANCE_FEE_RATE,
+      floor: ASSUMED_FLOOR,
+      note: "보증금·관리비·층은 실측 출처가 없어 가정한 값입니다. 월세와 면적만 실측 분포에서 나옵니다.",
+    },
     ...distribution,
   };
   await fs.mkdir(dirname(OUTPUT), { recursive: true });
