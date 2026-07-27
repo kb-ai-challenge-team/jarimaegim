@@ -89,10 +89,18 @@ def _first_document(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _https(url: str, fallback: str) -> str:
-    """Provenance URLs must be https; k-apt still serves some http links."""
+    """Upgrades an insecure absolute URL -- bare `http://...` or protocol-relative `//...` -- to
+    https. Returns `fallback` when `url` is empty, and otherwise passes anything else through
+    unchanged: already-`https://` URLs, and a schemeless string like `www.host/path` that this
+    function can't reliably tell apart from a relative path, so it doesn't guess. k-apt still
+    serves some `http://` links; that's the concrete case this exists to fix."""
     if not url:
         return fallback
-    return "https://" + url.removeprefix("http://") if url.startswith("http://") else url
+    if url.startswith("http://"):
+        return "https://" + url.removeprefix("http://")
+    if url.startswith("//"):
+        return "https:" + url
+    return url
 
 
 def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -168,30 +176,59 @@ class ChatToolset:
         # plainly rather than implying a filter this handler doesn't perform.
         scope_note = (f"청약홈은 자치구(구 단위) 지역코드로만 조회됩니다. {place.district} 전체 분양공고이며, "
                       f"특정 지점이나 반경으로 좁혀진 결과가 아닙니다.")
+        # District-level, not per-announcement: a 40-listing district would otherwise emit 40
+        # near-identical citations into the SSE done event and chat panel. Each item already
+        # carries its own pblanc_url, so nothing is lost by collapsing this to one.
+        applyhome_citation = citation(f"청약홈 분양공고 — {place.district}",
+                                      "https://www.applyhome.co.kr/", "청약홈", "lookup_seoul_presale")
         if not items:
             return {"status": "empty", "items": [], "scope_note": scope_note,
                     "message": f"{place.district}에 등록된 분양공고를 찾지 못했습니다. 청약홈에서 직접 확인해 주세요.",
-                    "citations": [citation(f"청약홈 분양공고 — {place.district}",
-                                           "https://www.applyhome.co.kr/", "청약홈", "lookup_seoul_presale")]}
+                    "citations": [applyhome_citation]}
 
-        enriched = await self.session.call("enrich_complex_info",
-                                           {"house_manage_nos": [item.get("house_manage_no") for item in items
-                                                                 if item.get("house_manage_no")]})
-        by_manage_no = {str(row.get("house_manage_no")): row for row in _items(enriched)}
+        # Dedupe before the enrichment request: a re-announced complex can appear twice in the
+        # announcement list, and sending the same id twice would be a wasted round trip for
+        # identical data. dict.fromkeys keeps first-seen order without a separate set.
+        manage_nos = list(dict.fromkeys(item.get("house_manage_no") for item in items
+                                        if item.get("house_manage_no") is not None))
+        by_manage_no: dict[str, dict[str, Any]] = {}
+        enrichment_note: str | None = None
+        if not manage_nos:
+            enrichment_note = "분양공고에 단지관리번호가 없어 K-apt 단지 정보 보강을 생략했습니다."
+        else:
+            try:
+                enriched = await self.session.call("enrich_complex_info", {"house_manage_nos": manage_nos})
+                # Filter out rows with no house_manage_no here, and skip id-less items on the other
+                # side of the join below: str(None) is the literal string "None", so one malformed
+                # upstream row missing an id would otherwise occupy by_manage_no["None"] -- and every
+                # *other* id-less announcement would match that key and inherit an unrelated
+                # complex's 세대수·연식 as if it had actually been looked up.
+                by_manage_no = {str(row.get("house_manage_no")): row for row in _items(enriched)
+                                if row.get("house_manage_no") is not None}
+            except MCPUnavailable:
+                # Enrichment is an optional embellishment; the announcements themselves are the
+                # answer the user is entitled to see, so a failure here must not discard them --
+                # handlers don't catch MCPUnavailable elsewhere precisely so run() can turn it into
+                # status=error, but that would throw away perfectly good search results here.
+                enrichment_note = "K-apt 단지 정보 보강에 실패해 분양공고만 표시합니다."
+
         # Build new dicts rather than mutating `item` in place: these dicts came straight out of
         # the MCP payload, and nothing here guarantees that payload is a private, freshly-allocated
         # object the caller never looks at again (a cache, a test fixture reused across calls, a
         # future MCP client that memoizes) -- mutating it would let this handler's enrichment leak
         # into whatever else holds a reference.
         items = [{**item, "complex_info": by_manage_no[str(item.get("house_manage_no"))]}
-                 if str(item.get("house_manage_no")) in by_manage_no else item for item in items]
+                 if item.get("house_manage_no") is not None and str(item.get("house_manage_no")) in by_manage_no
+                 else item for item in items]
 
-        citations = [citation(f"청약홈 분양공고 — {item.get('house_nm') or place.district}",
-                              _https(item.get("pblanc_url") or "", "https://www.applyhome.co.kr/"),
-                              "청약홈", "lookup_seoul_presale") for item in items]
+        citations = [applyhome_citation]
         if by_manage_no:
             citations.append(citation("K-apt 단지 정보", "https://www.k-apt.go.kr/", "K-apt", "lookup_seoul_presale"))
-        return {"status": "ok", "items": items, "scope_note": scope_note, "citations": citations}
+
+        result = {"status": "ok", "items": items, "scope_note": scope_note, "citations": citations}
+        if enrichment_note:
+            result["enrichment_note"] = enrichment_note
+        return result
 
     async def _lookup_seoul_complex(self, arguments: dict[str, Any]) -> dict[str, Any]:
         place = self._require_place(arguments)
@@ -208,7 +245,14 @@ class ChatToolset:
 
     async def _lookup_complex_trades(self, arguments: dict[str, Any]) -> dict[str, Any]:
         place = self._require_place(arguments)
-        months = arguments.get("months") or 12
+        try:
+            months = int(arguments.get("months") or 12)
+        except (TypeError, ValueError):
+            months = 12
+        # Clamp rather than forward unvalidated: a model-supplied 0, negative, or multi-decade span
+        # would go straight to MOLIT otherwise. 1-36 (up to 3 years) comfortably covers what a
+        # location decision needs.
+        months = max(1, min(months, 36))
         payload = await self.session.call("get_complex_trades", {"bjd_code": place.bjd_code, "sgg_code": place.sgg_code,
                                                                  "complex_name": place.name, "months": months})
         items = _items(payload)
@@ -280,7 +324,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {"name": "lookup_seoul_presale",
      "description": ("place_ref 가 가리키는 자치구의 청약홈 분양공고와 주택형·분양가를 조회한다. "
                      "청약홈은 자치구 단위 지역코드로만 조회되므로 결과는 항상 해당 구 전체이며 "
-                     "특정 지점이나 반경으로 좁혀지지 않는다. 이 사실을 scope_note 그대로 사용자에게 전하라."),
+                     "특정 지점이나 반경으로 좁혀지지 않는다. 이 사실을 scope_note 그대로 사용자에게 전하라. "
+                     "일부 공고에는 K-apt 단지 정보(complex_info)가 추가로 붙을 수 있고, 보강이 생략되거나 "
+                     "실패하면 enrichment_note 에 그 사실이 담긴다 -- 이때는 단지 정보가 확인되지 않았다고 전하라."),
      "parameters": {"type": "object", "additionalProperties": False,
                     "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"}},
                     "required": ["place_ref"]}},
@@ -294,6 +340,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                      "반환된 금액을 그대로 인용하라. 평당가·증감률을 직접 계산하지 마라."),
      "parameters": {"type": "object", "additionalProperties": False,
                     "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
-                                   "months": {"type": "integer", "description": "선택. 조회 개월 수. 기본 12"}},
+                                   "months": {"type": "integer",
+                                              "description": "선택. 조회 개월 수. 기본 12, 1~36 범위를 벗어나면 자동 보정된다"}},
                     "required": ["place_ref"]}},
 ]

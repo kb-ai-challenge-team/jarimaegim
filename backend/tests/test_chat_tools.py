@@ -1,5 +1,5 @@
 import pytest
-from app.chat_tools import ChatToolset, PlaceRegistry
+from app.chat_tools import ChatToolset, PlaceRegistry, _https
 from app.mcp_client import MCPUnavailable
 
 
@@ -53,6 +53,29 @@ TRADES = {**GANGNAM,
           "get_complex_trades": {"items": [{"deal_ymd": "202606", "deal_amount_man": 210000,
                                             "exclu_use_ar": 84.97, "floor": 12, "trade_type": "매매"}],
                                  "source_url": "https://rt.molit.go.kr/"}}
+
+# Covers the join's three non-trivial shapes: a match, a manage_no present upstream but absent from
+# the enrichment response, and an int-vs-string key mismatch between the two payloads.
+PRESALE_JOIN = {**GANGNAM,
+                "search_announcement_info": {"items": [
+                    {"house_nm": "A아파트", "house_manage_no": 2026000001, "pblanc_url": "https://x/1"},
+                    {"house_nm": "B아파트", "house_manage_no": "2026000002", "pblanc_url": "https://x/2"},
+                    {"house_nm": "C아파트", "house_manage_no": "2026000003", "pblanc_url": "https://x/3"}]},
+                "enrich_complex_info": {"items": [
+                    {"house_manage_no": "2026000001", "kapt_code": "A1", "kapt_da_cnt": 100},
+                    {"house_manage_no": "2026000003", "kapt_code": "A3", "kapt_da_cnt": 300}]}}
+
+# A malformed enrichment row with no house_manage_no of its own, alongside an announcement that
+# also has no house_manage_no -- the exact shape that would collide on the literal key "None" if
+# the join didn't filter None on both sides.
+PRESALE_NONE_KEY_COLLISION = {**GANGNAM,
+                              "search_announcement_info": {"items": [
+                                  {"house_nm": "정상아파트", "house_manage_no": "2026000123",
+                                   "pblanc_url": "https://x/1"},
+                                  {"house_nm": "무번호아파트", "pblanc_url": "https://x/2"}]},
+                              "enrich_complex_info": {"items": [
+                                  {"house_manage_no": "2026000123", "kapt_code": "A1", "kapt_da_cnt": 480},
+                                  {"kapt_code": "WRONG", "kapt_da_cnt": 9999}]}}
 
 
 def toolset(payloads):
@@ -232,3 +255,108 @@ async def test_a_tool_failure_is_returned_as_an_error_result_not_raised():
     result = await tools.run("lookup_seoul_complex", {"place_ref": resolved["place_ref"]})
     assert result["status"] == "error"
     assert "실패" in result["message"]
+
+
+async def test_presale_enrichment_joins_by_manage_no_across_int_and_string_keys():
+    tools = ChatToolset(FakeSession(PRESALE_JOIN), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    items_by_name = {item["house_nm"]: item for item in result["items"]}
+    assert items_by_name["A아파트"]["complex_info"]["kapt_da_cnt"] == 100  # int upstream, str downstream
+    assert items_by_name["C아파트"]["complex_info"]["kapt_da_cnt"] == 300
+    assert "complex_info" not in items_by_name["B아파트"]  # present upstream, absent from enrichment
+
+
+async def test_presale_enrichment_does_not_attach_an_unrelated_complex_to_an_id_less_announcement():
+    # Regression test for the None-key collision: without filtering rows/items whose
+    # house_manage_no is None, str(None) == "None" would let the malformed "WRONG" row match
+    # 무번호아파트 even though they have nothing to do with each other.
+    tools = ChatToolset(FakeSession(PRESALE_NONE_KEY_COLLISION), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    items_by_name = {item["house_nm"]: item for item in result["items"]}
+    assert items_by_name["정상아파트"]["complex_info"]["kapt_da_cnt"] == 480
+    assert "complex_info" not in items_by_name["무번호아파트"]
+
+
+async def test_presale_enrichment_request_dedupes_a_repeated_manage_no():
+    payloads = {**GANGNAM, "search_announcement_info": {"items": [
+        {"house_nm": "중복1", "house_manage_no": "2026000999", "pblanc_url": "https://x/a"},
+        {"house_nm": "중복2", "house_manage_no": "2026000999", "pblanc_url": "https://x/b"}]},
+        "enrich_complex_info": {"items": [{"house_manage_no": "2026000999", "kapt_code": "AX", "kapt_da_cnt": 10}]}}
+    session = FakeSession(payloads)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    enrich_call = next(args for name, args in session.calls if name == "enrich_complex_info")
+    assert enrich_call["house_manage_nos"] == ["2026000999"]
+
+
+async def test_presale_lookup_survives_an_enrichment_failure_and_keeps_the_announcements():
+    payloads = {**PRESALE, "enrich_complex_info": MCPUnavailable("K-apt 보강 실패")}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "ok"
+    assert result["items"][0]["house_nm"] == "강남OO아파트"
+    assert "complex_info" not in result["items"][0]
+    assert "실패" in result["enrichment_note"]
+    assert not any(item["source_name"] == "K-apt" for item in result["citations"])
+
+
+async def test_presale_lookup_skips_enrichment_when_no_item_has_a_manage_no():
+    payloads = {**GANGNAM, "search_announcement_info": {"items": [
+        {"house_nm": "번호없음", "pblanc_url": "https://x/9"}]}}
+    session = FakeSession(payloads)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "ok"
+    assert "enrich_complex_info" not in [name for name, _ in session.calls]
+    assert "생략" in result["enrichment_note"]
+
+
+async def test_presale_lookup_collapses_citations_to_one_per_district_not_one_per_announcement():
+    payloads = {**GANGNAM, "search_announcement_info": {"items": [
+        {"house_nm": "1단지", "house_manage_no": "2026000001", "pblanc_url": "https://x/1"},
+        {"house_nm": "2단지", "house_manage_no": "2026000002", "pblanc_url": "https://x/2"}]},
+        "enrich_complex_info": {"items": []}}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_seoul_presale", {"place_ref": resolved["place_ref"]})
+    applyhome_citations = [item for item in result["citations"] if item["source_name"] == "청약홈"]
+    assert len(applyhome_citations) == 1
+
+
+async def test_trades_lookup_reports_an_empty_result_rather_than_inventing_one():
+    payloads = {**GANGNAM, "get_complex_trades": {"items": [], "source_url": "https://rt.molit.go.kr/"}}
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"]})
+    assert result["status"] == "empty"
+    assert result["items"] == []
+    assert any(item["source_name"] == "국토교통부 실거래가" for item in result["citations"])
+
+
+async def test_trades_lookup_clamps_an_excessive_months_value():
+    session = FakeSession(TRADES)
+    tools = ChatToolset(session, PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "months": 999})
+    assert result["months"] == 36
+    call_args = next(args for name, args in session.calls if name == "get_complex_trades")
+    assert call_args["months"] == 36
+
+
+async def test_trades_lookup_clamps_a_non_positive_months_value():
+    tools = ChatToolset(FakeSession(TRADES), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    result = await tools.run("lookup_complex_trades", {"place_ref": resolved["place_ref"], "months": -5})
+    assert result["months"] == 1
+
+
+def test_https_upgrades_bare_http_and_protocol_relative_urls():
+    assert _https("http://example.com/a", "https://fallback/") == "https://example.com/a"
+    assert _https("//example.com/a", "https://fallback/") == "https://example.com/a"
+    assert _https("https://example.com/a", "https://fallback/") == "https://example.com/a"
+    assert _https("", "https://fallback/") == "https://fallback/"
