@@ -1,9 +1,11 @@
+import json
 from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree
 
-from normalize import (canonical_regions, display_status, normalize_bizinfo, parse_compact_date,
-                       parse_range_dates, resolve_status, strip_html)
+from normalize import (canonical_regions, display_status, normalize_bizinfo, normalize_kstartup,
+                       parse_business_age_limit, parse_compact_date, parse_range_dates,
+                       resolve_status, strip_html)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -12,6 +14,10 @@ def bizinfo_records() -> list[dict[str, str]]:
     root = ElementTree.fromstring((FIXTURES / "bizinfo.sample.xml").read_bytes())
     return [{child.tag: (child.text or "").strip() for child in item}
             for item in root.findall(".//body/items/item")]
+
+
+def kstartup_records() -> list[dict]:
+    return json.loads((FIXTURES / "kstartup.sample.json").read_text())["data"]
 
 
 def test_strip_html_removes_tags_and_entities():
@@ -124,3 +130,53 @@ def test_normalize_bizinfo_display_matches_the_existing_frontend_contract():
     assert display["application_period"] == "2026-07-22 ~ 2026-08-18"
     assert display["matched_conditions"] == []
     assert display["unknown_conditions"]
+
+
+def test_parse_business_age_limit_takes_the_widest_bound():
+    assert parse_business_age_limit("7년미만,10년미만") == 10
+    assert parse_business_age_limit("3년미만") == 3
+    assert parse_business_age_limit("") is None
+    assert parse_business_age_limit("예비창업자") is None
+
+
+def test_normalize_kstartup_builds_an_embeddable_document():
+    doc = normalize_kstartup(kstartup_records()[0], today=date(2026, 7, 27))
+    assert doc is not None
+    assert doc.provider == "K-Startup"
+    assert doc.id.startswith("kstartup:")
+    assert doc.official_url.startswith("https://")
+    assert len(doc.body_text) > 50
+
+
+def test_normalize_kstartup_keeps_the_declared_region():
+    doc = normalize_kstartup({"pbanc_sn": "1", "biz_pbanc_nm": "제목",
+                              "detl_pg_url": "https://www.k-startup.go.kr/x",
+                              "supt_regin": "서울", "pbanc_rcpt_end_dt": "20260812",
+                              "biz_enyy": "7년미만"}, today=date(2026, 7, 27))
+    assert doc.regions == ["서울"]
+    assert doc.business_age_limit_years == 7
+    assert doc.application_end == date(2026, 8, 12)
+    assert doc.status == "ACTIVE"
+
+
+def test_normalize_kstartup_drops_regions_it_cannot_resolve():
+    doc = normalize_kstartup({"pbanc_sn": "2", "biz_pbanc_nm": "제목",
+                              "detl_pg_url": "https://www.k-startup.go.kr/x",
+                              "supt_regin": "전남광주"}, today=date(2026, 7, 27))
+    assert doc.regions is None
+
+
+def test_normalize_kstartup_rejects_records_without_a_usable_url():
+    assert normalize_kstartup({"pbanc_sn": "3", "biz_pbanc_nm": "제목"},
+                              today=date(2026, 7, 27)) is None
+
+
+def test_normalize_kstartup_display_renders_the_period_in_the_same_shape():
+    # 기업마당은 원천이 '2026-07-22 ~ 2026-08-18' 문자열을 주지만 K-Startup은 두 필드로
+    # 온다. 화면에서 같은 모양이어야 하므로 여기서 합쳐 준다.
+    doc = normalize_kstartup({"pbanc_sn": "4", "biz_pbanc_nm": "제목",
+                              "detl_pg_url": "https://www.k-startup.go.kr/x",
+                              "pbanc_rcpt_bgng_dt": "20260724",
+                              "pbanc_rcpt_end_dt": "20260812"}, today=date(2026, 7, 27))
+    assert doc.display["application_period"] == "2026-07-24 ~ 2026-08-12"
+    assert doc.display["status"] == "UNKNOWN"

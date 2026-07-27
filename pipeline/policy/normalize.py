@@ -208,3 +208,57 @@ def normalize_bizinfo(record: dict[str, Any], *, today: date) -> KnowledgeDocume
                                  application_period=period, official_url=url,
                                  source_as_of=source_as_of),
     )
+
+
+_AGE_LIMIT = re.compile(r"(\d+)\s*년")
+
+
+def parse_business_age_limit(value: str | None) -> int | None:
+    """'7년미만,10년미만'에서 가장 넓은 상한을 뽑는다. 숫자가 없으면 None."""
+    years = [int(match) for match in _AGE_LIMIT.findall(value or "")]
+    return max(years) if years else None
+
+
+def normalize_kstartup(record: dict[str, Any], *, today: date) -> KnowledgeDocument | None:
+    title = str(record.get("biz_pbanc_nm") or "").strip()
+    url = _https(str(record.get("detl_pg_url") or record.get("biz_aply_url") or "").strip())
+    external_id = str(record.get("pbanc_sn") or "").strip()
+    if not title or not url.startswith("https://"):
+        return None
+
+    summary = strip_html(str(record.get("pbanc_ctnt") or ""))
+    target = strip_html(str(record.get("aply_trgt_ctnt") or ""))
+    excluded = strip_html(str(record.get("aply_excl_trgt_ctnt") or ""))
+    classification = str(record.get("supt_biz_clsfc") or "").strip()
+    region_text = str(record.get("supt_regin") or "").strip()
+    organization = str(record.get("pbanc_ntrp_nm") or "").strip() or "K-Startup"
+
+    body_text = " ".join(part for part in (
+        title,
+        f"소관 {organization}" if organization else "",
+        f"지원분야 {classification}" if classification else "",
+        f"지원지역 {region_text}" if region_text else "",
+        f"신청대상 {target}" if target else "",
+        f"신청제외 {excluded}" if excluded else "",
+        summary,
+    ) if part).strip()
+
+    end = parse_compact_date(str(record.get("pbanc_rcpt_end_dt") or ""))
+    start = parse_compact_date(str(record.get("pbanc_rcpt_bgng_dt") or ""))
+    doc_id = f"kstartup:{external_id or hashlib.sha256(url.encode()).hexdigest()[:20]}"
+    period = f"{start.isoformat()} ~ {end.isoformat()}" if start and end else None
+    return KnowledgeDocument(
+        id=doc_id, kind="PROGRAM", provider="K-Startup", category="GOVERNMENT",
+        title=title, organization=organization, official_url=url,
+        body_text=body_text, status=resolve_status(end, today),
+        regions=canonical_regions(region_text),
+        business_age_limit_years=parse_business_age_limit(str(record.get("biz_enyy") or "")),
+        application_start=start, application_end=end,
+        source_as_of=None,
+        raw=record,
+        display=_program_display(doc_id=doc_id, category="GOVERNMENT", title=title,
+                                 organization=organization,
+                                 status=display_status(end, today),
+                                 application_period=period, official_url=url,
+                                 source_as_of=None),
+    )
