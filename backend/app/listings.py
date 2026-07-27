@@ -27,7 +27,9 @@ class ListingService:
         self.settings = settings
         self._by_id: dict[str, Candidate] = {}
         self._by_district: dict[str, list[Candidate]] = {}
-        rows = self._load_supabase() if settings.supabase_configured else self._load_seed(seed_path or DEFAULT_SEED_PATH)
+        rows: list[dict[str, Any]] = self._load_supabase() if settings.supabase_configured else []
+        if not rows:
+            rows = self._load_seed(seed_path or DEFAULT_SEED_PATH)
         for row in rows:
             candidate = self._to_candidate(row)
             self._by_id[candidate.id] = candidate
@@ -41,8 +43,14 @@ class ListingService:
         return json.loads(path.read_text(encoding="utf-8")).get("listings", [])
 
     def _load_supabase(self) -> list[dict[str, Any]]:
-        client: Client = create_client(self.settings.supabase_url, self.settings.supabase_service_role_key)
-        rows = client.table("listings").select("*").execute().data or []
+        try:
+            client: Client = create_client(self.settings.supabase_url, self.settings.supabase_service_role_key)
+            rows = client.table("listings").select("*").execute().data or []
+        except Exception as exc:
+            # Public reference data. A missing or unreadable table must not take down the whole API,
+            # so fall back to the committed seed, which holds the content the seeding script uploads.
+            print(f"[listings] Supabase read failed, falling back to the committed seed: {exc}")
+            return []
         return [{
             "id": row["id"], "name": row["name"], "address": row["address"], "district": row["district"],
             "latitude": row["latitude"], "longitude": row["longitude"],

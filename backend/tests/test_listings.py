@@ -95,3 +95,20 @@ def test_a_missing_seed_file_yields_an_empty_service(tmp_path):
     assert empty.covered_districts() == set()
     candidates, status, message = empty.search("강남구", budget_krw=None, limit=15)
     assert candidates == [] and status == "empty" and message is not None
+
+
+def test_a_broken_supabase_falls_back_to_the_seed(tmp_path):
+    seed = tmp_path / "listings.seoul.json"
+    seed.write_text(json.dumps({"listings": ROWS}), encoding="utf-8")
+    # Port 1 refuses immediately, so this exercises the failure path without a slow timeout.
+    service = ListingService(Settings(supabase_url="http://127.0.0.1:1", supabase_service_role_key="bogus"),
+                             seed_path=seed)
+    assert service.covered_districts() == {"강남구", "마포구"}
+
+
+def test_construction_never_raises_when_both_sources_are_unavailable(tmp_path):
+    service = ListingService(Settings(supabase_url="http://127.0.0.1:1", supabase_service_role_key="bogus"),
+                             seed_path=tmp_path / "absent.json")
+    assert service.covered_districts() == set()
+    candidates, status, message = service.search("강남구", budget_krw=None, limit=15)
+    assert candidates == [] and status == "empty" and message is not None
