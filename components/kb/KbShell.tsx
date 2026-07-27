@@ -84,7 +84,7 @@ export function KbShell() {
         <button aria-label="축소" onClick={() => outOfScope("지도 축소 버튼")}><Minus aria-hidden="true" /></button>
       </div>
 
-      {flow.candidates.length === 0 && flow.trace.state !== "running" && <div className="kb-stage-notice"><strong>매물·시세 데이터는 표시하지 않습니다</strong><p>KB부동산 API가 연동되지 않아 값을 만들어 채우지 않습니다. 왼쪽 <em>자리매김</em>에서 조건을 입력하면 추천 입지가 이 지도에 표시됩니다.</p></div>}
+      {flow.candidates.length === 0 && flow.trace.state !== "running" && <div className="kb-stage-notice"><strong>시연용 매물 데이터입니다</strong><p>실제 임대 매물이 아니며 계약 대상이 아닙니다. 강남·마포·서초·성동·영등포 5개 구만 준비되어 있습니다. 왼쪽 <em>자리매김</em>에서 조건을 입력하면 이 지도에 표시됩니다.</p></div>}
     </main>
 
     {chatVisible && <JarimaegimChat flow={flow} />}

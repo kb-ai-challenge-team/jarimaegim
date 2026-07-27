@@ -800,3 +800,12 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-doc-actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .kb-doc-actions button{flex:1;min-width:46%;justify-content:center}
 .kb-inline-notice{font-size:11.5px;color:var(--ok,#2a7355);background:#e7f3ec;border-radius:6px;padding:7px 9px;margin:6px 0}
+.kb-marker-head{display:flex;align-items:center;gap:6px}
+.kb-marker-terms{display:block;padding:2px 8px 4px;font-size:11px;color:var(--kb-mute);white-space:nowrap}
+.kb-marker-demo{margin-left:4px;padding:1px 5px;border-radius:999px;background:#8a5a00;color:#fff;font-size:10px;font-weight:600}
+.real-map-label.has-listing{display:grid;gap:2px;text-align:left}
+.real-map-label small{display:block;font-size:10px;opacity:.85;white-space:nowrap}
+.real-map-label .demo-chip{display:inline-block;margin-left:4px;padding:0 5px;border-radius:999px;background:#8a5a00;color:#fff;font-size:9px;font-style:normal;font-weight:700}
+.listing-terms{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)}
+.listing-terms strong{color:var(--ink)}
+.demo-badge{padding:1px 6px;border-radius:999px;background:#8a5a00;color:#fff;font-size:10px;font-weight:700}

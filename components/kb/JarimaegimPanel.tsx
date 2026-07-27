@@ -5,6 +5,7 @@ import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, LoaderC
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
 import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
+import { manwon } from "@/lib/format";
 import type { FlowStep, Jarimaegim } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
 import { PlanBands, PlanPrescription } from "./JarimaegimPlan";
@@ -123,7 +124,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
       <button className="kb-ghost" onClick={flow.retrySearch}><RefreshCw aria-hidden="true" /> 다시 확인</button>
     </div>}
     {candidates.length > 0 && <>
-      <p className="kb-step-lead">공식 장소 검색 정확도순 {candidates.length}곳입니다. 순서는 적합도 점수가 아니며, 개별 점포 생존등급은 근거 A에서만 제공합니다.</p>
+      <p className="kb-step-lead">시연용 매물 {candidates.length}곳입니다. 월세 낮은 순이며 적합도 점수가 아닙니다. 실제 임대 매물이 아니고, 개별 점포 생존등급은 근거 A에서만 제공합니다.</p>
       <ul className="kb-candidates">{candidates.map((candidate, index) => <li key={candidate.id} data-focused={candidate.id === focused ? "true" : undefined}>
         <button className="kb-candidate-main" onClick={() => flow.setFocused(candidate.id)} aria-pressed={candidate.id === focused}>
           <span className="kb-rank">{index + 1}</span>
@@ -131,6 +132,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
             <strong>{candidate.name}</strong>
             <small>{candidate.road_address || candidate.address}</small>
             <span className="kb-grade" data-grade={candidate.evidence_grade}>{EVIDENCE_BADGES[candidate.evidence_grade]} · {EVIDENCE_LABELS[candidate.evidence_grade]}</span>
+            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span></span>}
           </span>
         </button>
         <ProvenanceBar data={candidate.provenance} />

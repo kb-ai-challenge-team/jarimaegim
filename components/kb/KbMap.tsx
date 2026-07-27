@@ -5,6 +5,7 @@ import { AlertTriangle, MapPinned } from "lucide-react";
 import { loadKakaoMaps, type KakaoMapInstance, type KakaoMaps, type KakaoOverlay } from "@/lib/kakao";
 import { EVIDENCE_BADGES } from "@/lib/constants";
 import type { Candidate } from "@/lib/types";
+import { manwon } from "@/lib/format";
 
 const SEOUL_CENTER = { lat: 37.551668, lng: 126.9743216 };
 type MapState = "loading" | "ready" | "missing" | "error";
@@ -15,15 +16,31 @@ function markerNode(candidate: Candidate, rank: number, isFocused: boolean, onFo
   node.type = "button";
   node.className = "kb-marker";
   node.dataset.grade = candidate.evidence_grade;
+  if (candidate.listing) node.dataset.demo = "true";
   if (isFocused) node.dataset.focused = "true";
-  node.setAttribute("aria-label", `${candidate.name} ${EVIDENCE_BADGES[candidate.evidence_grade]}`);
+  const listing = candidate.listing;
+  const spoken = listing ? ` ${listing.area_m2}제곱미터 보증금 ${manwon(listing.deposit_krw)}원 월세 ${manwon(listing.monthly_rent_krw)}원 시연용 데이터` : "";
+  node.setAttribute("aria-label", `${candidate.name} ${EVIDENCE_BADGES[candidate.evidence_grade]}${spoken}`);
+  const head = document.createElement("span");
+  head.className = "kb-marker-head";
   const name = document.createElement("span");
   name.className = "kb-marker-name";
   name.textContent = `${rank}. ${candidate.name}`;
   const value = document.createElement("span");
   value.className = "kb-marker-value";
   value.textContent = candidate.evidence_grade;
-  node.append(name, value);
+  head.append(name, value);
+  node.append(head);
+  if (listing) {
+    const chip = document.createElement("span");
+    chip.className = "kb-marker-demo";
+    chip.textContent = "시연용";
+    name.append(chip);
+    const line = document.createElement("span");
+    line.className = "kb-marker-terms";
+    line.textContent = `${listing.area_m2}㎡ · 보 ${manwon(listing.deposit_krw)} / 월 ${manwon(listing.monthly_rent_krw)}`;
+    node.append(line);
+  }
   node.addEventListener("click", (event) => { event.stopPropagation(); onFocus(candidate.id); });
   return node;
 }
@@ -67,7 +84,7 @@ export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: 
       const overlay = new maps.CustomOverlay({
         position: new maps.LatLng(candidate.latitude, candidate.longitude),
         content: markerNode(candidate, index + 1, isFocused, onFocus),
-        yAnchor: 1.35, zIndex: isFocused ? 90 : 10, clickable: true
+        yAnchor: 1.15, zIndex: isFocused ? 90 : 10, clickable: true
       });
       overlay.setMap(map);
       return overlay;
