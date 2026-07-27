@@ -814,3 +814,8 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .listing-terms{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)}
 .listing-terms strong{color:var(--ink)}
 .demo-badge{padding:1px 6px;border-radius:999px;background:#8a5a00;color:#fff;font-size:10px;font-weight:700}
+.kb-district-pin{display:grid;gap:1px;min-width:74px;padding:7px 11px;border:1px solid var(--kb-line);border-radius:11px;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.16);text-align:center;cursor:pointer}
+.kb-district-pin:hover{border-color:var(--kb-blue)}
+.kb-district-pin strong{font-size:13px;color:var(--kb-ink)}
+.kb-district-pin span{font-size:12px;font-weight:700;color:var(--kb-blue)}
+.kb-district-pin small{font-size:10.5px;color:var(--kb-mute)}

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, MapPinned } from "lucide-react";
 import { loadKakaoMaps, type KakaoMapInstance, type KakaoMaps, type KakaoOverlay } from "@/lib/kakao";
 import { EVIDENCE_BADGES } from "@/lib/constants";
-import type { Candidate } from "@/lib/types";
+import type { Candidate, DistrictSummary } from "@/lib/types";
 import { manwon } from "@/lib/format";
 
 const SEOUL_CENTER = { lat: 37.551668, lng: 126.9743216 };
@@ -45,11 +45,29 @@ function markerNode(candidate: Candidate, rank: number, isFocused: boolean, onFo
   return node;
 }
 
-export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: Candidate[]; focused: string | null; onFocus: (id: string) => void; aiActive: boolean }) {
+/** Landing pin: one per covered district, before any condition is entered. */
+function summaryNode(entry: DistrictSummary, onSelect: (district: string) => void) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "kb-district-pin";
+  node.setAttribute("aria-label", `${entry.district} 시연용 매물 ${entry.count}건, 월세 중앙값 ${manwon(entry.median_monthly_rent_krw)}원. 눌러서 매물 보기`);
+  const name = document.createElement("strong");
+  name.textContent = entry.district;
+  const count = document.createElement("span");
+  count.textContent = `${entry.count}건`;
+  const rent = document.createElement("small");
+  rent.textContent = `월 ${manwon(entry.median_monthly_rent_krw)}`;
+  node.append(name, count, rent);
+  node.addEventListener("click", (event) => { event.stopPropagation(); onSelect(entry.district); });
+  return node;
+}
+
+export function KbMap({ candidates, summary, focused, onFocus, onSelectDistrict, aiActive }: { candidates: Candidate[]; summary: DistrictSummary[]; focused: string | null; onFocus: (id: string) => void; onSelectDistrict: (district: string) => void; aiActive: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const mapsRef = useRef<KakaoMaps | null>(null);
   const overlaysRef = useRef<KakaoOverlay[]>([]);
+  const summaryOverlaysRef = useRef<KakaoOverlay[]>([]);
   const key = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
   const [state, setState] = useState<MapState>(key ? "loading" : "missing");
 
@@ -95,6 +113,27 @@ export function KbMap({ candidates, focused, onFocus, aiActive }: { candidates: 
       if (!bounds.isEmpty()) map.setBounds(bounds, 80, 80, 80, 80);
     }
   }, [candidates, focused, onFocus, state]);
+
+  // District summary pins. Cleared as soon as candidates exist, so the two pin kinds
+  // never share the map.
+  useEffect(() => {
+    const maps = mapsRef.current, map = mapRef.current;
+    if (!maps || !map) return;
+    summaryOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+    summaryOverlaysRef.current = [];
+    if (candidates.length > 0 || summary.length === 0) return;
+    summaryOverlaysRef.current = summary.map((entry) => {
+      const overlay = new maps.CustomOverlay({
+        position: new maps.LatLng(entry.latitude, entry.longitude),
+        content: summaryNode(entry, onSelectDistrict), yAnchor: 1.1, zIndex: 20, clickable: true
+      });
+      overlay.setMap(map);
+      return overlay;
+    });
+    const bounds = new maps.LatLngBounds();
+    summary.forEach((entry) => bounds.extend(new maps.LatLng(entry.latitude, entry.longitude)));
+    if (!bounds.isEmpty()) map.setBounds(bounds, 100, 100, 100, 100);
+  }, [summary, candidates.length, onSelectDistrict, state]);
 
   useEffect(() => {
     const maps = mapsRef.current, map = mapRef.current;
