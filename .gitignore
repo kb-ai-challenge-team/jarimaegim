@@ -16,6 +16,9 @@ artifacts/
 *.sqlite
 *.sqlite3
 tsconfig.tsbuildinfo
+# Next regenerates this on every dev/build and flips its import between the two
+# modes, so tracking it made the deploy script's clean-tree check fail after any build.
+next-env.d.ts
 *.pem
 *.pfx
 scripts/.tmp-*
