@@ -275,3 +275,32 @@ export interface FundingBandResult {
   message: string | null;
   provenance: Provenance | null;
 }
+
+/** 의미 검색 결과 한 건. backend/app/models.py의 RetrievedDocument와 필드 대 필드로 맞춘다. */
+export interface RetrievedDocument {
+  id: string;
+  kind: "PROGRAM" | "KB_PRODUCT";
+  title: string;
+  organization: string;
+  official_url: string;
+  provider: string;
+  category: string;
+  excerpt: string;
+  /** 결과 순서에만 관여한다. 자격 판정에 쓰지 않는다. */
+  similarity: number;
+  source_as_of: string | null;
+  collected_at: string | null;
+  application_start: string | null;
+  application_end: string | null;
+  /** 코드가 구조화 필드를 비교한 결과만 들어 있다. */
+  matched_conditions: string[];
+  unknown_conditions: string[];
+  provenance: Provenance;
+}
+
+export interface RetrievalResponse {
+  items: RetrievedDocument[];
+  status: "success" | "integration_pending" | "unavailable";
+  message: string | null;
+  evidence_grade: "C";
+}
