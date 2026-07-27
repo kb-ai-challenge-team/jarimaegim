@@ -127,12 +127,15 @@ ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "set -euo pipefail
   if [ '$API_CHANGED' = '1' ]; then
     echo '  restart api (backend·config 변경 — 설정을 import 시점에 읽는다)'
     sudo systemctl restart ter-doctor-api
-    sleep 3
+    # A fixed sleep raced the API's import time once the MCP SDK and embedding stack landed:
+    # /healthz answered 502, the deploy called itself failed and rolled the frontend back on a
+    # deploy that was actually fine. Wait for readiness instead of guessing at it.
+    for _ in $(seq 1 60); do curl -sf -m 3 http://127.0.0.1:8000/healthz >/dev/null 2>&1 && break; sleep 1; done
   else
     echo '  backend·config 동일 — api 재시작 생략'
   fi
   sudo systemctl restart ter-doctor-web
-  sleep 4
+  for _ in $(seq 1 60); do curl -sf -m 3 http://127.0.0.1:4173/ >/dev/null 2>&1 && break; sleep 1; done
   systemctl is-active ter-doctor-web ter-doctor-api nginx"
 
 # ── 8. 검증 ─────────────────────────────────────────────────────────────────
