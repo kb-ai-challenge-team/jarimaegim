@@ -4,13 +4,37 @@
 
 **Goal:** 강남·마포·서초·성동·영등포 5개 구의 시연용 임대 매물 250~300건을 담은 `data/listings.seoul.json`을 재현 가능하게 생성한다.
 
-**Architecture:** `pipeline/` 아래 4단계가 파일로만 통신한다. Stage 0이 좌표를 수집하고(1회성), Stage 1이 가격 분위수만 집계하고, Stage 2가 공공데이터로 그 분위수를 검증하고, Stage 3이 분위수에서 샘플링해 매물을 합성한다. 순수 함수(분위수 계산, 시드 RNG, 필드 화이트리스트)를 먼저 TDD로 만들고 그 위에 각 스테이지를 얹는다.
+**Architecture:** `pipeline/` 아래 4단계가 파일로만 통신한다. Stage 0이 좌표와 가격 표본을 공공 출처에서 수집하고, Stage 1이 가격 분위수만 집계하고, Stage 2가 집계 경로를 자기일관성 검사하고, Stage 3이 분위수에서 샘플링해 매물을 합성한다. 순수 함수(분위수 계산, 시드 RNG, 필드 화이트리스트)를 먼저 TDD로 만들고 그 위에 각 스테이지를 얹는다.
 
-**Tech Stack:** Node 24 (ESM, `node --test`), Python 3.12 (pytest, backend/.venv), playwright-core 1.61
+**Tech Stack:** Node 24 (ESM, `node --test`), Python 3.12 (pytest, backend/.venv)
 
 **설계 문서:** `docs/superpowers/specs/2026-07-27-listing-data-pipeline-design.md`
 
 **범위 밖:** Stage 4(Supabase 적재), 백엔드 `ListingService`, 프론트엔드 변경. 이 계획은 `data/listings.seoul.json` 생성까지만 다룬다.
+
+---
+
+> ## 실행 완료 (2026-07-27) — 코드 블록은 최종본이 아니다
+>
+> 이 계획은 전부 실행됐고 산출물이 커밋되어 있다. 실행 중 리뷰와 실측이 여러 결함을
+> 잡아냈고, 그 수정은 **커밋된 소스 파일에만** 반영되어 있다. 아래 Task 2·6·8의 코드
+> 블록은 수정 전 상태로 남아 있다. **권위 있는 출처는 `pipeline/` 아래 실제 파일과
+> 설계 문서다.** 이 계획은 실행 기록으로 읽어야 한다.
+>
+> 계획과 실제 코드가 갈라진 지점:
+>
+> | 위치 | 계획에 적힌 것 | 실제 코드 | 이유 |
+> | --- | --- | --- | --- |
+> | Task 2 `quantile.mjs` | 검증 없음 | 비유한값·비단조 knot 거부 | `NaN`이 정렬을 깨 비단조 분위수를 만들고 `Infinity`가 JSON `null`로 직렬화됨 |
+> | Task 6 `priceRows` 헬퍼 | `deposit_krw` 포함 | 없음 | 보증금은 실측 출처가 없어 상수로 이동 (설계 §2.3) |
+> | Task 6 밴드 객체 | `deposit_multiple` 분위수 | 없음 | 위와 같음 |
+> | Task 6 구 표본 | 하한 없음 | 5건 미만 구 거부 | 1~4건이면 병합해도 `MIN_BAND_SAMPLES`에 못 미침 |
+> | Task 8 `DISTRIBUTION` 픽스처 | `deposit_multiple` 포함 | 없음 | 위와 같음 |
+> | Task 8 배수 추출 | `sampleFromQuantiles(band.deposit_multiple)` | `ASSUMED_DEPOSIT_MULTIPLE` 상수 | 위와 같음 |
+> | Task 6·8 main 가드 | `` `file://${process.argv[1]}` `` | `pathToFileURL(...).href` | 저장소 경로의 공백 때문에 절대 일치하지 않아 두 스크립트가 출력 없이 종료 0을 냄 |
+> | 전 태스크 주석 | 한국어 | 영어 | CLAUDE.md 규약 |
+>
+> 최종 테스트 수: `npm run test:pipeline` 47개, `test_cross_check.py` 9개.
 
 ---
 
@@ -23,7 +47,8 @@
 | `pipeline/lib/quantile.mjs` | 분위수 계산 + 분위수에서 역변환 샘플링 (순수) |
 | `pipeline/lib/rng.mjs` | 시드 고정 PRNG, 셔플 (순수) |
 | `pipeline/lib/raw-record.mjs` | 수집 필드 화이트리스트 강제 (순수) |
-| `pipeline/crawl/collect-coords.mjs` | Stage 0 — Playwright 좌표 수집 |
+| `pipeline/collect/fetch-coords.mjs` | Stage 0a — Kakao Local 좌표 수집 |
+| `pipeline/collect/fetch-prices.mjs` | Stage 0b — 지하상가 CSV 가격 표본 |
 | `pipeline/distribution/build-distribution.mjs` | Stage 1 — 분위수 집계 |
 | `pipeline/verify/fetch_subway_rents.py` | Stage 2a — 서울교통공사 CSV 다운로드 |
 | `pipeline/verify/cross_check.py` | Stage 2b — 교차검증 게이트 (순수 비교 함수 포함) |
@@ -96,7 +121,7 @@ export function bandForArea(areaM2) {
 
 | 단계 | 명령 | 입력 | 출력 |
 | --- | --- | --- | --- |
-| 0 수집 | `npm run pipeline:crawl` | (외부) | `pipeline/raw/coords.<구>.jsonl` |
+| 0 수집 | `npm run pipeline:collect` | 공공 API | `pipeline/raw/{coords,prices}.<구>.jsonl` |
 | 1 분포 | `npm run pipeline:build` | `pipeline/raw/` | `data/rent-distribution.seoul.json` |
 | 2 검증 | `npm run pipeline:verify` | Stage 1 산출물 | `data/rent-distribution.verification.md` |
 | 3 합성 | `npm run pipeline:build` | Stage 1 산출물 | `data/listings.seoul.json` |
@@ -123,7 +148,7 @@ pipeline/raw/
 `package.json`의 `"check:shell"` 줄 아래에 추가:
 
 ```json
-    "pipeline:crawl": "node pipeline/crawl/collect-coords.mjs",
+    "pipeline:collect": "node pipeline/collect/fetch-prices.mjs && node pipeline/collect/fetch-coords.mjs",
     "pipeline:build": "node pipeline/distribution/build-distribution.mjs && node pipeline/synthesize/build-listings.mjs",
     "pipeline:verify": "backend/.venv/bin/python pipeline/verify/cross_check.py",
     "test:pipeline": "node --test pipeline/lib/*.test.mjs pipeline/distribution/*.test.mjs pipeline/synthesize/*.test.mjs",
@@ -534,226 +559,101 @@ git commit -m "feat(pipeline): enforce the raw field whitelist"
 
 ---
 
-## Task 5: Stage 0 좌표 수집기
+## Task 5: Stage 0 공공데이터 수집 (개정됨)
 
-**이 태스크는 외부 사이트에 실제로 접속한다.** 실행 전 사용자에게 확인받는다. 1회만 실행한다.
-
-크롤러는 DOM 셀렉터가 아니라 **네트워크 응답을 가로채는 방식**을 쓴다. `new.land.naver.com`은 SPA라서 목록을 내부 JSON API로 받아오고, 그 응답을 잡는 편이 DOM 파싱보다 훨씬 안정적이다. 응답 스키마는 지금 알 수 없으므로 Step 2가 관찰 단계다.
+> **2026-07-27 개정.** 원래 이 태스크는 Playwright로 네이버부동산을 1회 크롤링하는 것이었다.
+> 실행해 보니 네이버가 이 클라이언트를 거부했다 — 딥링크도, 파라미터 없는 `/offices`도,
+> 루트 URL도 전부 `/404`로 떨어지고 매물 API 호출은 `net::ERR_ABORTED`였다. 차단 우회는
+> 탐지 회피이므로 시도하지 않고 공공 출처로 전환했다. 근거와 실측치는 설계 문서 §2.2에 있다.
 
 **Files:**
-- Create: `pipeline/crawl/collect-coords.mjs`
+- Create: `pipeline/collect/fetch-coords.mjs` — Kakao Local 키워드 검색
+- Create: `pipeline/collect/fetch-prices.mjs` — 서울교통공사 OA-12927 CSV
+- Modify: `package.json` — `pipeline:crawl` → `pipeline:collect`
+- Delete: `pipeline/crawl/`
 
-- [ ] **Step 1: 스켈레톤 작성 (관찰 모드)**
+두 수집기는 이후 스테이지가 소비하는 두 파일을 만든다. 스키마는 Stage 1·3이 이미
+기대하는 것과 같아야 한다.
 
-`pipeline/crawl/collect-coords.mjs`:
+- `pipeline/raw/coords.<구>.jsonl` — `{lat, lng, sido, sigungu, dong, floor, area_m2}`
+- `pipeline/raw/prices.<구>.jsonl` — `{sigungu, area_m2, monthly_rent_krw}`
 
-```js
-import { createInterface } from "node:readline/promises";
-import { promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
-import { TARGET_DISTRICTS } from "../lib/constants.mjs";
-import { pickRawFields } from "../lib/raw-record.mjs";
+### fetch-coords.mjs
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const RAW_DIR = join(ROOT, "raw");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+Kakao Local 키워드 검색으로 구별 실제 상가 좌표를 모은다. `GET https://dapi.kakao.com/v2/local/search/keyword.json`,
+헤더 `Authorization: KakaoAK <key>`. **키는 어떤 로그에도 출력하지 않는다.**
 
-/** Design doc appendix: empirically verified deep-link parameters. a=SG (commercial), b=B2 (monthly rent), e=RETAIL */
-const DISTRICT_CENTERS = {
-  "강남구": { lat: 37.5172, lng: 127.0473 },
-  "마포구": { lat: 37.5637, lng: 126.9084 },
-  "서초구": { lat: 37.4837, lng: 127.0324 },
-  "성동구": { lat: 37.5634, lng: 127.0369 },
-  "영등포구": { lat: 37.5264, lng: 126.8962 },
-};
+- 구마다 여러 검색어 변형을 돌린다. Kakao는 **같은 질의 문자열당 45건이 상한**이므로
+  (`meta.pageable_count`가 45에서 잘린다) 변형 없이는 구당 70건을 채울 수 없다.
+  실제로 `상가/근린생활시설/점포/상가건물/부동산/사무실/매장/상점/빌딩` 9개를 썼다.
+- 좌표를 `toFixed(6)`으로 반올림해 중복 제거
+- `address_name`의 자치구가 수집 대상 구와 다르면 버린다 (Kakao는 인접 구를 섞어 준다)
+- `dong`은 `address_name`의 세 번째 토큰. 동/가/로로 끝나지 않으면 그 레코드를 버린다
+- `floor`는 1 고정, `area_m2`는 0.1 자리표시자 — Kakao가 층·면적을 주지 않는다.
+  둘 다 결과물에 들어가지 않으며 면적은 Stage 3 충돌 가드의 씨앗으로만 쓰인다.
+  코드에 그렇게 적어 둔다.
+- 모든 레코드를 `pickRawFields`에 통과시킨다
+- 구당 70건 이상 목표 (Stage 3이 55건을 쓴다). 못 채우면 지어내지 말고 보고한다
 
-function districtUrl(district) {
-  const center = DISTRICT_CENTERS[district];
-  return `https://new.land.naver.com/offices?ms=${center.lat},${center.lng},15&a=SG&b=B2&e=RETAIL`;
-}
+### fetch-prices.mjs
 
-async function confirmOneShot() {
-  if (process.env.PIPELINE_CRAWL_CONFIRM === "yes") return;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question(
-    "Stage 0은 1회성 수집입니다. 이미 pipeline/raw/에 결과가 있다면 중단하세요.\n계속하려면 'yes'를 입력하세요: ",
-  );
-  rl.close();
-  if (answer.trim() !== "yes") { console.log("중단했습니다."); process.exit(0); }
-}
+`POST https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do`,
+body `infId=OA-12927&seq=14&infSeq=1`. 응답은 **EUC-KR**이다.
 
-/** Observation mode: dumps one raw listing-list response to inspect its schema. */
-async function observe() {
-  const browser = await chromium.launch({ executablePath: CHROME, headless: false });
-  const page = await browser.newPage();
-  const samples = [];
-  page.on("response", async (response) => {
-    const url = response.url();
-    if (!url.includes("/api/articles")) return;
-    try { samples.push({ url, body: await response.json() }); } catch { /* Ignore non-JSON responses */ }
-  });
-  await page.goto(districtUrl("강남구"), { waitUntil: "networkidle" });
-  await fs.mkdir(RAW_DIR, { recursive: true });
-  await fs.writeFile(join(RAW_DIR, "observed-schema.json"), JSON.stringify(samples.slice(0, 2), null, 2));
-  await browser.close();
-  console.log(`관찰 응답 ${samples.length}건을 pipeline/raw/observed-schema.json에 기록했습니다.`);
-}
-
-if (process.argv[2] === "observe") { await observe(); }
-```
-
-- [ ] **Step 2: 관찰 실행 — 응답 스키마 확인**
-
-Run: `node pipeline/crawl/collect-coords.mjs observe`
-
-Expected: 브라우저가 열리고 `pipeline/raw/observed-schema.json`이 생성된다.
-
-그 파일을 읽어 매물 배열의 경로와 좌표·면적·층 필드 이름을 확인한다. 확인한 내용을 다음 형태로 이 계획 파일에 기록한 뒤 Step 3으로 간다:
+컬럼명은 `면적㎡`가 아니라 **`면적(제곱미터)`**다. 실측 헤더:
 
 ```
-매물 배열 경로: body.<경로>
-좌표 필드: <이름> / <이름>
-면적 필드: <이름>
-층 필드: <이름>
-법정동 필드: <이름>
-월세 필드: <이름>   (단위도 함께 기록 — 만원인지 원인지)
-보증금 필드: <이름> (단위도 함께 기록)
+연번,상가유형,호선,역명,상가번호,면적(제곱미터),영업업종,계약시작일자,계약종료일자,월임대료,사업진행단계
 ```
 
-**응답을 잡지 못했을 때의 대체 경로:** `/api/articles`가 안 잡히면 `page.on("response")` 필터를 `url.includes("land.naver.com/api")`로 넓혀 다시 관찰한다. 그래도 못 잡으면 이 태스크를 중단하고 사용자에게 보고한다. 추측한 셀렉터로 진행하지 않는다.
+- CSV를 `pipeline/raw/subway-rents.csv`에 캐시하고 재실행 시 재사용
+- 면적·월임대료가 모두 양수인 행만 사용 (1,509행 중 1,263건)
+- 역명 정규화: `name.replace(/\(\d+\)/g, "").trim()`
+- 역별 1회 지오코딩 (`category_group_code=SW8`), `pipeline/raw/station-districts.json`에 캐시
+- **보증금을 넣지 않는다.** 출처에 없고, 가정값을 실측 파일에 섞으면 나중에 구분이 불가능해진다
 
-- [ ] **Step 3: 수집 구현**
+### 실측 결과 (2026-07-27)
 
-두 종류의 파일을 쓴다. 이유는 두 데이터의 수명이 다르기 때문이다.
+| 자치구 | 좌표 | 임대료 표본 |
+| --- | --- | --- |
+| 강남구 | 71 | 107 |
+| 마포구 | 76 | 105 |
+| 서초구 | 70 | 67 |
+| 성동구 | 79 | 59 |
+| 영등포구 | 76 | 33 |
 
-- `coords.<구>.jsonl` — 화이트리스트를 통과한 좌표. Stage 3까지 살아남는다.
-- `prices.<구>.jsonl` — 가격 표본. Stage 1의 분위수 집계에만 쓰이고 **개별값은 결과물에 남지 않는다.** 그래서 화이트리스트(디스크에 오래 남는 좌표를 지키는 장치)와 별도 경로다. 둘 다 `pipeline/raw/`라 gitignore 대상이다.
+209개 역 전부 지오코딩 성공, 실패 0. 화이트리스트 거부 0건.
 
-Step 2에서 확인한 필드 이름으로 아래 코드의 `<...>` 자리를 채운다. 이것이 Step 2 결과로 대체되는 유일한 지점이다.
+### npm 스크립트
 
-`pipeline/crawl/collect-coords.mjs`의 `observe()` 아래에 추가:
-
-```js
-/** Maps the response schema observed in Step 2 into a whitelisted record. */
-function toRawRecord(article, district) {
-  return pickRawFields({
-    lat: Number(article.<좌표필드_위도>),
-    lng: Number(article.<좌표필드_경도>),
-    sido: "서울특별시",
-    sigungu: district,
-    dong: String(article.<법정동필드>),
-    floor: Number(String(article.<층필드>).replace(/[^0-9-]/g, "")),
-    area_m2: Number(article.<면적필드>),
-  });
-}
-
-/**
- * Price samples. If Step 2 confirms the unit is 10k-won, set UNIT to 10000.
- * Getting this unit wrong makes Stage 2 cross-check fail by a 100x ratio, so it's caught there.
- */
-const PRICE_UNIT = 10000;
-
-function toPriceRow(article, district) {
-  const rent = Number(article.<월세필드>) * PRICE_UNIT;
-  const deposit = Number(article.<보증금필드>) * PRICE_UNIT;
-  const area = Number(article.<면적필드>);
-  if (!Number.isFinite(rent) || !Number.isFinite(deposit) || !Number.isFinite(area)) return null;
-  if (rent <= 0 || deposit <= 0 || area <= 0) return null;
-  return { sigungu: district, area_m2: area, monthly_rent_krw: rent, deposit_krw: deposit };
-}
-
-async function collectDistrict(page, district) {
-  const coords = new Map();
-  const prices = [];
-  page.on("response", async (response) => {
-    if (!response.url().includes("/api/articles")) return;
-    let body;
-    try { body = await response.json(); } catch { return; }
-    for (const article of body.<매물배열경로> ?? []) {
-      try {
-        const record = toRawRecord(article, district);
-        coords.set(`${record.lat},${record.lng},${record.area_m2},${record.floor}`, record);
-      } catch { continue; } // Drop records that fail whitelist validation
-      const price = toPriceRow(article, district);
-      if (price) prices.push(price);
-    }
-  });
-  await page.goto(districtUrl(district), { waitUntil: "networkidle" });
-  // Scroll the listing panel to the end to load additional pages.
-  for (let round = 0; round < 12 && coords.size < 120; round += 1) {
-    await page.mouse.wheel(0, 4000);
-    await page.waitForTimeout(1200);
-  }
-  return { records: [...coords.values()], prices };
-}
-
-async function writeJsonl(path, rows) {
-  await fs.writeFile(path, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
-}
-
-async function collect() {
-  await confirmOneShot();
-  await fs.mkdir(RAW_DIR, { recursive: true });
-  const browser = await chromium.launch({ executablePath: CHROME, headless: false });
-  for (const district of TARGET_DISTRICTS) {
-    const page = await browser.newPage();
-    const { records, prices } = await collectDistrict(page, district);
-    await page.close();
-    await writeJsonl(join(RAW_DIR, `coords.${district}.jsonl`), records);
-    await writeJsonl(join(RAW_DIR, `prices.${district}.jsonl`), prices);
-    console.log(`${district}: 좌표 ${records.length}건, 가격 ${prices.length}건`);
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // Pause between districts
-  }
-  await browser.close();
-}
-
-if (process.argv[2] !== "observe") { await collect(); }
+```json
+    "pipeline:collect": "node pipeline/collect/fetch-prices.mjs && node pipeline/collect/fetch-coords.mjs",
 ```
 
-기존 `if (process.argv[2] === "observe") { await observe(); }` 줄은 삭제하고 위 두 분기로 대체한다.
-
-- [ ] **Step 4: 수집 실행**
-
-Run: `npm run pipeline:crawl`
-
-Expected: 5개 구 각각 `coords.<구>.jsonl`과 `prices.<구>.jsonl` 생성, 구당 좌표 40건 이상.
-
-40건 미만인 구가 있으면 스크롤 라운드를 늘려 그 구만 다시 돌린다.
-
-- [ ] **Step 5: 화이트리스트 준수 확인**
-
-Run:
+### 커밋
 
 ```bash
-node -e '
-const fs=require("node:fs");
-const files=fs.readdirSync("pipeline/raw").filter(f=>f.startsWith("coords."));
-const allowed=["lat","lng","sido","sigungu","dong","floor","area_m2"].sort().join(",");
-let total=0;
-for(const f of files){
-  for(const line of fs.readFileSync("pipeline/raw/"+f,"utf8").trim().split("\n")){
-    const keys=Object.keys(JSON.parse(line)).sort().join(",");
-    if(keys!==allowed) throw new Error(f+" 에 화이트리스트 밖 필드: "+keys);
-    total++;
-  }
-}
-console.log("OK", files.length, "개 구,", total, "건");
-'
+git add pipeline/collect/ package.json
+git commit -m "feat(pipeline): collect coordinates and rents from public sources"
 ```
 
-Expected: `OK 5 개 구, <250 이상> 건`
-
-- [ ] **Step 6: 커밋 (수집기만, 원본은 gitignore)**
-
-```bash
-git add pipeline/crawl/collect-coords.mjs
-git status --short   # pipeline/raw/ 가 목록에 없어야 한다
-git commit -m "feat(pipeline): add the one-shot coordinate collector"
-```
+`pipeline/raw/`가 커밋에 포함되지 않았는지 `git status --short`로 확인한다.
 
 ---
+
+## Task 5b: main() 가드와 보증금 가정 (개정 후속)
+
+Stage 0 전환이 두 가지 후속 수정을 만들었다.
+
+**가드 버그.** `if (import.meta.url === \`file://${process.argv[1]}\`)`는 절대 참이 되지
+않는다. `process.argv[1]`이 상대 경로일 수 있고, 이 저장소 경로의 공백이
+`import.meta.url`에서만 `%20`으로 인코딩되기 때문이다. Stage 1·3 스크립트가 **출력 없이
+종료 코드 0**을 냈다. `pathToFileURL(process.argv[1]).href`로 교체한다.
+
+**보증금.** 실측 출처가 없으므로 `pipeline/lib/constants.mjs`의
+`ASSUMED_DEPOSIT_MULTIPLE = { min: 10, max: 20 }` 한 곳에 선언한다. Stage 1은 보증금을
+읽지도 계산하지도 않고 산출물에 `assumptions` 필드로 명시한다. Stage 3은 이 상수에서
+배수를 뽑고 산출물에 `deposit_basis`를 적는다. 설계 문서 §2.3.
 
 ## Task 6: Stage 1 분포 집계
 
