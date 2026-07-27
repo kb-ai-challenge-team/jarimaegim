@@ -3,9 +3,15 @@ from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree
 
-from normalize import (canonical_regions, display_status, normalize_bizinfo, normalize_kstartup,
-                       parse_business_age_limit, parse_compact_date, parse_range_dates,
-                       resolve_status, strip_html)
+from normalize import (canonical_regions, display_status, normalize_bizinfo, normalize_kb_product,
+                       normalize_kstartup, parse_business_age_limit, parse_compact_date,
+                       parse_range_dates, resolve_status, strip_html)
+
+KB_BASE = {"fin_prdt_cd": "CR0001A", "fin_prdt_nm": "KB Star 신용대출",
+           "kor_co_nm": "KB국민은행", "join_way": "영업점,인터넷,스마트폰",
+           "crdt_prdt_type_nm": "일반신용대출", "dcls_month": "202607", "loan_limit": "최대 1억원"}
+KB_OPTION = {"lend_rate_min": "4.5", "lend_rate_max": "6.2", "lend_rate_avg": "5.1",
+             "lend_rate_type_nm": "변동금리"}
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -180,3 +186,56 @@ def test_normalize_kstartup_display_renders_the_period_in_the_same_shape():
                               "pbanc_rcpt_end_dt": "20260812"}, today=date(2026, 7, 27))
     assert doc.display["application_period"] == "2026-07-24 ~ 2026-08-12"
     assert doc.display["status"] == "UNKNOWN"
+
+
+def test_normalize_kb_product_states_only_disclosed_values():
+    doc = normalize_kb_product(KB_BASE, KB_OPTION, category="CREDIT_LOAN", label="개인신용대출",
+                               kind_of_rate="LOAN",
+                               source_url="https://finlife.fss.or.kr/finlife/ldng/indvCrdt/list.do")
+    assert doc.kind == "KB_PRODUCT"
+    assert doc.id == "kb-credit_loan-CR0001A"
+    assert doc.status == "UNKNOWN"          # 공시 상품에 신청기간이 없다
+    assert doc.regions is None
+    assert "KB Star 신용대출" in doc.body_text
+    assert "4.5" in doc.body_text and "6.2" in doc.body_text
+    assert "개인신용대출" in doc.body_text
+
+
+def test_normalize_kb_product_omits_rates_the_disclosure_does_not_carry():
+    doc = normalize_kb_product(KB_BASE, {}, category="CREDIT_LOAN", label="개인신용대출",
+                               kind_of_rate="LOAN",
+                               source_url="https://finlife.fss.or.kr/x")
+    # 금리가 공시되지 않았으면 문장에 금리 문구 자체가 없어야 한다. 0%로 채우지 않는다.
+    assert "금리" not in doc.body_text
+    assert doc.body_text.startswith("KB국민은행 개인신용대출")
+
+
+def test_normalize_kb_product_rejects_records_without_a_code_or_name():
+    assert normalize_kb_product({"fin_prdt_nm": "이름만"}, {}, category="CREDIT_LOAN",
+                                label="개인신용대출", kind_of_rate="LOAN",
+                                source_url="https://finlife.fss.or.kr/x") is None
+
+
+def test_normalize_kb_product_display_matches_the_existing_frontend_contract():
+    doc = normalize_kb_product(KB_BASE, KB_OPTION, category="CREDIT_LOAN", label="개인신용대출",
+                               kind_of_rate="LOAN", source_url="https://finlife.fss.or.kr/x")
+    display = doc.display
+    # lib/types.ts의 KbProduct와 필드 대 필드로 맞는다.
+    assert set(display) == {"id", "name", "category", "category_label", "rate_kind",
+                            "organization", "product_type", "rate_min", "rate_max", "rate_avg",
+                            "rate_type", "loan_limit", "join_way", "repay_type",
+                            "source_as_of", "official_url", "unknown_conditions"}
+    assert display["rate_min"] == 4.5 and display["rate_max"] == 6.2
+    assert display["category_label"] == "개인신용대출"
+    assert display["rate_kind"] == "대출금리"
+    assert display["source_as_of"] == "2026-07-01"
+    assert len(display["unknown_conditions"]) == 2
+
+
+def test_normalize_kb_product_display_leaves_undisclosed_rates_null():
+    doc = normalize_kb_product(KB_BASE, {}, category="CREDIT_LOAN", label="개인신용대출",
+                               kind_of_rate="LOAN", source_url="https://finlife.fss.or.kr/x")
+    # 공시되지 않은 금리를 0으로 채우지 않는다. null이 '모른다'는 뜻이다.
+    assert doc.display["rate_min"] is None
+    assert doc.display["rate_max"] is None
+    assert doc.display["rate_avg"] is None

@@ -262,3 +262,94 @@ def normalize_kstartup(record: dict[str, Any], *, today: date) -> KnowledgeDocum
                                  application_period=period, official_url=url,
                                  source_as_of=None),
     )
+
+
+KB_UNKNOWNS = [
+    "공시 금리는 기준월 범위이며 실제 적용 금리·한도가 아닙니다.",
+    "자격과 심사 결과는 KB국민은행에서 직접 확인해야 합니다.",
+]
+
+
+def _rate_value(option: dict[str, Any], *fields: str) -> float | None:
+    for name in fields:
+        value = option.get(name)
+        if value in (None, "", "-"):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _rate(option: dict[str, Any], *fields: str) -> str | None:
+    value = _rate_value(option, *fields)
+    return None if value is None else f"{value:g}"
+
+
+def normalize_kb_product(record: dict[str, Any], option: dict[str, Any], *, category: str,
+                         label: str, kind_of_rate: str, source_url: str) -> KnowledgeDocument | None:
+    """finlife 공시 레코드를 문장화한다. 만들어 내는 것은 문장 구조뿐이고 값은 전부 공시에서 온다."""
+    name = str(record.get("fin_prdt_nm") or "").strip()
+    code = str(record.get("fin_prdt_cd") or "").strip()
+    if not name or not code:
+        return None
+
+    organization = str(record.get("kor_co_nm") or "KB국민은행").strip()
+    if kind_of_rate == "LOAN":
+        low, high = _rate(option, "lend_rate_min"), _rate(option, "lend_rate_max")
+        average = _rate(option, "lend_rate_avg", "crdt_grad_avg")
+        rate_label, limit = "대출금리", str(record.get("loan_limit") or "").strip()
+    else:
+        low, high = _rate(option, "intr_rate"), _rate(option, "intr_rate2")
+        average, rate_label = None, "저축금리"
+        limit = str(record.get("max_limit") or "").strip()
+
+    parts = [f"{organization} {label} 상품 '{name}'."]
+    if low and high:
+        parts.append(f"{rate_label} 연 {low}~{high}%.")
+    elif low:
+        parts.append(f"{rate_label} 연 {low}%.")
+    if average:
+        parts.append(f"평균 {average}%.")
+    rate_type = str(record.get("lend_rate_type") or record.get("intr_rate_type_nm") or "").strip()
+    if rate_type:
+        parts.append(f"금리방식 {rate_type}.")
+    if limit and limit not in ("기타", "0"):
+        parts.append(f"한도 {limit}.")
+    join_way = str(record.get("join_way") or "").strip()
+    if join_way:
+        parts.append(f"가입방법 {join_way}.")
+    repay = str(record.get("rpay_type") or "").strip()
+    if repay:
+        parts.append(f"상환방식 {repay}.")
+    product_type = str(record.get("fin_prdt_type_nm") or record.get("crdt_prdt_type_nm") or "").strip()
+    if product_type:
+        parts.append(f"상품유형 {product_type}.")
+
+    dcls_month = str(record.get("dcls_month") or "").strip()
+    source_as_of = None
+    if len(dcls_month) == 6 and dcls_month.isdigit():
+        source_as_of = date(int(dcls_month[:4]), int(dcls_month[4:]), 1)
+
+    doc_id = f"kb-{category.lower()}-{code}"
+    display = {
+        "id": doc_id, "name": name, "category": category, "category_label": label,
+        "rate_kind": rate_label, "organization": organization,
+        "product_type": product_type or None,
+        "rate_min": _rate_value(option, "lend_rate_min") if kind_of_rate == "LOAN" else _rate_value(option, "intr_rate"),
+        "rate_max": _rate_value(option, "lend_rate_max") if kind_of_rate == "LOAN" else _rate_value(option, "intr_rate2"),
+        "rate_avg": _rate_value(option, "lend_rate_avg", "crdt_grad_avg") if kind_of_rate == "LOAN" else None,
+        "rate_type": rate_type or None,
+        "loan_limit": None if limit in ("", "기타", "0") else limit,
+        "join_way": join_way or None,
+        "repay_type": repay or None,
+        "source_as_of": source_as_of.isoformat() if source_as_of else None,
+        "official_url": source_url, "unknown_conditions": list(KB_UNKNOWNS),
+    }
+    return KnowledgeDocument(
+        id=doc_id, kind="KB_PRODUCT", provider="금융상품 한눈에",
+        category=category, title=name, organization=organization, official_url=source_url,
+        body_text=" ".join(parts), status="UNKNOWN", source_as_of=source_as_of, raw=record,
+        display=display,
+    )
