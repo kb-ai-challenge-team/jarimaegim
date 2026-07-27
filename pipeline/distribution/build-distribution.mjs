@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { AREA_BANDS, MIN_BAND_SAMPLES, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, MIN_BAND_SAMPLES, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
 import { quantileSet } from "../lib/quantile.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -18,9 +18,6 @@ export function buildDistribution(rows) {
   for (const row of rows) {
     if (!Number.isFinite(row.monthly_rent_krw) || row.monthly_rent_krw <= 0) {
       throw new Error(`monthly_rent_krw must be greater than 0: ${row.monthly_rent_krw}`);
-    }
-    if (!Number.isFinite(row.deposit_krw) || row.deposit_krw < 0) {
-      throw new Error(`deposit_krw must be zero or greater: ${row.deposit_krw}`);
     }
   }
   const districts = {};
@@ -64,7 +61,6 @@ export function buildDistribution(rows) {
         label: band.label,
         n: bucket.length,
         monthly_rent_krw: quantileSet(bucket.map((row) => row.monthly_rent_krw)),
-        deposit_multiple: quantileSet(bucket.map((row) => row.deposit_krw / row.monthly_rent_krw)),
       };
     }
     districts[district] = { area: quantileSet(districtRows.map((row) => row.area_m2)), bands };
@@ -88,6 +84,7 @@ async function main() {
   const payload = {
     generated_at: new Date().toISOString(),
     source: { kind: "one_time_crawl", note: "개별 매물 가격은 저장하지 않고 분위수만 남깁니다." },
+    assumptions: { deposit_multiple: ASSUMED_DEPOSIT_MULTIPLE, note: "보증금은 실측 출처가 없어 관행 배수로 가정한 값입니다." },
     ...distribution,
   };
   await fs.mkdir(dirname(OUTPUT), { recursive: true });
@@ -95,4 +92,5 @@ async function main() {
   console.log(`분포 산출 완료: ${OUTPUT} (표본 ${rows.length}건, 병합 ${distribution.merges.length}건)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await main();
+// import.meta.url is encoded, so the comparison works even though the repo path itself has a space.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

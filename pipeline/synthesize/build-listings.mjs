@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { AREA_BANDS, LISTINGS_PER_DISTRICT, SYNTHESIS_SEED, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { AREA_BANDS, ASSUMED_DEPOSIT_MULTIPLE, LISTINGS_PER_DISTRICT, SYNTHESIS_SEED, TARGET_DISTRICTS, bandForArea } from "../lib/constants.mjs";
 import { sampleFromQuantiles } from "../lib/quantile.mjs";
 import { createRng, shuffle } from "../lib/rng.mjs";
 
@@ -69,7 +69,7 @@ export function buildListings({ distribution, coordsByDistrict, perDistrict }) {
       const band = resolveBand(profile.bands, areaM2);
       const rentRaw = sampleFromQuantiles(band.monthly_rent_krw, rng);
       const monthlyRent = roundWithin(rentRaw, 10_000, band.monthly_rent_krw.p10, band.monthly_rent_krw.p90);
-      const multiple = sampleFromQuantiles(band.deposit_multiple, rng);
+      const multiple = ASSUMED_DEPOSIT_MULTIPLE.min + rng() * (ASSUMED_DEPOSIT_MULTIPLE.max - ASSUMED_DEPOSIT_MULTIPLE.min);
       const deposit = Math.max(roundTo(monthlyRent * multiple, 1_000_000), 1_000_000);
       listings.push({
         id: `demo-${district}-${String(index + 1).padStart(4, "0")}`,
@@ -113,6 +113,7 @@ async function main() {
     listing_kind: "DEMO_SYNTHETIC",
     notice: "시연용 생성 데이터입니다. 실제 임대 매물이 아니며 계약 대상이 아닙니다.",
     method: "위치는 실제 상가 좌표이나 면적·보증금·월세는 시세 분포에서 독립 샘플링한 값입니다.",
+    deposit_basis: "보증금은 실측이 아니라 월세의 10~20배라는 관행 배수를 가정해 산출한 값입니다.",
     listings: listings.map(({ _band_label, ...rest }) => rest),
   };
   await fs.mkdir(dirname(OUTPUT), { recursive: true });
@@ -120,4 +121,5 @@ async function main() {
   console.log(`매물 합성 완료: ${OUTPUT} (${listings.length}건)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await main();
+// import.meta.url is encoded, so the comparison works even though the repo path itself has a space.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

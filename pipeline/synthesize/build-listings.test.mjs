@@ -8,9 +8,9 @@ const DISTRIBUTION = {
     "강남구": {
       area: { p10: 20, p25: 30, p50: 40, p75: 60, p90: 90, n: 50 },
       bands: {
-        S: { label: "~33㎡", n: 15, monthly_rent_krw: { p10: 1_000_000, p25: 1_400_000, p50: 1_800_000, p75: 2_400_000, p90: 3_200_000, n: 15 }, deposit_multiple: { p10: 10, p25: 13, p50: 16, p75: 20, p90: 28, n: 15 } },
-        M: { label: "33~66㎡", n: 20, monthly_rent_krw: { p10: 2_000_000, p25: 2_600_000, p50: 3_200_000, p75: 4_200_000, p90: 5_600_000, n: 20 }, deposit_multiple: { p10: 10, p25: 13, p50: 16, p75: 20, p90: 28, n: 20 } },
-        L: { label: "66~99㎡", n: 15, monthly_rent_krw: { p10: 3_000_000, p25: 3_800_000, p50: 4_600_000, p75: 6_000_000, p90: 8_000_000, n: 15 }, deposit_multiple: { p10: 10, p25: 13, p50: 16, p75: 20, p90: 28, n: 15 } },
+        S: { label: "~33㎡", n: 15, monthly_rent_krw: { p10: 1_000_000, p25: 1_400_000, p50: 1_800_000, p75: 2_400_000, p90: 3_200_000, n: 15 } },
+        M: { label: "33~66㎡", n: 20, monthly_rent_krw: { p10: 2_000_000, p25: 2_600_000, p50: 3_200_000, p75: 4_200_000, p90: 5_600_000, n: 20 } },
+        L: { label: "66~99㎡", n: 15, monthly_rent_krw: { p10: 3_000_000, p25: 3_800_000, p50: 4_600_000, p75: 6_000_000, p90: 8_000_000, n: 15 } },
       },
     },
   },
@@ -81,8 +81,7 @@ test("보증금은 월세보다 크고 백만원 단위로 반올림된다", () 
 test("P90이 만원 배수가 아니어도 월세가 범위를 넘지 않는다", () => {
   const odd = { districts: { "강남구": { area: DISTRIBUTION.districts["강남구"].area, bands: {
     M: { label: "33~66㎡", n: 20,
-         monthly_rent_krw: { p10: 1_003_000, p25: 1_207_000, p50: 1_411_000, p75: 1_615_000, p90: 1_819_000, n: 20 },
-         deposit_multiple: { p10: 10, p25: 13, p50: 16, p75: 20, p90: 28, n: 20 } } } } } };
+         monthly_rent_krw: { p10: 1_003_000, p25: 1_207_000, p50: 1_411_000, p75: 1_615_000, p90: 1_819_000, n: 20 } } } } } };
   const listings = buildListings({ distribution: odd, coordsByDistrict: { "강남구": coords(60) }, perDistrict: 55 });
   for (const listing of listings) {
     assert.ok(listing.listing.monthly_rent_krw >= 1_003_000, `${listing.listing.monthly_rent_krw} >= 1003000`);

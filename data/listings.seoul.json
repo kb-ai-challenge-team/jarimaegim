@@ -1,0 +1,4410 @@
+{
+  "generated_at": "2026-07-27T03:48:44.575Z",
+  "seed": 20260727,
+  "listing_kind": "DEMO_SYNTHETIC",
+  "notice": "시연용 생성 데이터입니다. 실제 임대 매물이 아니며 계약 대상이 아닙니다.",
+  "method": "위치는 실제 상가 좌표이나 면적·보증금·월세는 시세 분포에서 독립 샘플링한 값입니다.",
+  "deposit_basis": "보증금은 실측이 아니라 월세의 10~20배라는 관행 배수를 가정해 산출한 값입니다.",
+  "listings": [
+    {
+      "id": "demo-강남구-0001",
+      "name": "도곡동 1층 상가",
+      "address": "서울 강남구 도곡동",
+      "district": "강남구",
+      "latitude": 37.4958208502298,
+      "longitude": 127.052764674833,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 4580000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 52.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0002",
+      "name": "수서동 1층 상가",
+      "address": "서울 강남구 수서동",
+      "district": "강남구",
+      "latitude": 37.4840588023096,
+      "longitude": 127.086820796009,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 65000000,
+        "monthly_rent_krw": 3780000,
+        "maintenance_fee_krw": 300000,
+        "area_m2": 53.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0003",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.507930582064496,
+      "longitude": 127.03816047376935,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 26000000,
+        "monthly_rent_krw": 1690000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 41.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0004",
+      "name": "수서동 1층 상가",
+      "address": "서울 강남구 수서동",
+      "district": "강남구",
+      "latitude": 37.4857263055011,
+      "longitude": 127.097550623553,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 39000000,
+        "monthly_rent_krw": 3310000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 16.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0005",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.5011169965054,
+      "longitude": 127.06367040187,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 41000000,
+        "monthly_rent_krw": 2090000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 47,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0006",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4948443924232,
+      "longitude": 127.066573541047,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 131000000,
+        "monthly_rent_krw": 10730000,
+        "maintenance_fee_krw": 860000,
+        "area_m2": 38.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0007",
+      "name": "신사동 1층 상가",
+      "address": "서울 강남구 신사동",
+      "district": "강남구",
+      "latitude": 37.5220234007004,
+      "longitude": 127.027678899625,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 132000000,
+        "monthly_rent_krw": 8600000,
+        "maintenance_fee_krw": 690000,
+        "area_m2": 18.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0008",
+      "name": "신사동 1층 상가",
+      "address": "서울 강남구 신사동",
+      "district": "강남구",
+      "latitude": 37.5281545298187,
+      "longitude": 127.038075742912,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1670000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 40.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0009",
+      "name": "압구정동 1층 상가",
+      "address": "서울 강남구 압구정동",
+      "district": "강남구",
+      "latitude": 37.5326117915115,
+      "longitude": 127.028452156285,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 32000000,
+        "monthly_rent_krw": 3050000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 18.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0010",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4907484226353,
+      "longitude": 127.056148853287,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 157000000,
+        "monthly_rent_krw": 11990000,
+        "maintenance_fee_krw": 960000,
+        "area_m2": 60.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0011",
+      "name": "신사동 1층 상가",
+      "address": "서울 강남구 신사동",
+      "district": "강남구",
+      "latitude": 37.5281313833484,
+      "longitude": 127.030952935909,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 45000000,
+        "monthly_rent_krw": 2480000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 18.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0012",
+      "name": "청담동 1층 상가",
+      "address": "서울 강남구 청담동",
+      "district": "강남구",
+      "latitude": 37.5179136619573,
+      "longitude": 127.043504662402,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 102000000,
+        "monthly_rent_krw": 6120000,
+        "maintenance_fee_krw": 490000,
+        "area_m2": 18.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0013",
+      "name": "압구정동 1층 상가",
+      "address": "서울 강남구 압구정동",
+      "district": "강남구",
+      "latitude": 37.5323984503549,
+      "longitude": 127.027626164056,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 59000000,
+        "monthly_rent_krw": 3320000,
+        "maintenance_fee_krw": 270000,
+        "area_m2": 22,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0014",
+      "name": "논현동 1층 상가",
+      "address": "서울 강남구 논현동",
+      "district": "강남구",
+      "latitude": 37.5092505025593,
+      "longitude": 127.03831949069,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 72000000,
+        "monthly_rent_krw": 4250000,
+        "maintenance_fee_krw": 340000,
+        "area_m2": 20.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0015",
+      "name": "자곡동 1층 상가",
+      "address": "서울 강남구 자곡동",
+      "district": "강남구",
+      "latitude": 37.4783443466373,
+      "longitude": 127.106917968886,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 20000000,
+        "monthly_rent_krw": 1540000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 56.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0016",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4931652550332,
+      "longitude": 127.059163095053,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 181000000,
+        "monthly_rent_krw": 12160000,
+        "maintenance_fee_krw": 970000,
+        "area_m2": 42.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0017",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.4873501967802,
+      "longitude": 127.069045396078,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 225000000,
+        "monthly_rent_krw": 11520000,
+        "maintenance_fee_krw": 920000,
+        "area_m2": 60.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0018",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.48781679246346,
+      "longitude": 127.07372810514885,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 37000000,
+        "monthly_rent_krw": 3010000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 33.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0019",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.49942820368288,
+      "longitude": 127.04469719994461,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 26000000,
+        "monthly_rent_krw": 2280000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 23.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0020",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.4818751251268,
+      "longitude": 127.061899344185,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 71000000,
+        "monthly_rent_krw": 3880000,
+        "maintenance_fee_krw": 310000,
+        "area_m2": 49.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0021",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.50791696978813,
+      "longitude": 127.03846018596624,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 79000000,
+        "monthly_rent_krw": 4600000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 18,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0022",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.48172815277881,
+      "longitude": 127.06210499589189,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 2900000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 26,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0023",
+      "name": "압구정동 1층 상가",
+      "address": "서울 강남구 압구정동",
+      "district": "강남구",
+      "latitude": 37.5326115485765,
+      "longitude": 127.029443252434,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 28000000,
+        "monthly_rent_krw": 1700000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 21.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0024",
+      "name": "논현동 1층 상가",
+      "address": "서울 강남구 논현동",
+      "district": "강남구",
+      "latitude": 37.5181063724466,
+      "longitude": 127.035759657839,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 41000000,
+        "monthly_rent_krw": 3320000,
+        "maintenance_fee_krw": 270000,
+        "area_m2": 59.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0025",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4930886972148,
+      "longitude": 127.060881838258,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 76000000,
+        "monthly_rent_krw": 6880000,
+        "maintenance_fee_krw": 550000,
+        "area_m2": 17.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0026",
+      "name": "삼성동 1층 상가",
+      "address": "서울 강남구 삼성동",
+      "district": "강남구",
+      "latitude": 37.5187073738779,
+      "longitude": 127.058305460878,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 252000000,
+        "monthly_rent_krw": 13090000,
+        "maintenance_fee_krw": 1050000,
+        "area_m2": 51.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0027",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.4982424831093,
+      "longitude": 127.033844668144,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 78000000,
+        "monthly_rent_krw": 3990000,
+        "maintenance_fee_krw": 320000,
+        "area_m2": 25.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0028",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.4977358827516,
+      "longitude": 127.027841823871,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 43000000,
+        "monthly_rent_krw": 2210000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 18.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0029",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.49434075087101,
+      "longitude": 127.07964300331471,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 48000000,
+        "monthly_rent_krw": 3070000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 62,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0030",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4933476487985,
+      "longitude": 127.061917857343,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 46000000,
+        "monthly_rent_krw": 2780000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 19,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0031",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.50788100120206,
+      "longitude": 127.03823961958236,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 32000000,
+        "monthly_rent_krw": 3230000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 17.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0032",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4992071705647,
+      "longitude": 127.063098814679,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 98000000,
+        "monthly_rent_krw": 6040000,
+        "maintenance_fee_krw": 480000,
+        "area_m2": 40.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0033",
+      "name": "청담동 1층 상가",
+      "address": "서울 강남구 청담동",
+      "district": "강남구",
+      "latitude": 37.52472469863404,
+      "longitude": 127.03994511906544,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 27000000,
+        "monthly_rent_krw": 1860000,
+        "maintenance_fee_krw": 150000,
+        "area_m2": 64.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0034",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.5079314859919,
+      "longitude": 127.038151426103,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 57000000,
+        "monthly_rent_krw": 4190000,
+        "maintenance_fee_krw": 340000,
+        "area_m2": 37.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0035",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.4976463413095,
+      "longitude": 127.070004797425,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 153000000,
+        "monthly_rent_krw": 12350000,
+        "maintenance_fee_krw": 990000,
+        "area_m2": 58.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0036",
+      "name": "압구정동 1층 상가",
+      "address": "서울 강남구 압구정동",
+      "district": "강남구",
+      "latitude": 37.5303769736726,
+      "longitude": 127.029808932945,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 62000000,
+        "monthly_rent_krw": 4320000,
+        "maintenance_fee_krw": 350000,
+        "area_m2": 23.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0037",
+      "name": "도곡동 1층 상가",
+      "address": "서울 강남구 도곡동",
+      "district": "강남구",
+      "latitude": 37.49141419188989,
+      "longitude": 127.04099029396565,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 115000000,
+        "monthly_rent_krw": 6360000,
+        "maintenance_fee_krw": 510000,
+        "area_m2": 19.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0038",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.4856582012614,
+      "longitude": 127.067315029514,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 133000000,
+        "monthly_rent_krw": 6830000,
+        "maintenance_fee_krw": 550000,
+        "area_m2": 18.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0039",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.498361822094694,
+      "longitude": 127.06832612146114,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 75000000,
+        "monthly_rent_krw": 4130000,
+        "maintenance_fee_krw": 330000,
+        "area_m2": 25.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0040",
+      "name": "도곡동 1층 상가",
+      "address": "서울 강남구 도곡동",
+      "district": "강남구",
+      "latitude": 37.495370365197,
+      "longitude": 127.05272364815,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 76000000,
+        "monthly_rent_krw": 5930000,
+        "maintenance_fee_krw": 470000,
+        "area_m2": 22.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0041",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.4821156012274,
+      "longitude": 127.062077050914,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 122000000,
+        "monthly_rent_krw": 10600000,
+        "maintenance_fee_krw": 850000,
+        "area_m2": 39.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0042",
+      "name": "일원동 1층 상가",
+      "address": "서울 강남구 일원동",
+      "district": "강남구",
+      "latitude": 37.4897190808182,
+      "longitude": 127.078903114588,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 28000000,
+        "monthly_rent_krw": 1580000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 49.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0043",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.4893397263877,
+      "longitude": 127.068866309599,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 137000000,
+        "monthly_rent_krw": 6890000,
+        "maintenance_fee_krw": 550000,
+        "area_m2": 22.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0044",
+      "name": "대치동 1층 상가",
+      "address": "서울 강남구 대치동",
+      "district": "강남구",
+      "latitude": 37.500837734162,
+      "longitude": 127.060137206038,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 30000000,
+        "monthly_rent_krw": 2870000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 46.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0045",
+      "name": "역삼동 1층 상가",
+      "address": "서울 강남구 역삼동",
+      "district": "강남구",
+      "latitude": 37.5079332825207,
+      "longitude": 127.038168392255,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 41000000,
+        "monthly_rent_krw": 2070000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 37,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0046",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.481813832855686,
+      "longitude": 127.06194451849859,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 28000000,
+        "monthly_rent_krw": 2400000,
+        "maintenance_fee_krw": 190000,
+        "area_m2": 18,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0047",
+      "name": "청담동 1층 상가",
+      "address": "서울 강남구 청담동",
+      "district": "강남구",
+      "latitude": 37.5188106884389,
+      "longitude": 127.044505146256,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 43000000,
+        "monthly_rent_krw": 2620000,
+        "maintenance_fee_krw": 210000,
+        "area_m2": 22.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0048",
+      "name": "개포동 1층 상가",
+      "address": "서울 강남구 개포동",
+      "district": "강남구",
+      "latitude": 37.4831345330627,
+      "longitude": 127.053054241583,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 4260000,
+        "maintenance_fee_krw": 340000,
+        "area_m2": 21.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0049",
+      "name": "압구정동 1층 상가",
+      "address": "서울 강남구 압구정동",
+      "district": "강남구",
+      "latitude": 37.52482262258544,
+      "longitude": 127.0196479112386,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 70000000,
+        "monthly_rent_krw": 3730000,
+        "maintenance_fee_krw": 300000,
+        "area_m2": 55.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0050",
+      "name": "신사동 1층 상가",
+      "address": "서울 강남구 신사동",
+      "district": "강남구",
+      "latitude": 37.52665639477304,
+      "longitude": 127.03735208175564,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 3230000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 30.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0051",
+      "name": "일원동 1층 상가",
+      "address": "서울 강남구 일원동",
+      "district": "강남구",
+      "latitude": 37.4820550393419,
+      "longitude": 127.081653780726,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 36000000,
+        "monthly_rent_krw": 2250000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 18.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0052",
+      "name": "청담동 1층 상가",
+      "address": "서울 강남구 청담동",
+      "district": "강남구",
+      "latitude": 37.52247747058278,
+      "longitude": 127.05769300261032,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 27000000,
+        "monthly_rent_krw": 1720000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 22,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0053",
+      "name": "압구정동 1층 상가",
+      "address": "서울 강남구 압구정동",
+      "district": "강남구",
+      "latitude": 37.5329520364123,
+      "longitude": 127.02980430082613,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 36000000,
+        "monthly_rent_krw": 3050000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 53.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0054",
+      "name": "신사동 1층 상가",
+      "address": "서울 강남구 신사동",
+      "district": "강남구",
+      "latitude": 37.5279584559891,
+      "longitude": 127.030703974469,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 39000000,
+        "monthly_rent_krw": 2000000,
+        "maintenance_fee_krw": 160000,
+        "area_m2": 53.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-강남구-0055",
+      "name": "청담동 1층 상가",
+      "address": "서울 강남구 청담동",
+      "district": "강남구",
+      "latitude": 37.5212576457378,
+      "longitude": 127.057420571322,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 3140000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 25.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0001",
+      "name": "용강동 1층 상가",
+      "address": "서울 마포구 용강동",
+      "district": "마포구",
+      "latitude": 37.54087784899702,
+      "longitude": 126.94446306474099,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 1970000,
+        "maintenance_fee_krw": 160000,
+        "area_m2": 33.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0002",
+      "name": "동교동 1층 상가",
+      "address": "서울 마포구 동교동",
+      "district": "마포구",
+      "latitude": 37.5598443077084,
+      "longitude": 126.924202221797,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 92000000,
+        "monthly_rent_krw": 5300000,
+        "maintenance_fee_krw": 420000,
+        "area_m2": 28.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0003",
+      "name": "망원동 1층 상가",
+      "address": "서울 마포구 망원동",
+      "district": "마포구",
+      "latitude": 37.561642626707794,
+      "longitude": 126.90426100435242,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 54000000,
+        "monthly_rent_krw": 4270000,
+        "maintenance_fee_krw": 340000,
+        "area_m2": 28.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0004",
+      "name": "상암동 1층 상가",
+      "address": "서울 마포구 상암동",
+      "district": "마포구",
+      "latitude": 37.57995554532,
+      "longitude": 126.885277083196,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 27000000,
+        "monthly_rent_krw": 1900000,
+        "maintenance_fee_krw": 150000,
+        "area_m2": 33.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0005",
+      "name": "용강동 1층 상가",
+      "address": "서울 마포구 용강동",
+      "district": "마포구",
+      "latitude": 37.5420842498644,
+      "longitude": 126.944382962692,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 53000000,
+        "monthly_rent_krw": 2940000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 41.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0006",
+      "name": "합정동 1층 상가",
+      "address": "서울 마포구 합정동",
+      "district": "마포구",
+      "latitude": 37.552241382607,
+      "longitude": 126.908503268985,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 78000000,
+        "monthly_rent_krw": 3920000,
+        "maintenance_fee_krw": 310000,
+        "area_m2": 30.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0007",
+      "name": "공덕동 1층 상가",
+      "address": "서울 마포구 공덕동",
+      "district": "마포구",
+      "latitude": 37.54463126953802,
+      "longitude": 126.94810959349658,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 77000000,
+        "monthly_rent_krw": 5100000,
+        "maintenance_fee_krw": 410000,
+        "area_m2": 38.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0008",
+      "name": "합정동 1층 상가",
+      "address": "서울 마포구 합정동",
+      "district": "마포구",
+      "latitude": 37.5509991217329,
+      "longitude": 126.912350188555,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 90000000,
+        "monthly_rent_krw": 8870000,
+        "maintenance_fee_krw": 710000,
+        "area_m2": 43.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0009",
+      "name": "신공덕동 1층 상가",
+      "address": "서울 마포구 신공덕동",
+      "district": "마포구",
+      "latitude": 37.5435987965055,
+      "longitude": 126.954864557031,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 1710000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 37.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0010",
+      "name": "중동 1층 상가",
+      "address": "서울 마포구 중동",
+      "district": "마포구",
+      "latitude": 37.5710087591719,
+      "longitude": 126.908016208105,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 84000000,
+        "monthly_rent_krw": 5200000,
+        "maintenance_fee_krw": 420000,
+        "area_m2": 28.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0011",
+      "name": "망원동 1층 상가",
+      "address": "서울 마포구 망원동",
+      "district": "마포구",
+      "latitude": 37.55874719333944,
+      "longitude": 126.90035213505067,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 48000000,
+        "monthly_rent_krw": 4320000,
+        "maintenance_fee_krw": 350000,
+        "area_m2": 32.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0012",
+      "name": "창전동 1층 상가",
+      "address": "서울 마포구 창전동",
+      "district": "마포구",
+      "latitude": 37.54813784123249,
+      "longitude": 126.93006852795541,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 100000000,
+        "monthly_rent_krw": 8690000,
+        "maintenance_fee_krw": 700000,
+        "area_m2": 40.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0013",
+      "name": "신정동 1층 상가",
+      "address": "서울 마포구 신정동",
+      "district": "마포구",
+      "latitude": 37.5439228702906,
+      "longitude": 126.93174887013,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 17000000,
+        "monthly_rent_krw": 1140000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 32.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0014",
+      "name": "동교동 1층 상가",
+      "address": "서울 마포구 동교동",
+      "district": "마포구",
+      "latitude": 37.5562759892712,
+      "longitude": 126.920890952653,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 65000000,
+        "monthly_rent_krw": 4180000,
+        "maintenance_fee_krw": 330000,
+        "area_m2": 30.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0015",
+      "name": "서교동 1층 상가",
+      "address": "서울 마포구 서교동",
+      "district": "마포구",
+      "latitude": 37.5537531757758,
+      "longitude": 126.923596137434,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 37000000,
+        "monthly_rent_krw": 3090000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 45.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0016",
+      "name": "동교동 1층 상가",
+      "address": "서울 마포구 동교동",
+      "district": "마포구",
+      "latitude": 37.5572572432364,
+      "longitude": 126.925140808483,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 113000000,
+        "monthly_rent_krw": 5770000,
+        "maintenance_fee_krw": 460000,
+        "area_m2": 27.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0017",
+      "name": "연남동 1층 상가",
+      "address": "서울 마포구 연남동",
+      "district": "마포구",
+      "latitude": 37.56071583148978,
+      "longitude": 126.92048786043715,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 3550000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 32.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0018",
+      "name": "공덕동 1층 상가",
+      "address": "서울 마포구 공덕동",
+      "district": "마포구",
+      "latitude": 37.54534681133604,
+      "longitude": 126.94844857175795,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 97000000,
+        "monthly_rent_krw": 7980000,
+        "maintenance_fee_krw": 640000,
+        "area_m2": 32.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0019",
+      "name": "아현동 1층 상가",
+      "address": "서울 마포구 아현동",
+      "district": "마포구",
+      "latitude": 37.556166513054734,
+      "longitude": 126.94964076820055,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 2510000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 26.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0020",
+      "name": "중동 1층 상가",
+      "address": "서울 마포구 중동",
+      "district": "마포구",
+      "latitude": 37.5701404709445,
+      "longitude": 126.90383356849,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 84000000,
+        "monthly_rent_krw": 7580000,
+        "maintenance_fee_krw": 610000,
+        "area_m2": 31.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0021",
+      "name": "창전동 1층 상가",
+      "address": "서울 마포구 창전동",
+      "district": "마포구",
+      "latitude": 37.548146484530456,
+      "longitude": 126.93128558039953,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1760000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 31.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0022",
+      "name": "합정동 1층 상가",
+      "address": "서울 마포구 합정동",
+      "district": "마포구",
+      "latitude": 37.551044672694964,
+      "longitude": 126.90711278195484,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 30000000,
+        "monthly_rent_krw": 2500000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 39.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0023",
+      "name": "도화동 1층 상가",
+      "address": "서울 마포구 도화동",
+      "district": "마포구",
+      "latitude": 37.5388076585684,
+      "longitude": 126.951282910292,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 75000000,
+        "monthly_rent_krw": 4450000,
+        "maintenance_fee_krw": 360000,
+        "area_m2": 42.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0024",
+      "name": "창전동 1층 상가",
+      "address": "서울 마포구 창전동",
+      "district": "마포구",
+      "latitude": 37.5519385171203,
+      "longitude": 126.932379829037,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 39000000,
+        "monthly_rent_krw": 3040000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 24.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0025",
+      "name": "상암동 1층 상가",
+      "address": "서울 마포구 상암동",
+      "district": "마포구",
+      "latitude": 37.5782658823906,
+      "longitude": 126.882227592643,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 98000000,
+        "monthly_rent_krw": 6880000,
+        "maintenance_fee_krw": 550000,
+        "area_m2": 29.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0026",
+      "name": "창전동 1층 상가",
+      "address": "서울 마포구 창전동",
+      "district": "마포구",
+      "latitude": 37.5519348949792,
+      "longitude": 126.932348145262,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 120000000,
+        "monthly_rent_krw": 10240000,
+        "maintenance_fee_krw": 820000,
+        "area_m2": 36.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0027",
+      "name": "아현동 1층 상가",
+      "address": "서울 마포구 아현동",
+      "district": "마포구",
+      "latitude": 37.5564399967156,
+      "longitude": 126.955314039391,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 52000000,
+        "monthly_rent_krw": 4890000,
+        "maintenance_fee_krw": 390000,
+        "area_m2": 56.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0028",
+      "name": "상암동 1층 상가",
+      "address": "서울 마포구 상암동",
+      "district": "마포구",
+      "latitude": 37.5751630595861,
+      "longitude": 126.893838064624,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 11000000,
+        "monthly_rent_krw": 1090000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 29.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0029",
+      "name": "합정동 1층 상가",
+      "address": "서울 마포구 합정동",
+      "district": "마포구",
+      "latitude": 37.5507255881786,
+      "longitude": 126.911637561911,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 31000000,
+        "monthly_rent_krw": 1780000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 30.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0030",
+      "name": "용강동 1층 상가",
+      "address": "서울 마포구 용강동",
+      "district": "마포구",
+      "latitude": 37.5424272977131,
+      "longitude": 126.943890489438,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 106000000,
+        "monthly_rent_krw": 8720000,
+        "maintenance_fee_krw": 700000,
+        "area_m2": 53.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0031",
+      "name": "대흥동 1층 상가",
+      "address": "서울 마포구 대흥동",
+      "district": "마포구",
+      "latitude": 37.5474779139979,
+      "longitude": 126.941246650943,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 137000000,
+        "monthly_rent_krw": 8560000,
+        "maintenance_fee_krw": 680000,
+        "area_m2": 51.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0032",
+      "name": "성산동 1층 상가",
+      "address": "서울 마포구 성산동",
+      "district": "마포구",
+      "latitude": 37.565046120259,
+      "longitude": 126.901499393132,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 40000000,
+        "monthly_rent_krw": 2130000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 29.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0033",
+      "name": "토정동 1층 상가",
+      "address": "서울 마포구 토정동",
+      "district": "마포구",
+      "latitude": 37.5401004330653,
+      "longitude": 126.941048770015,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 124000000,
+        "monthly_rent_krw": 6550000,
+        "maintenance_fee_krw": 520000,
+        "area_m2": 15.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0034",
+      "name": "동교동 1층 상가",
+      "address": "서울 마포구 동교동",
+      "district": "마포구",
+      "latitude": 37.5565564234552,
+      "longitude": 126.922588281326,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 59000000,
+        "monthly_rent_krw": 3590000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 27.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0035",
+      "name": "용강동 1층 상가",
+      "address": "서울 마포구 용강동",
+      "district": "마포구",
+      "latitude": 37.5425469942315,
+      "longitude": 126.94360412051466,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 132000000,
+        "monthly_rent_krw": 7120000,
+        "maintenance_fee_krw": 570000,
+        "area_m2": 32.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0036",
+      "name": "공덕동 1층 상가",
+      "address": "서울 마포구 공덕동",
+      "district": "마포구",
+      "latitude": 37.54526132733128,
+      "longitude": 126.94870323600288,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 141000000,
+        "monthly_rent_krw": 8350000,
+        "maintenance_fee_krw": 670000,
+        "area_m2": 28.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0037",
+      "name": "상암동 1층 상가",
+      "address": "서울 마포구 상암동",
+      "district": "마포구",
+      "latitude": 37.5745009913192,
+      "longitude": 126.891049703871,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 1680000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 44.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0038",
+      "name": "동교동 1층 상가",
+      "address": "서울 마포구 동교동",
+      "district": "마포구",
+      "latitude": 37.5581281702748,
+      "longitude": 126.921839684593,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 59000000,
+        "monthly_rent_krw": 3130000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 51.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0039",
+      "name": "상암동 1층 상가",
+      "address": "서울 마포구 상암동",
+      "district": "마포구",
+      "latitude": 37.5801817206087,
+      "longitude": 126.880757363957,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 43000000,
+        "monthly_rent_krw": 2570000,
+        "maintenance_fee_krw": 210000,
+        "area_m2": 41.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0040",
+      "name": "망원동 1층 상가",
+      "address": "서울 마포구 망원동",
+      "district": "마포구",
+      "latitude": 37.5623777176916,
+      "longitude": 126.904110661086,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 119000000,
+        "monthly_rent_krw": 7410000,
+        "maintenance_fee_krw": 590000,
+        "area_m2": 28.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0041",
+      "name": "동교동 1층 상가",
+      "address": "서울 마포구 동교동",
+      "district": "마포구",
+      "latitude": 37.5569353176512,
+      "longitude": 126.923316740121,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1360000,
+        "maintenance_fee_krw": 110000,
+        "area_m2": 55.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0042",
+      "name": "성산동 1층 상가",
+      "address": "서울 마포구 성산동",
+      "district": "마포구",
+      "latitude": 37.5720016034097,
+      "longitude": 126.901259308701,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1470000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 55.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0043",
+      "name": "염리동 1층 상가",
+      "address": "서울 마포구 염리동",
+      "district": "마포구",
+      "latitude": 37.5521766203103,
+      "longitude": 126.946955703407,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 130000000,
+        "monthly_rent_krw": 10230000,
+        "maintenance_fee_krw": 820000,
+        "area_m2": 33.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0044",
+      "name": "성산동 1층 상가",
+      "address": "서울 마포구 성산동",
+      "district": "마포구",
+      "latitude": 37.5685943620851,
+      "longitude": 126.908363284608,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 65000000,
+        "monthly_rent_krw": 4390000,
+        "maintenance_fee_krw": 350000,
+        "area_m2": 26.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0045",
+      "name": "염리동 1층 상가",
+      "address": "서울 마포구 염리동",
+      "district": "마포구",
+      "latitude": 37.55335747073562,
+      "longitude": 126.94616493858427,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 74000000,
+        "monthly_rent_krw": 5790000,
+        "maintenance_fee_krw": 460000,
+        "area_m2": 51.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0046",
+      "name": "신수동 1층 상가",
+      "address": "서울 마포구 신수동",
+      "district": "마포구",
+      "latitude": 37.5471198029575,
+      "longitude": 126.936949086681,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 120000000,
+        "monthly_rent_krw": 8120000,
+        "maintenance_fee_krw": 650000,
+        "area_m2": 32,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0047",
+      "name": "공덕동 1층 상가",
+      "address": "서울 마포구 공덕동",
+      "district": "마포구",
+      "latitude": 37.5502930862841,
+      "longitude": 126.959468622054,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 59000000,
+        "monthly_rent_krw": 4990000,
+        "maintenance_fee_krw": 400000,
+        "area_m2": 44.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0048",
+      "name": "용강동 1층 상가",
+      "address": "서울 마포구 용강동",
+      "district": "마포구",
+      "latitude": 37.541220042117,
+      "longitude": 126.942196379644,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 2890000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 27.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0049",
+      "name": "상암동 1층 상가",
+      "address": "서울 마포구 상암동",
+      "district": "마포구",
+      "latitude": 37.5779525244356,
+      "longitude": 126.889889959943,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 67000000,
+        "monthly_rent_krw": 4470000,
+        "maintenance_fee_krw": 360000,
+        "area_m2": 22.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0050",
+      "name": "공덕동 1층 상가",
+      "address": "서울 마포구 공덕동",
+      "district": "마포구",
+      "latitude": 37.5449305683804,
+      "longitude": 126.950599981456,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 30000000,
+        "monthly_rent_krw": 2790000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 56.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0051",
+      "name": "신수동 1층 상가",
+      "address": "서울 마포구 신수동",
+      "district": "마포구",
+      "latitude": 37.5454242906967,
+      "longitude": 126.935590353301,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 26000000,
+        "monthly_rent_krw": 1800000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 38.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0052",
+      "name": "합정동 1층 상가",
+      "address": "서울 마포구 합정동",
+      "district": "마포구",
+      "latitude": 37.5500761703374,
+      "longitude": 126.911907661753,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 17000000,
+        "monthly_rent_krw": 1460000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 37.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0053",
+      "name": "염리동 1층 상가",
+      "address": "서울 마포구 염리동",
+      "district": "마포구",
+      "latitude": 37.55377107602342,
+      "longitude": 126.94626875821143,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 2070000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 27.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0054",
+      "name": "대흥동 1층 상가",
+      "address": "서울 마포구 대흥동",
+      "district": "마포구",
+      "latitude": 37.555676096914475,
+      "longitude": 126.94308834145569,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1590000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 26.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-마포구-0055",
+      "name": "성산동 1층 상가",
+      "address": "서울 마포구 성산동",
+      "district": "마포구",
+      "latitude": 37.5646459232108,
+      "longitude": 126.905724067542,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 34000000,
+        "monthly_rent_krw": 1700000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 30,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0001",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.4999376189526,
+      "longitude": 127.000076900879,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 2390000,
+        "maintenance_fee_krw": 190000,
+        "area_m2": 73.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0002",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5064463444198,
+      "longitude": 127.005736398774,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 23000000,
+        "monthly_rent_krw": 1510000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 41.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0003",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.512639420805016,
+      "longitude": 127.01159364064412,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 62000000,
+        "monthly_rent_krw": 5660000,
+        "maintenance_fee_krw": 450000,
+        "area_m2": 182.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0004",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5043695068564,
+      "longitude": 127.021527863812,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 112000000,
+        "monthly_rent_krw": 9670000,
+        "maintenance_fee_krw": 770000,
+        "area_m2": 64.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0005",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5049688125586,
+      "longitude": 127.002307181166,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 2020000,
+        "maintenance_fee_krw": 160000,
+        "area_m2": 26.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0006",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.50214525966583,
+      "longitude": 126.98691289462654,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 60000000,
+        "monthly_rent_krw": 3110000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 18.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0007",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5045327454147,
+      "longitude": 127.000850485366,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 1038000000,
+        "monthly_rent_krw": 66610000,
+        "maintenance_fee_krw": 5330000,
+        "area_m2": 141.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0008",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.4922113385377,
+      "longitude": 127.025953634156,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 99000000,
+        "monthly_rent_krw": 5700000,
+        "maintenance_fee_krw": 460000,
+        "area_m2": 27.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0009",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.512619605023616,
+      "longitude": 127.01152916564342,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 41000000,
+        "monthly_rent_krw": 2710000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 24.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0010",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.4999471432815,
+      "longitude": 127.017442930838,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 99000000,
+        "monthly_rent_krw": 8450000,
+        "maintenance_fee_krw": 680000,
+        "area_m2": 19.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0011",
+      "name": "양재동 1층 상가",
+      "address": "서울 서초구 양재동",
+      "district": "서초구",
+      "latitude": 37.466672608858595,
+      "longitude": 127.04060940372358,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 42000000,
+        "monthly_rent_krw": 2510000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 69.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0012",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5001030496515,
+      "longitude": 127.009151224729,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 91000000,
+        "monthly_rent_krw": 4650000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 47.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0013",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.50614172735781,
+      "longitude": 127.00715350449697,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 1140000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 39.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0014",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5064354738576,
+      "longitude": 127.006835723414,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 72000000,
+        "monthly_rent_krw": 5190000,
+        "maintenance_fee_krw": 420000,
+        "area_m2": 37.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0015",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.503335253777806,
+      "longitude": 127.00371289741949,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 21000000,
+        "monthly_rent_krw": 1570000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 67,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0016",
+      "name": "양재동 1층 상가",
+      "address": "서울 서초구 양재동",
+      "district": "서초구",
+      "latitude": 37.462467888657955,
+      "longitude": 127.03694824933952,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 29000000,
+        "monthly_rent_krw": 2540000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 21.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0017",
+      "name": "방배동 1층 상가",
+      "address": "서울 서초구 방배동",
+      "district": "서초구",
+      "latitude": 37.4887821950748,
+      "longitude": 126.996350012985,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 23000000,
+        "monthly_rent_krw": 1520000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 29,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0018",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5030838530593,
+      "longitude": 126.995693370099,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 75000000,
+        "monthly_rent_krw": 5920000,
+        "maintenance_fee_krw": 470000,
+        "area_m2": 124.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0019",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.505127280283,
+      "longitude": 127.005579092522,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 16000000,
+        "monthly_rent_krw": 1000000,
+        "maintenance_fee_krw": 80000,
+        "area_m2": 33.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0020",
+      "name": "양재동 1층 상가",
+      "address": "서울 서초구 양재동",
+      "district": "서초구",
+      "latitude": 37.46712435718499,
+      "longitude": 127.03960246102574,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 154000000,
+        "monthly_rent_krw": 10360000,
+        "maintenance_fee_krw": 830000,
+        "area_m2": 48.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0021",
+      "name": "방배동 1층 상가",
+      "address": "서울 서초구 방배동",
+      "district": "서초구",
+      "latitude": 37.4931937297512,
+      "longitude": 126.986639673848,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 69000000,
+        "monthly_rent_krw": 3570000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 22.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0022",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.48877628167773,
+      "longitude": 127.02778309262136,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 7000000,
+        "monthly_rent_krw": 510000,
+        "maintenance_fee_krw": 40000,
+        "area_m2": 69.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0023",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5105294082663,
+      "longitude": 127.010070914186,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 2870000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 19.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0024",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.51288987209428,
+      "longitude": 127.01187418987007,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 47000000,
+        "monthly_rent_krw": 2710000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 32.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0025",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.505348901867954,
+      "longitude": 127.00609935838467,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1630000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 24.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0026",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5126349251816,
+      "longitude": 127.01149749756901,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 115000000,
+        "monthly_rent_krw": 6170000,
+        "maintenance_fee_krw": 490000,
+        "area_m2": 20.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0027",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5128375966765,
+      "longitude": 127.01204384507,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 168000000,
+        "monthly_rent_krw": 9240000,
+        "maintenance_fee_krw": 740000,
+        "area_m2": 27.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0028",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.507512998435224,
+      "longitude": 127.0080640980258,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 27000000,
+        "monthly_rent_krw": 1840000,
+        "maintenance_fee_krw": 150000,
+        "area_m2": 28.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0029",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.484734498793,
+      "longitude": 127.01769492401,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 49000000,
+        "monthly_rent_krw": 2950000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 27.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0030",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.4918416748532,
+      "longitude": 127.027070710137,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 1210000,
+        "maintenance_fee_krw": 100000,
+        "area_m2": 50,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0031",
+      "name": "방배동 1층 상가",
+      "address": "서울 서초구 방배동",
+      "district": "서초구",
+      "latitude": 37.48997326001428,
+      "longitude": 126.99459390799424,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 604000000,
+        "monthly_rent_krw": 30630000,
+        "maintenance_fee_krw": 2450000,
+        "area_m2": 177.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0032",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5127790357816,
+      "longitude": 127.012000854278,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 28000000,
+        "monthly_rent_krw": 2390000,
+        "maintenance_fee_krw": 190000,
+        "area_m2": 80.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0033",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5050984473097,
+      "longitude": 127.005596054973,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 394000000,
+        "monthly_rent_krw": 21330000,
+        "maintenance_fee_krw": 1710000,
+        "area_m2": 179.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0034",
+      "name": "우면동 1층 상가",
+      "address": "서울 서초구 우면동",
+      "district": "서초구",
+      "latitude": 37.4708539473571,
+      "longitude": 127.025381019618,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 16000000,
+        "monthly_rent_krw": 1000000,
+        "maintenance_fee_krw": 80000,
+        "area_m2": 57.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0035",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.512853819355605,
+      "longitude": 127.01199860407196,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 4310000,
+        "maintenance_fee_krw": 340000,
+        "area_m2": 75.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0036",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.506031816678,
+      "longitude": 127.006953309276,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 96000000,
+        "monthly_rent_krw": 8730000,
+        "maintenance_fee_krw": 700000,
+        "area_m2": 34.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0037",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.494293937549,
+      "longitude": 127.028261207484,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 83000000,
+        "monthly_rent_krw": 5800000,
+        "maintenance_fee_krw": 460000,
+        "area_m2": 55.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0038",
+      "name": "서초동 1층 상가",
+      "address": "서울 서초구 서초동",
+      "district": "서초구",
+      "latitude": 37.4836065883078,
+      "longitude": 127.01664767697,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 61000000,
+        "monthly_rent_krw": 3070000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 54.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0039",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5069904485996,
+      "longitude": 127.007564139084,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 98000000,
+        "monthly_rent_krw": 7830000,
+        "maintenance_fee_krw": 630000,
+        "area_m2": 53.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0040",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.507089388687554,
+      "longitude": 127.0098736574938,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 934000000,
+        "monthly_rent_krw": 60220000,
+        "maintenance_fee_krw": 4820000,
+        "area_m2": 144.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0041",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.504655177521,
+      "longitude": 127.005044110271,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 110000000,
+        "monthly_rent_krw": 8480000,
+        "maintenance_fee_krw": 680000,
+        "area_m2": 19.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0042",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.50605179660957,
+      "longitude": 127.0033262342292,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 1150000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 65.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0043",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.514360334746,
+      "longitude": 127.011632364686,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 43000000,
+        "monthly_rent_krw": 3550000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 21.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0044",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.50673828042227,
+      "longitude": 127.00551926952423,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 46000000,
+        "monthly_rent_krw": 3550000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 18.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0045",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.50701754440256,
+      "longitude": 127.00645802179854,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 44000000,
+        "monthly_rent_krw": 2600000,
+        "maintenance_fee_krw": 210000,
+        "area_m2": 19.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0046",
+      "name": "양재동 1층 상가",
+      "address": "서울 서초구 양재동",
+      "district": "서초구",
+      "latitude": 37.46731716555661,
+      "longitude": 127.03962630120917,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 75000000,
+        "monthly_rent_krw": 6810000,
+        "maintenance_fee_krw": 540000,
+        "area_m2": 129.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0047",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.509109845314,
+      "longitude": 127.001456771321,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 52000000,
+        "monthly_rent_krw": 2940000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 63.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0048",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.50768219834,
+      "longitude": 127.01047317198,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 36000000,
+        "monthly_rent_krw": 2480000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 18.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0049",
+      "name": "양재동 1층 상가",
+      "address": "서울 서초구 양재동",
+      "district": "서초구",
+      "latitude": 37.46827870762501,
+      "longitude": 127.03913620728262,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 51000000,
+        "monthly_rent_krw": 2670000,
+        "maintenance_fee_krw": 210000,
+        "area_m2": 21.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0050",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.516831748883256,
+      "longitude": 127.01890491264508,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 49000000,
+        "monthly_rent_krw": 2730000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 21.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0051",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.50490215955158,
+      "longitude": 126.99948088469911,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 31000000,
+        "monthly_rent_krw": 2280000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 18.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0052",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5057112447336,
+      "longitude": 127.002103627189,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 48000000,
+        "monthly_rent_krw": 3820000,
+        "maintenance_fee_krw": 310000,
+        "area_m2": 31,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0053",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5087674185554,
+      "longitude": 127.003569525844,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1240000,
+        "maintenance_fee_krw": 100000,
+        "area_m2": 52.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0054",
+      "name": "잠원동 1층 상가",
+      "address": "서울 서초구 잠원동",
+      "district": "서초구",
+      "latitude": 37.5127781367296,
+      "longitude": 127.011981625622,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 216000000,
+        "monthly_rent_krw": 13470000,
+        "maintenance_fee_krw": 1080000,
+        "area_m2": 58.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-서초구-0055",
+      "name": "반포동 1층 상가",
+      "address": "서울 서초구 반포동",
+      "district": "서초구",
+      "latitude": 37.5021714762429,
+      "longitude": 126.9877271589,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 13000000,
+        "monthly_rent_krw": 1060000,
+        "maintenance_fee_krw": 80000,
+        "area_m2": 35.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0001",
+      "name": "용답동 1층 상가",
+      "address": "서울 성동구 용답동",
+      "district": "성동구",
+      "latitude": 37.5590708405345,
+      "longitude": 127.067572290106,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 64000000,
+        "monthly_rent_krw": 3700000,
+        "maintenance_fee_krw": 300000,
+        "area_m2": 31.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0002",
+      "name": "상왕십리동 1층 상가",
+      "address": "서울 성동구 상왕십리동",
+      "district": "성동구",
+      "latitude": 37.56651734161973,
+      "longitude": 127.02406421606156,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 44000000,
+        "monthly_rent_krw": 2640000,
+        "maintenance_fee_krw": 210000,
+        "area_m2": 35.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0003",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5389369509055,
+      "longitude": 127.053903895966,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 2840000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 40.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0004",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.54234427963056,
+      "longitude": 127.05823107712955,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 51000000,
+        "monthly_rent_krw": 3540000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 27.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0005",
+      "name": "금호동3가 1층 상가",
+      "address": "서울 성동구 금호동3가",
+      "district": "성동구",
+      "latitude": 37.5505467802866,
+      "longitude": 127.021392890821,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 47000000,
+        "monthly_rent_krw": 2470000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 38,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0006",
+      "name": "옥수동 1층 상가",
+      "address": "서울 성동구 옥수동",
+      "district": "성동구",
+      "latitude": 37.54165178313851,
+      "longitude": 127.01799577401925,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 39000000,
+        "monthly_rent_krw": 2490000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 37,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0007",
+      "name": "상왕십리동 1층 상가",
+      "address": "서울 성동구 상왕십리동",
+      "district": "성동구",
+      "latitude": 37.5652825141914,
+      "longitude": 127.02623703292308,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 1140000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 16.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0008",
+      "name": "성수동1가 1층 상가",
+      "address": "서울 성동구 성수동1가",
+      "district": "성동구",
+      "latitude": 37.5396504162747,
+      "longitude": 127.045654681897,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 2750000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 54.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0009",
+      "name": "상왕십리동 1층 상가",
+      "address": "서울 성동구 상왕십리동",
+      "district": "성동구",
+      "latitude": 37.5708079447618,
+      "longitude": 127.023757701716,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 14000000,
+        "monthly_rent_krw": 1280000,
+        "maintenance_fee_krw": 100000,
+        "area_m2": 21.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0010",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.54256137619894,
+      "longitude": 127.05455035079717,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 76000000,
+        "monthly_rent_krw": 4330000,
+        "maintenance_fee_krw": 350000,
+        "area_m2": 39,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0011",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.542522903055904,
+      "longitude": 127.05396305451004,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 39000000,
+        "monthly_rent_krw": 3130000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 50.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0012",
+      "name": "응봉동 1층 상가",
+      "address": "서울 성동구 응봉동",
+      "district": "성동구",
+      "latitude": 37.5500079893481,
+      "longitude": 127.029694530853,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 30000000,
+        "monthly_rent_krw": 3000000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 55,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0013",
+      "name": "홍익동 1층 상가",
+      "address": "서울 성동구 홍익동",
+      "district": "성동구",
+      "latitude": 37.5648439038109,
+      "longitude": 127.02932350410599,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 48000000,
+        "monthly_rent_krw": 3710000,
+        "maintenance_fee_krw": 300000,
+        "area_m2": 22.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0014",
+      "name": "성수동1가 1층 상가",
+      "address": "서울 성동구 성수동1가",
+      "district": "성동구",
+      "latitude": 37.5482610291505,
+      "longitude": 127.048510496014,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 19000000,
+        "monthly_rent_krw": 1170000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 24.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0015",
+      "name": "금호동4가 1층 상가",
+      "address": "서울 성동구 금호동4가",
+      "district": "성동구",
+      "latitude": 37.5448699805423,
+      "longitude": 127.024030098282,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 49000000,
+        "monthly_rent_krw": 3630000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 41.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0016",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.5581436293208,
+      "longitude": 127.037346289905,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 40000000,
+        "monthly_rent_krw": 2540000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 26.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0017",
+      "name": "송정동 1층 상가",
+      "address": "서울 성동구 송정동",
+      "district": "성동구",
+      "latitude": 37.5483770771756,
+      "longitude": 127.065658108148,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 68000000,
+        "monthly_rent_krw": 4930000,
+        "maintenance_fee_krw": 390000,
+        "area_m2": 36,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0018",
+      "name": "옥수동 1층 상가",
+      "address": "서울 성동구 옥수동",
+      "district": "성동구",
+      "latitude": 37.5426914019684,
+      "longitude": 127.011953596386,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 42000000,
+        "monthly_rent_krw": 3680000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 39.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0019",
+      "name": "마장동 1층 상가",
+      "address": "서울 성동구 마장동",
+      "district": "성동구",
+      "latitude": 37.5627697516502,
+      "longitude": 127.041529631796,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 44000000,
+        "monthly_rent_krw": 3240000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 36.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0020",
+      "name": "송정동 1층 상가",
+      "address": "서울 성동구 송정동",
+      "district": "성동구",
+      "latitude": 37.5553278231119,
+      "longitude": 127.07110896658,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 57000000,
+        "monthly_rent_krw": 3420000,
+        "maintenance_fee_krw": 270000,
+        "area_m2": 35.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0021",
+      "name": "성수동1가 1층 상가",
+      "address": "서울 성동구 성수동1가",
+      "district": "성동구",
+      "latitude": 37.5384542186423,
+      "longitude": 127.04931427941,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 52000000,
+        "monthly_rent_krw": 3570000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 23.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0022",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.5549188582847,
+      "longitude": 127.034725867673,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 37000000,
+        "monthly_rent_krw": 2510000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 35.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0023",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.5572883297103,
+      "longitude": 127.028570185277,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 20000000,
+        "monthly_rent_krw": 1710000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 28.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0024",
+      "name": "하왕십리동 1층 상가",
+      "address": "서울 성동구 하왕십리동",
+      "district": "성동구",
+      "latitude": 37.5630295976395,
+      "longitude": 127.028087946549,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 21000000,
+        "monthly_rent_krw": 1100000,
+        "maintenance_fee_krw": 90000,
+        "area_m2": 26.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0025",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5429643543697,
+      "longitude": 127.054047107001,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 40000000,
+        "monthly_rent_krw": 2170000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 29.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0026",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5419430414836,
+      "longitude": 127.060604713487,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 3900000,
+        "maintenance_fee_krw": 310000,
+        "area_m2": 55.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0027",
+      "name": "마장동 1층 상가",
+      "address": "서울 성동구 마장동",
+      "district": "성동구",
+      "latitude": 37.5714052737772,
+      "longitude": 127.040439806571,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 32000000,
+        "monthly_rent_krw": 2500000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 34.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0028",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.5551858835575,
+      "longitude": 127.033585208159,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 35000000,
+        "monthly_rent_krw": 2240000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 39.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0029",
+      "name": "용답동 1층 상가",
+      "address": "서울 성동구 용답동",
+      "district": "성동구",
+      "latitude": 37.5690035950494,
+      "longitude": 127.048967665266,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 43000000,
+        "monthly_rent_krw": 3540000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 32.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0030",
+      "name": "하왕십리동 1층 상가",
+      "address": "서울 성동구 하왕십리동",
+      "district": "성동구",
+      "latitude": 37.56693454541955,
+      "longitude": 127.02385381550938,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 2470000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 28.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0031",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5355683704633,
+      "longitude": 127.05529087093,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 16000000,
+        "monthly_rent_krw": 970000,
+        "maintenance_fee_krw": 80000,
+        "area_m2": 25.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0032",
+      "name": "마장동 1층 상가",
+      "address": "서울 성동구 마장동",
+      "district": "성동구",
+      "latitude": 37.5713962870734,
+      "longitude": 127.040371883223,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 1910000,
+        "maintenance_fee_krw": 150000,
+        "area_m2": 25.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0033",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.556574976633,
+      "longitude": 127.027573972389,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 1400000,
+        "maintenance_fee_krw": 110000,
+        "area_m2": 16.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0034",
+      "name": "금호동4가 1층 상가",
+      "address": "서울 성동구 금호동4가",
+      "district": "성동구",
+      "latitude": 37.5468338459818,
+      "longitude": 127.025519918659,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 53000000,
+        "monthly_rent_krw": 4860000,
+        "maintenance_fee_krw": 390000,
+        "area_m2": 47.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0035",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.56084544920479,
+      "longitude": 127.04088116540875,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 27000000,
+        "monthly_rent_krw": 1440000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 16.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0036",
+      "name": "성수동1가 1층 상가",
+      "address": "서울 성동구 성수동1가",
+      "district": "성동구",
+      "latitude": 37.55092652342366,
+      "longitude": 127.04767365966947,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 81000000,
+        "monthly_rent_krw": 4410000,
+        "maintenance_fee_krw": 350000,
+        "area_m2": 33.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0037",
+      "name": "용답동 1층 상가",
+      "address": "서울 성동구 용답동",
+      "district": "성동구",
+      "latitude": 37.563407742677356,
+      "longitude": 127.0526142311715,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 37000000,
+        "monthly_rent_krw": 3170000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 19.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0038",
+      "name": "금호동1가 1층 상가",
+      "address": "서울 성동구 금호동1가",
+      "district": "성동구",
+      "latitude": 37.5499869547993,
+      "longitude": 127.027250156376,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 32000000,
+        "monthly_rent_krw": 2160000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 41.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0039",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.5549621035043,
+      "longitude": 127.034734941549,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 49000000,
+        "monthly_rent_krw": 3210000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 22.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0040",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.54660337749283,
+      "longitude": 127.05621787929,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 43000000,
+        "monthly_rent_krw": 3660000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 41.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0041",
+      "name": "성수동1가 1층 상가",
+      "address": "서울 성동구 성수동1가",
+      "district": "성동구",
+      "latitude": 37.5503297100001,
+      "longitude": 127.048538996458,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 35000000,
+        "monthly_rent_krw": 3450000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 24.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0042",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.55583853338608,
+      "longitude": 127.04360818552804,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 36000000,
+        "monthly_rent_krw": 2290000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 45.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0043",
+      "name": "응봉동 1층 상가",
+      "address": "서울 성동구 응봉동",
+      "district": "성동구",
+      "latitude": 37.5538558768506,
+      "longitude": 127.034053139016,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 29000000,
+        "monthly_rent_krw": 1760000,
+        "maintenance_fee_krw": 140000,
+        "area_m2": 34.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0044",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.548187803574024,
+      "longitude": 127.05325987325968,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 53000000,
+        "monthly_rent_krw": 3410000,
+        "maintenance_fee_krw": 270000,
+        "area_m2": 26.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0045",
+      "name": "행당동 1층 상가",
+      "address": "서울 성동구 행당동",
+      "district": "성동구",
+      "latitude": 37.5620067745355,
+      "longitude": 127.038373658624,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 1850000,
+        "maintenance_fee_krw": 150000,
+        "area_m2": 17.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0046",
+      "name": "마장동 1층 상가",
+      "address": "서울 성동구 마장동",
+      "district": "성동구",
+      "latitude": 37.5706228316508,
+      "longitude": 127.04152946398,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 1570000,
+        "maintenance_fee_krw": 130000,
+        "area_m2": 39.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0047",
+      "name": "도선동 1층 상가",
+      "address": "서울 성동구 도선동",
+      "district": "성동구",
+      "latitude": 37.564351711533,
+      "longitude": 127.030306904683,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 57000000,
+        "monthly_rent_krw": 3280000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 42.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0048",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5478343453249,
+      "longitude": 127.05384806331728,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 44000000,
+        "monthly_rent_krw": 3050000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 15.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0049",
+      "name": "성수동1가 1층 상가",
+      "address": "서울 성동구 성수동1가",
+      "district": "성동구",
+      "latitude": 37.5462719963746,
+      "longitude": 127.0475948785,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 2290000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 34.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0050",
+      "name": "옥수동 1층 상가",
+      "address": "서울 성동구 옥수동",
+      "district": "성동구",
+      "latitude": 37.5432888639813,
+      "longitude": 127.01822700366,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 35000000,
+        "monthly_rent_krw": 2110000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 18.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0051",
+      "name": "상왕십리동 1층 상가",
+      "address": "서울 성동구 상왕십리동",
+      "district": "성동구",
+      "latitude": 37.5693266782755,
+      "longitude": 127.023906647767,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 51000000,
+        "monthly_rent_krw": 3160000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 26.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0052",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5385670233118,
+      "longitude": 127.055026056127,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 54000000,
+        "monthly_rent_krw": 3230000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 53.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0053",
+      "name": "하왕십리동 1층 상가",
+      "address": "서울 성동구 하왕십리동",
+      "district": "성동구",
+      "latitude": 37.56259383198478,
+      "longitude": 127.03213541498359,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 24000000,
+        "monthly_rent_krw": 1500000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 29.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0054",
+      "name": "마장동 1층 상가",
+      "address": "서울 성동구 마장동",
+      "district": "성동구",
+      "latitude": 37.5702622686283,
+      "longitude": 127.041995630327,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 59000000,
+        "monthly_rent_krw": 3590000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 41.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-성동구-0055",
+      "name": "성수동2가 1층 상가",
+      "address": "서울 성동구 성수동2가",
+      "district": "성동구",
+      "latitude": 37.5362976022133,
+      "longitude": 127.060161144208,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 44000000,
+        "monthly_rent_krw": 2440000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 23.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0001",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.5110546809676,
+      "longitude": 126.910668655293,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 77000000,
+        "monthly_rent_krw": 4720000,
+        "maintenance_fee_krw": 380000,
+        "area_m2": 21.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0002",
+      "name": "양평동2가 1층 상가",
+      "address": "서울 영등포구 양평동2가",
+      "district": "영등포구",
+      "latitude": 37.5224125082506,
+      "longitude": 126.883528125616,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 79000000,
+        "monthly_rent_krw": 4670000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 35.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0003",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.506533277498626,
+      "longitude": 126.91045349932045,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 52000000,
+        "monthly_rent_krw": 4450000,
+        "maintenance_fee_krw": 360000,
+        "area_m2": 32,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0004",
+      "name": "당산동4가 1층 상가",
+      "address": "서울 영등포구 당산동4가",
+      "district": "영등포구",
+      "latitude": 37.52780201908864,
+      "longitude": 126.89992834311154,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 63000000,
+        "monthly_rent_krw": 4600000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 36.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0005",
+      "name": "여의도동 1층 상가",
+      "address": "서울 영등포구 여의도동",
+      "district": "영등포구",
+      "latitude": 37.5225616246632,
+      "longitude": 126.931202715248,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 15000000,
+        "monthly_rent_krw": 1250000,
+        "maintenance_fee_krw": 100000,
+        "area_m2": 27.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0006",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.5103848558768,
+      "longitude": 126.916302095196,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 72000000,
+        "monthly_rent_krw": 4710000,
+        "maintenance_fee_krw": 380000,
+        "area_m2": 35.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0007",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.4990167353351,
+      "longitude": 126.90998637494,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 23000000,
+        "monthly_rent_krw": 1530000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 22.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0008",
+      "name": "대림동 1층 상가",
+      "address": "서울 영등포구 대림동",
+      "district": "영등포구",
+      "latitude": 37.4974059542015,
+      "longitude": 126.899104943661,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 34000000,
+        "monthly_rent_krw": 2410000,
+        "maintenance_fee_krw": 190000,
+        "area_m2": 26.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0009",
+      "name": "문래동6가 1층 상가",
+      "address": "서울 영등포구 문래동6가",
+      "district": "영등포구",
+      "latitude": 37.521432856096105,
+      "longitude": 126.88602964251056,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 18000000,
+        "monthly_rent_krw": 1230000,
+        "maintenance_fee_krw": 100000,
+        "area_m2": 23.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0010",
+      "name": "당산동1가 1층 상가",
+      "address": "서울 영등포구 당산동1가",
+      "district": "영등포구",
+      "latitude": 37.522888337111276,
+      "longitude": 126.90038061543343,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 30000000,
+        "monthly_rent_krw": 2720000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 37.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0011",
+      "name": "당산동3가 1층 상가",
+      "address": "서울 영등포구 당산동3가",
+      "district": "영등포구",
+      "latitude": 37.5249583457317,
+      "longitude": 126.892619597055,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 78000000,
+        "monthly_rent_krw": 5540000,
+        "maintenance_fee_krw": 440000,
+        "area_m2": 25.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0012",
+      "name": "양평동1가 1층 상가",
+      "address": "서울 영등포구 양평동1가",
+      "district": "영등포구",
+      "latitude": 37.5228958769393,
+      "longitude": 126.887694866508,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 73000000,
+        "monthly_rent_krw": 4000000,
+        "maintenance_fee_krw": 320000,
+        "area_m2": 33.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0013",
+      "name": "영등포동1가 1층 상가",
+      "address": "서울 영등포구 영등포동1가",
+      "district": "영등포구",
+      "latitude": 37.5184249286418,
+      "longitude": 126.913136009533,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 62000000,
+        "monthly_rent_krw": 4480000,
+        "maintenance_fee_krw": 360000,
+        "area_m2": 38.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0014",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.5147544866286,
+      "longitude": 126.923943576776,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 60000000,
+        "monthly_rent_krw": 3450000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 34.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0015",
+      "name": "당산동1가 1층 상가",
+      "address": "서울 영등포구 당산동1가",
+      "district": "영등포구",
+      "latitude": 37.5235998901629,
+      "longitude": 126.896951976129,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 64000000,
+        "monthly_rent_krw": 3470000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 20.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0016",
+      "name": "여의도동 1층 상가",
+      "address": "서울 영등포구 여의도동",
+      "district": "영등포구",
+      "latitude": 37.5260392667574,
+      "longitude": 126.930814883489,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 42000000,
+        "monthly_rent_krw": 2370000,
+        "maintenance_fee_krw": 190000,
+        "area_m2": 21.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0017",
+      "name": "도림동 1층 상가",
+      "address": "서울 영등포구 도림동",
+      "district": "영등포구",
+      "latitude": 37.506146092600304,
+      "longitude": 126.8995568874664,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 32000000,
+        "monthly_rent_krw": 2600000,
+        "maintenance_fee_krw": 210000,
+        "area_m2": 24.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0018",
+      "name": "영등포동3가 1층 상가",
+      "address": "서울 영등포구 영등포동3가",
+      "district": "영등포구",
+      "latitude": 37.516461205977,
+      "longitude": 126.906657960553,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 35000000,
+        "monthly_rent_krw": 2260000,
+        "maintenance_fee_krw": 180000,
+        "area_m2": 27.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0019",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.5230489446441,
+      "longitude": 126.906161056699,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 79000000,
+        "monthly_rent_krw": 4630000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 34.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0020",
+      "name": "여의도동 1층 상가",
+      "address": "서울 영등포구 여의도동",
+      "district": "영등포구",
+      "latitude": 37.5297641984278,
+      "longitude": 126.922421387226,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 28000000,
+        "monthly_rent_krw": 2330000,
+        "maintenance_fee_krw": 190000,
+        "area_m2": 23.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0021",
+      "name": "여의도동 1층 상가",
+      "address": "서울 영등포구 여의도동",
+      "district": "영등포구",
+      "latitude": 37.5243098758753,
+      "longitude": 126.930189760916,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 106000000,
+        "monthly_rent_krw": 6170000,
+        "maintenance_fee_krw": 490000,
+        "area_m2": 27.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0022",
+      "name": "문래동1가 1층 상가",
+      "address": "서울 영등포구 문래동1가",
+      "district": "영등포구",
+      "latitude": 37.5106036751572,
+      "longitude": 126.89273969722,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 52000000,
+        "monthly_rent_krw": 2720000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 21.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0023",
+      "name": "대림동 1층 상가",
+      "address": "서울 영등포구 대림동",
+      "district": "영등포구",
+      "latitude": 37.4960120665932,
+      "longitude": 126.90789115030113,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 94000000,
+        "monthly_rent_krw": 5900000,
+        "maintenance_fee_krw": 470000,
+        "area_m2": 29.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0024",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.524370929386265,
+      "longitude": 126.90757574292442,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 32000000,
+        "monthly_rent_krw": 2470000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 35.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0025",
+      "name": "당산동4가 1층 상가",
+      "address": "서울 영등포구 당산동4가",
+      "district": "영등포구",
+      "latitude": 37.5279794106765,
+      "longitude": 126.897701672279,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 48000000,
+        "monthly_rent_krw": 3120000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 38.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0026",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.5241007554949,
+      "longitude": 126.907737846332,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 120000000,
+        "monthly_rent_krw": 6880000,
+        "maintenance_fee_krw": 550000,
+        "area_m2": 24.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0027",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.4998287891174,
+      "longitude": 126.909132706641,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 3650000,
+        "maintenance_fee_krw": 290000,
+        "area_m2": 38,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0028",
+      "name": "대림동 1층 상가",
+      "address": "서울 영등포구 대림동",
+      "district": "영등포구",
+      "latitude": 37.5015864712873,
+      "longitude": 126.901058071548,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 2520000,
+        "maintenance_fee_krw": 200000,
+        "area_m2": 24,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0029",
+      "name": "문래동2가 1층 상가",
+      "address": "서울 영등포구 문래동2가",
+      "district": "영등포구",
+      "latitude": 37.512963593099,
+      "longitude": 126.891958129296,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 56000000,
+        "monthly_rent_krw": 2830000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 22.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0030",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.5236591370606,
+      "longitude": 126.906430661871,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 46000000,
+        "monthly_rent_krw": 3490000,
+        "maintenance_fee_krw": 280000,
+        "area_m2": 25.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0031",
+      "name": "영등포동5가 1층 상가",
+      "address": "서울 영등포구 영등포동5가",
+      "district": "영등포구",
+      "latitude": 37.5205185031838,
+      "longitude": 126.90562577201,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 86000000,
+        "monthly_rent_krw": 4320000,
+        "maintenance_fee_krw": 350000,
+        "area_m2": 34.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0032",
+      "name": "당산동5가 1층 상가",
+      "address": "서울 영등포구 당산동5가",
+      "district": "영등포구",
+      "latitude": 37.5325258834456,
+      "longitude": 126.904171520342,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 35000000,
+        "monthly_rent_krw": 1980000,
+        "maintenance_fee_krw": 160000,
+        "area_m2": 20.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0033",
+      "name": "당산동1가 1층 상가",
+      "address": "서울 영등포구 당산동1가",
+      "district": "영등포구",
+      "latitude": 37.5216110834296,
+      "longitude": 126.897649281623,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 35000000,
+        "monthly_rent_krw": 2920000,
+        "maintenance_fee_krw": 230000,
+        "area_m2": 27,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0034",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.5062034475581,
+      "longitude": 126.901327939928,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 1820000,
+        "maintenance_fee_krw": 150000,
+        "area_m2": 31.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0035",
+      "name": "양평동1가 1층 상가",
+      "address": "서울 영등포구 양평동1가",
+      "district": "영등포구",
+      "latitude": 37.5238603134697,
+      "longitude": 126.8899966575,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 65000000,
+        "monthly_rent_krw": 4860000,
+        "maintenance_fee_krw": 390000,
+        "area_m2": 33.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0036",
+      "name": "양평동1가 1층 상가",
+      "address": "서울 영등포구 양평동1가",
+      "district": "영등포구",
+      "latitude": 37.5215551530386,
+      "longitude": 126.887660677017,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 112000000,
+        "monthly_rent_krw": 7280000,
+        "maintenance_fee_krw": 580000,
+        "area_m2": 28.5,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0037",
+      "name": "영등포동3가 1층 상가",
+      "address": "서울 영등포구 영등포동3가",
+      "district": "영등포구",
+      "latitude": 37.5197868969375,
+      "longitude": 126.905635743002,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 19000000,
+        "monthly_rent_krw": 1310000,
+        "maintenance_fee_krw": 100000,
+        "area_m2": 27.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0038",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.5242806697392,
+      "longitude": 126.90737222707,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 122000000,
+        "monthly_rent_krw": 8170000,
+        "maintenance_fee_krw": 650000,
+        "area_m2": 31.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0039",
+      "name": "당산동4가 1층 상가",
+      "address": "서울 영등포구 당산동4가",
+      "district": "영등포구",
+      "latitude": 37.5286569293824,
+      "longitude": 126.901909288151,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 37000000,
+        "monthly_rent_krw": 2110000,
+        "maintenance_fee_krw": 170000,
+        "area_m2": 29,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0040",
+      "name": "당산동4가 1층 상가",
+      "address": "서울 영등포구 당산동4가",
+      "district": "영등포구",
+      "latitude": 37.5320401573983,
+      "longitude": 126.896591900065,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 22000000,
+        "monthly_rent_krw": 1500000,
+        "maintenance_fee_krw": 120000,
+        "area_m2": 23.1,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0041",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.52376432171859,
+      "longitude": 126.90613753560939,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 87000000,
+        "monthly_rent_krw": 4680000,
+        "maintenance_fee_krw": 370000,
+        "area_m2": 32.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0042",
+      "name": "영등포동1가 1층 상가",
+      "address": "서울 영등포구 영등포동1가",
+      "district": "영등포구",
+      "latitude": 37.51795036193376,
+      "longitude": 126.91349287714844,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 33000000,
+        "monthly_rent_krw": 3200000,
+        "maintenance_fee_krw": 260000,
+        "area_m2": 31.8,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0043",
+      "name": "여의도동 1층 상가",
+      "address": "서울 영등포구 여의도동",
+      "district": "영등포구",
+      "latitude": 37.5214694204797,
+      "longitude": 126.924972958655,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 80000000,
+        "monthly_rent_krw": 5190000,
+        "maintenance_fee_krw": 420000,
+        "area_m2": 36.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0044",
+      "name": "당산동3가 1층 상가",
+      "address": "서울 영등포구 당산동3가",
+      "district": "영등포구",
+      "latitude": 37.5244533650348,
+      "longitude": 126.898251756701,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 31000000,
+        "monthly_rent_krw": 2800000,
+        "maintenance_fee_krw": 220000,
+        "area_m2": 21,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0045",
+      "name": "신길동 1층 상가",
+      "address": "서울 영등포구 신길동",
+      "district": "영등포구",
+      "latitude": 37.5072320524977,
+      "longitude": 126.903090953676,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 54000000,
+        "monthly_rent_krw": 3740000,
+        "maintenance_fee_krw": 300000,
+        "area_m2": 26.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0046",
+      "name": "영등포동 1층 상가",
+      "address": "서울 영등포구 영등포동",
+      "district": "영등포구",
+      "latitude": 37.515928044563736,
+      "longitude": 126.90695272001224,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 118000000,
+        "monthly_rent_krw": 7220000,
+        "maintenance_fee_krw": 580000,
+        "area_m2": 25.6,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0047",
+      "name": "영등포동5가 1층 상가",
+      "address": "서울 영등포구 영등포동5가",
+      "district": "영등포구",
+      "latitude": 37.5222133276186,
+      "longitude": 126.906809167399,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 80000000,
+        "monthly_rent_krw": 6430000,
+        "maintenance_fee_krw": 510000,
+        "area_m2": 20.2,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0048",
+      "name": "문래동3가 1층 상가",
+      "address": "서울 영등포구 문래동3가",
+      "district": "영등포구",
+      "latitude": 37.5174139914733,
+      "longitude": 126.895340664022,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 38000000,
+        "monthly_rent_krw": 2970000,
+        "maintenance_fee_krw": 240000,
+        "area_m2": 40,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0049",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.523237146242,
+      "longitude": 126.908318108016,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 48000000,
+        "monthly_rent_krw": 3090000,
+        "maintenance_fee_krw": 250000,
+        "area_m2": 39.3,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0050",
+      "name": "당산동5가 1층 상가",
+      "address": "서울 영등포구 당산동5가",
+      "district": "영등포구",
+      "latitude": 37.5314078088473,
+      "longitude": 126.90205728924,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 147000000,
+        "monthly_rent_krw": 7730000,
+        "maintenance_fee_krw": 620000,
+        "area_m2": 27.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0051",
+      "name": "영등포동7가 1층 상가",
+      "address": "서울 영등포구 영등포동7가",
+      "district": "영등포구",
+      "latitude": 37.5238165857327,
+      "longitude": 126.907285694184,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 74000000,
+        "monthly_rent_krw": 5450000,
+        "maintenance_fee_krw": 440000,
+        "area_m2": 23.7,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0052",
+      "name": "당산동3가 1층 상가",
+      "address": "서울 영등포구 당산동3가",
+      "district": "영등포구",
+      "latitude": 37.5254090881592,
+      "longitude": 126.896935912284,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 86000000,
+        "monthly_rent_krw": 7320000,
+        "maintenance_fee_krw": 590000,
+        "area_m2": 32,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0053",
+      "name": "양평동4가 1층 상가",
+      "address": "서울 영등포구 양평동4가",
+      "district": "영등포구",
+      "latitude": 37.5373310828324,
+      "longitude": 126.896878773678,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 79000000,
+        "monthly_rent_krw": 4460000,
+        "maintenance_fee_krw": 360000,
+        "area_m2": 23.4,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0054",
+      "name": "영등포동3가 1층 상가",
+      "address": "서울 영등포구 영등포동3가",
+      "district": "영등포구",
+      "latitude": 37.5172861513143,
+      "longitude": 126.906186371874,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 154000000,
+        "monthly_rent_krw": 8030000,
+        "maintenance_fee_krw": 640000,
+        "area_m2": 32.9,
+        "floor": 1
+      }
+    },
+    {
+      "id": "demo-영등포구-0055",
+      "name": "여의도동 1층 상가",
+      "address": "서울 영등포구 여의도동",
+      "district": "영등포구",
+      "latitude": 37.5232258230989,
+      "longitude": 126.933048299625,
+      "listing": {
+        "listing_kind": "DEMO_SYNTHETIC",
+        "deposit_krw": 70000000,
+        "monthly_rent_krw": 4830000,
+        "maintenance_fee_krw": 390000,
+        "area_m2": 22.5,
+        "floor": 1
+      }
+    }
+  ]
+}

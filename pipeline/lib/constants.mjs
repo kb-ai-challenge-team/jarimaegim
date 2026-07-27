@@ -18,6 +18,14 @@ export const SYNTHESIS_SEED = 20260727;
 /** Number of listings to generate per district. */
 export const LISTINGS_PER_DISTRICT = 55;
 
+/**
+ * Commercial deposits have no measured public source, so this is a declared
+ * assumption, not data. Korean storefront leases conventionally set the deposit
+ * at roughly ten to twenty times the monthly rent. Anything derived from this
+ * must be labelled as assumed wherever it is shown.
+ */
+export const ASSUMED_DEPOSIT_MULTIPLE = { min: 10, max: 20 };
+
 export function bandForArea(areaM2) {
   const band = AREA_BANDS.find((candidate) => areaM2 >= candidate.min && areaM2 < candidate.max);
   if (!band) throw new Error(`No band found for area ${areaM2}`);
