@@ -23,6 +23,7 @@
     "pipeline:collect": "node pipeline/collect/fetch-prices.mjs && node pipeline/collect/fetch-coords.mjs",
     "pipeline:build": "node pipeline/distribution/build-distribution.mjs && node pipeline/synthesize/build-listings.mjs",
     "pipeline:verify": "backend/.venv/bin/python pipeline/verify/cross_check.py",
+    "seed:listings": "node scripts/seed-listings.mjs",
     "test:pipeline": "node --test pipeline/lib/*.test.mjs pipeline/distribution/*.test.mjs pipeline/synthesize/*.test.mjs",
     "deploy": "bash scripts/deploy.sh"
   },
