@@ -20,6 +20,25 @@ await page.waitForSelector(".kb-ai-panel");
 const panel = page.locator(".kb-ai-panel");
 const stepper = { labels: await panel.locator(".kb-stepper li").allTextContents() };
 
+// 첫 진입 — 조건을 넣기 전에는 자치구 요약 핀만 떠 있어야 한다.
+await page.waitForSelector(".kb-district-pin", { timeout: 30000 });
+const overview = {
+  pins: await page.locator(".kb-district-pin").count(),
+  districts: await page.locator(".kb-district-pin strong").allInnerTexts(),
+  markersBefore: await page.locator(".kb-marker").count(),
+};
+
+await page.locator(".kb-district-pin").first().click();
+await page.waitForSelector(".kb-marker", { timeout: 30000 });
+const drilldown = {
+  markers: await page.locator(".kb-marker").count(),
+  badges: await page.locator(".kb-marker-demo").count(),
+  pinsGone: (await page.locator(".kb-district-pin").count()) === 0,
+};
+await page.getByRole("button", { name: "전체 자치구 보기" }).click();
+await page.waitForSelector(".kb-district-pin", { timeout: 30000 });
+const returned = { pins: await page.locator(".kb-district-pin").count() };
+
 // 상황 — 예시 문장으로 조건을 채우고 확인 단계로
 await panel.locator(".kb-examples button").first().click();
 await panel.getByRole("button", { name: "조건으로 정리하기" }).click();
@@ -117,7 +136,7 @@ const prescription = {
   })()
 };
 
-const result = { stepper, lease, bands, location, cost, funding, prescription, axes, errors };
+const result = { stepper, overview, drilldown, returned, lease, bands, location, cost, funding, prescription, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 const expected = ["조건", "자금", "입지", "근거", "처방"];
@@ -129,4 +148,7 @@ if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed |
   || prescription.blocks !== 3 || !prescription.committedShown
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest
-  || !axes.disabledCarryReason) process.exitCode = 1;
+  || !axes.disabledCarryReason
+  || overview.pins !== 5 || overview.markersBefore !== 0
+  || drilldown.markers === 0 || drilldown.badges === 0 || !drilldown.pinsGone
+  || returned.pins !== 5) process.exitCode = 1;
