@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
 from app.models import BandLine, BreakEven, FundingBandResult, FundingCapacityResult
+from app.models import ConditionInterpretRequest, ConditionInterpretResult
+
 
 LINE = dict(band="EQUITY_ONLY", ceiling_krw=100_000_000, loan_krw=0, monthly_repayment_krw=0,
             monthly_fixed_cost_krw=3_800_000, target_monthly_revenue_krw=8_444_444,
@@ -163,3 +165,56 @@ def test_pending_capacity_must_not_carry_numbers():
         FundingCapacityResult(status="integration_pending", maximum_line_krw=1,
                               missing_params=["loan.guarantee_ceiling_krw"],
                               recommended_line_pending=PENDING_TEXT, message="x")
+
+
+BLANK_FIELDS = {"industry": {"value": None, "evidence": None},
+                "district": {"value": None, "evidence": None},
+                "monthly_rent_krw": {"value": None, "evidence": None},
+                "business_stage": {"value": None, "evidence": None},
+                "startup_type": {"value": None, "evidence": None},
+                "priority": {"value": None, "evidence": None}}
+
+
+def test_interpret_request_rejects_an_empty_text():
+    with pytest.raises(ValidationError):
+        ConditionInterpretRequest(text="")
+
+
+def test_interpret_request_rejects_an_overlong_text():
+    with pytest.raises(ValidationError):
+        ConditionInterpretRequest(text="가" * 501)
+
+
+def test_interpret_request_accepts_a_normal_sentence():
+    assert ConditionInterpretRequest(text="마포구에서 카페 준비 중이에요").text
+
+
+def test_interpret_result_holds_a_field_map():
+    result = ConditionInterpretResult(
+        source="RULE",
+        fields={**BLANK_FIELDS, "industry": {"value": "카페", "evidence": "카페"}},
+        unresolved=["district", "monthly_rent_krw", "business_stage", "startup_type", "priority"],
+        message="조건 1개를 찾았습니다.")
+    assert result.fields["industry"].value == "카페"
+    assert result.source == "RULE"
+
+
+def test_interpret_result_rejects_an_unknown_field_name():
+    """금융 프로필이 소유하는 값을 발화가 덮어쓰지 못하게 필드 이름을 닫아 둔다."""
+    with pytest.raises(ValidationError):
+        ConditionInterpretResult(source="RULE",
+                                 fields={**BLANK_FIELDS, "budget_krw": {"value": 1, "evidence": "1"}},
+                                 unresolved=[], message="x")
+
+
+def test_interpret_result_rejects_an_unknown_source():
+    with pytest.raises(ValidationError):
+        ConditionInterpretResult(source="GUESS", fields=BLANK_FIELDS, unresolved=[], message="x")
+
+
+def test_condition_field_accepts_a_string_or_an_int_or_none():
+    result = ConditionInterpretResult(
+        source="AI",
+        fields={**BLANK_FIELDS, "monthly_rent_krw": {"value": 3_000_000, "evidence": "월세 300만원"}},
+        unresolved=[], message="x")
+    assert result.fields["monthly_rent_krw"].value == 3_000_000

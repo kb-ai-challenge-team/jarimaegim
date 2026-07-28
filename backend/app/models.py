@@ -369,3 +369,25 @@ class RetrievalResponse(BaseModel):
     status: Literal["success", "integration_pending", "unavailable"]
     message: str | None = None
     evidence_grade: Literal["C"] = "C"
+
+
+class ConditionField(BaseModel):
+    """추출된 값 하나와 그 근거. evidence 는 사용자 원문의 부분문자열이며 서버가 검증한 뒤에만 채워진다."""
+
+    value: str | int | None = None
+    evidence: str | None = None
+
+
+class ConditionInterpretRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
+class ConditionInterpretResult(BaseModel):
+    """조건 제안. 케이스를 만들지 않으며, 사용자가 확인 화면에서 승인해야 조건이 된다.
+    equity_krw·budget_krw 는 의도적으로 없다 — 1단계 금융 프로필이 소유하는 값이다."""
+
+    source: Literal["AI", "RULE"]
+    fields: dict[Literal["industry", "district", "monthly_rent_krw",
+                         "business_stage", "startup_type", "priority"], ConditionField]
+    unresolved: list[str] = Field(default_factory=list)
+    message: str
