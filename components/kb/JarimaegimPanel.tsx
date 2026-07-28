@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, Quote, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
-import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
-import type { AnalysisResult, CaseInput, ConditionKey, FundingBandResult, ListingTerms } from "@/lib/types";
+import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { EVIDENCE_BADGES, EVIDENCE_LABELS, SIGNAL_LABELS, formatKrw } from "@/lib/constants";
+import type { AnalysisResult, FundingBandResult, ListingTerms } from "@/lib/types";
 import { manwon } from "@/lib/format";
 import type { FlowStep, Jarimaegim, Profile } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
+import { ConditionStrip } from "./ConditionStrip";
 import { PlanPrescription, PlanTuning, runwayLabel } from "./JarimaegimPlan";
 
 // 금융 프로필은 관문이 아니라 1단계다. profile·capacity 가 ①, ask·confirm 이 ②에 매핑된다.
@@ -35,7 +36,7 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "profile" && <ProfileStep flow={flow} />}
       {flow.step === "capacity" && <CapacityStep flow={flow} />}
       {flow.step === "ask" && <AskStep flow={flow} />}
-      {flow.step === "confirm" && <ConfirmStep flow={flow} />}
+      {flow.step === "confirm" && <GateStep flow={flow} />}
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
       {flow.step === "prescribe" && flow.caseData && <PlanPrescription caseData={flow.caseData}
         committed={flow.candidates.find((item) => item.id === flow.committed) || null}
@@ -176,103 +177,30 @@ function AskStep({ flow }: { flow: Jarimaegim }) {
   </div>;
 }
 
-// 확인 화면이 한 줄씩 보여주는 조건 전부. 순서가 화면 순서다.
-const CONFIRM_ROWS: { key: ConditionKey; label: string }[] = [
-  { key: "industry", label: "업종" }, { key: "district", label: "자치구" },
-  { key: "monthly_rent_krw", label: "희망 월세" }, { key: "business_stage", label: "사업단계" },
-  { key: "startup_type", label: "창업형태" }, { key: "priority", label: "우선순위" }
-];
-
-/** 답이 후보를 바꾸는 항목만 비었을 때 묻는다. 최대 3을 넘지 않는다. */
-type AskKey = "industry" | "monthly_rent_krw";
-const ASK_FIELDS: { key: AskKey; label: string; note: string }[] = [
-  { key: "industry", label: "업종", note: "검색 질의어와 업종 파라미터를 정합니다" },
-  { key: "monthly_rent_krw", label: "희망 월세", note: "권장 조달선과 목표 매출을 정합니다" }
-];
-
-/** "이 조건이 맞나요?" — 값과 함께 무엇에서 그렇게 읽었는지를 같은 줄에 놓는다.
- *  금융 프로필 칩은 여기 없다. 자금은 1단계에서 끝났고 상단 배지가 요약과 수정 경로를 맡는다. */
-function ConfirmStep({ flow }: { flow: Jarimaegim }) {
-  const { form, bandForm, proposal, edited, setField, setBandField } = flow;
-  const [editing, setEditing] = useState(false);
-  const filled = (key: AskKey) => key === "industry" ? Boolean(form.industry.trim()) : bandForm.monthly_rent_krw > 0;
-  const blanks = ASK_FIELDS.filter((ask) => !filled(ask.key)).map((ask) => ask.key);
-  // 질문은 답이 들어오는 순간 사라지면 안 된다. 목록을 값에서 그대로 유도하면 이 필드를 그린 조건이
-  // 첫 입력에 곧바로 거짓이 되어 입력 중인 필드가 스스로 언마운트된다 — 스피너 위로 버튼 한 번에
-  // 10만 원이 확정되고 타이핑은 첫 글자만 남는다. 그래서 이 화면에 있는 동안 질문은 더해지기만 한다.
-  // (조건 고치기에서 값을 다시 비우면 그때 새로 붙는다. 답을 지웠는데 물음이 없으면 안 되기 때문이다.)
-  const [asked, setAsked] = useState<AskKey[]>(blanks);
-  if (blanks.some((key) => !asked.includes(key))) setAsked(ASK_FIELDS.map((ask) => ask.key).filter((key) => asked.includes(key) || blanks.includes(key)));
-  const asks = ASK_FIELDS.filter((ask) => asked.includes(ask.key));
-  const ready = blanks.length === 0;
-
-  const shown = (key: ConditionKey): string => {
-    if (key === "monthly_rent_krw") return bandForm.monthly_rent_krw > 0 ? formatKrw(bandForm.monthly_rent_krw) : "—";
-    if (key === "industry") return form.industry.trim() || "—";
-    if (key === "district") return form.district;
-    if (key === "business_stage") return STAGE_LABELS[form.business_stage];
-    if (key === "startup_type") return TYPE_LABELS[form.startup_type];
-    return PRIORITY_LABELS[form.priority];
-  };
-  /** 출처는 네 가지다. 사용자가 고쳤으면 그것이 이기고, 아니면 제안이 어디서 왔는지를 따른다. */
-  const source = (key: ConditionKey): string => {
-    if (edited.has(key)) return "직접 입력";
-    const field = proposal?.fields[key];
-    if (!field || field.value === null) return "기본값";
-    return proposal?.source === "AI" ? "AI 추론" : "규칙 추출";
-  };
-  const evidence = (key: ConditionKey): string | null => edited.has(key) ? null : proposal?.fields[key]?.evidence ?? null;
-
+/** 차단 항목만 묻는다. 없으면 계산 자체가 불가능한 것 — 업종·자치구·자기자본뿐이다.
+ *  자치구는 기본값이 있고 자기자본은 프로필 단계가 이미 강제하므로, 실제로 여기 남는 것은 업종이다.
+ *
+ *  확인 게이트가 아니다. 발화에 업종이 있으면 이 화면은 아예 지나가고, 없을 때만 그것만 묻는다. */
+function GateStep({ flow }: { flow: Jarimaegim }) {
+  const { form, setField } = flow;
+  const ready = Boolean(form.industry.trim());
   return <div className="kb-step">
     <ProfileBadge flow={flow} />
-    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{blanks.length > 0
-      ? <>말씀을 이렇게 읽었습니다. <strong>{blanks.length}개</strong>만 더 알려주시면 바로 찾아드릴게요.</>
-      : <><strong>이 조건이 맞나요?</strong> 맞으면 이대로 후보를 찾고, 다르면 고쳐 주세요.</>}</p></div>
-
-    <section className="kb-condcard">
-      <h3><Check aria-hidden="true" />이 조건이 맞나요?</h3>
-      <ul className="kb-condrows">{CONFIRM_ROWS.map((row) => <li key={row.key}>
-        <span className="kb-condrow-label">{row.label}</span>
-        <strong className="kb-condrow-value">{shown(row.key)}</strong>
-        <small className="kb-condrow-source">{source(row.key)}</small>
-        <span className="kb-condrow-evidence">{evidence(row.key)
-          ? <><Quote aria-hidden="true" />{evidence(row.key)}</>
-          : <em>—</em>}</span>
-      </li>)}</ul>
-    </section>
-
-    {asks.length > 0 && <section className="kb-askbox">
-      <header><span>더 필요한 것</span><small>{asks.length} / 최대 3</small></header>
-      {asks.map((ask) => <label key={ask.key} className="kb-field" data-done={filled(ask.key) ? "true" : undefined}>
-        <span>{ask.label}<small>{ask.note}</small></span>
-        {ask.key === "industry"
-          ? <input value={form.industry} onChange={(event) => setField("industry", event.target.value)} placeholder="예: 카페" />
-          : <input type="number" min="0" step="100000" inputMode="numeric" value={bandForm.monthly_rent_krw || ""}
-              onChange={(event) => setBandField("monthly_rent_krw", Math.max(0, Number(event.target.value)))} placeholder="0" />}
-        {ask.key === "monthly_rent_krw" && <em>{bandForm.monthly_rent_krw > 0 ? formatKrw(bandForm.monthly_rent_krw) : "원"}</em>}
-      </label>)}
-      <p className="kb-note"><Info aria-hidden="true" />평수·보증금·권리금은 후보를 바꾸지 않으므로 묻지 않습니다. 다음 화면의 <strong>정밀하게 맞추기</strong>에서 언제든 넣을 수 있습니다.</p>
+    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>
+      업종만 알려주시면 바로 찾아드릴게요. 나머지는 말씀하신 대로 읽었고, 아래에서 언제든 고칠 수 있습니다.</p></div>
+    <ConditionStrip flow={flow} editable />
+    {!ready && <section className="kb-askbox">
+      <header><span>더 필요한 것</span><small>1 / 최대 3</small></header>
+      <label className="kb-field"><span>업종<small>검색 질의어와 업종 파라미터를 정합니다</small></span>
+        <input value={form.industry} onChange={(event) => setField("industry", event.target.value)}
+          placeholder="예: 카페" autoFocus /></label>
+      <p className="kb-note"><Info aria-hidden="true" />희망 월세·평수·보증금은 없어도 진행합니다.
+        손익분기와 현금소진만 그때 계산하지 않고 유보합니다.</p>
     </section>}
-
-    <div className="kb-disclosure" data-open={editing}>
-      <button onClick={() => setEditing(!editing)}><span>아니요, 고칠게요</span><small>업종 · 자치구 · 사업단계 · 창업형태 · 우선순위 <ChevronRight aria-hidden="true" /></small></button>
-      {editing && <div className="kb-disclosure-body">
-        <label className="kb-field"><span>업종</span><input value={form.industry} onChange={(event) => setField("industry", event.target.value)} placeholder="예: 카페" /></label>
-        <label className="kb-field"><span>자치구</span><select value={form.district} onChange={(event) => setField("district", event.target.value)}>{SEOUL_DISTRICTS.map((district) => <option key={district} value={district}>{district}</option>)}</select></label>
-        <ChipRow label="사업단계" value={form.business_stage} options={STAGE_LABELS} onSelect={(value) => setField("business_stage", value as CaseInput["business_stage"])} />
-        <ChipRow label="창업형태" value={form.startup_type} options={TYPE_LABELS} onSelect={(value) => setField("startup_type", value as CaseInput["startup_type"])} />
-        <ChipRow label="우선순위" value={form.priority} options={PRIORITY_LABELS} onSelect={(value) => setField("priority", value as CaseInput["priority"])} />
-      </div>}
-    </div>
-
-    <button className="kb-primary" onClick={flow.start} disabled={!ready || flow.busy === "case"}>{flow.busy === "case" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}네, 맞아요 · 이 조건으로 입지 찾기</button>
+    <button className="kb-primary" onClick={flow.start} disabled={!ready || flow.busy === "case"}>
+      {flow.busy === "case" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}이 조건으로 입지 찾기</button>
     <button className="kb-ghost" onClick={() => flow.setStep("ask")}><RotateCcw aria-hidden="true" /> 다시 말할게요</button>
-    <p className="kb-note"><Check aria-hidden="true" />여기가 마지막 입력 화면입니다. 다음은 곧바로 후보 목록이고, 조달 금액 결정은 후보를 본 뒤에 합니다.</p>
   </div>;
-}
-
-function ChipRow({ label, value, options, onSelect }: { label: string; value: string; options: Record<string, string>; onSelect: (value: string) => void }) {
-  return <div className="kb-chiprow"><span>{label}</span><div>{Object.entries(options).map(([key, text]) => <button key={key} type="button" aria-pressed={value === key} onClick={() => onSelect(key)}>{text}</button>)}</div></div>;
 }
 
 /** 밴드 한 줄. 제목과 수치를 같은 줄에 밀어 넣지 않고 위아래로 나눈다.
@@ -352,6 +280,10 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
       ? `${conditions} 시연용 매물 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
       : caseData ? `${caseData.inputs.district} 시연용 매물을 ${caseData.inputs.industry} 업종의 서울시 상권분석 집계로 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+
+    {/* 확인 클릭을 없앤 대신 조건이 여기 남는다. 무엇을 어떤 발화 조각에서 읽었는지가
+        결과 옆에 계속 보여야 사용자가 자기가 말하지 않은 값을 알아본다. */}
+    <ConditionStrip flow={flow} editable />
 
     {bands && bands.status !== "integration_pending" && <BandBanner bands={bands} />}
     {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />{bands.message}</p>}
