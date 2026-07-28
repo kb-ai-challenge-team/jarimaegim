@@ -15,6 +15,12 @@ const STEPS: { id: FlowStep; label: string }[] = [
   { id: "ask", label: "조건" }, { id: "recommend", label: "입지" }, { id: "prescribe", label: "처방" }
 ];
 const EXAMPLES = ["마포구에서 카페를 준비하고 있어요", "성동구에 2호점 낼 자리 찾고 있어요", "관악구 분식점 자리를 알아보는 중이에요"];
+// 확인 화면이 물을 수 있는 전부. 답이 후보를 바꾸는 항목만 남기며 "최대 3"의 상한도 여기서 온다.
+type AskKey = "industry" | "monthly_rent_krw";
+const ASK_FIELDS: { key: AskKey; label: string; note: string }[] = [
+  { key: "industry", label: "업종", note: "검색 질의어와 업종 파라미터를 정합니다" },
+  { key: "monthly_rent_krw", label: "희망 월세", note: "권장 조달선과 목표 매출을 정합니다" }
+];
 
 export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: () => void }) {
   const onGate = flow.step === "profile";
@@ -132,16 +138,22 @@ function AskStep({ flow }: { flow: Jarimaegim }) {
 function ConfirmStep({ flow }: { flow: Jarimaegim }) {
   const { form, bandForm, profile, parsedKeys, setField, setBandField } = flow;
   const [editing, setEditing] = useState(false);
-  const asks: { key: "industry" | "monthly_rent_krw"; label: string; note: string }[] = [];
-  if (!form.industry.trim()) asks.push({ key: "industry", label: "업종", note: "검색 질의어와 업종 파라미터를 정합니다" });
-  if (bandForm.monthly_rent_krw <= 0) asks.push({ key: "monthly_rent_krw", label: "희망 월세", note: "권장 조달선과 목표 매출을 정합니다" });
-  const ready = Boolean(form.industry.trim()) && bandForm.monthly_rent_krw > 0;
+  const filled = (key: AskKey) => key === "industry" ? Boolean(form.industry.trim()) : bandForm.monthly_rent_krw > 0;
+  const blanks = ASK_FIELDS.filter((ask) => !filled(ask.key)).map((ask) => ask.key);
+  // 질문은 답이 들어오는 순간 사라지면 안 된다. 목록을 값에서 그대로 유도하면 이 필드를 그린 조건이
+  // 첫 입력에 곧바로 거짓이 되어 입력 중인 필드가 스스로 언마운트된다 — 스피너 위로 버튼 한 번에
+  // 10만 원이 확정되고 타이핑은 첫 글자만 남는다. 그래서 이 화면에 있는 동안 질문은 더해지기만 한다.
+  // (조건 고치기에서 값을 다시 비우면 그때 새로 붙는다. 답을 지웠는데 물음이 없으면 안 되기 때문이다.)
+  const [asked, setAsked] = useState<AskKey[]>(blanks);
+  if (blanks.some((key) => !asked.includes(key))) setAsked(ASK_FIELDS.map((ask) => ask.key).filter((key) => asked.includes(key) || blanks.includes(key)));
+  const asks = ASK_FIELDS.filter((ask) => asked.includes(ask.key));
+  const ready = blanks.length === 0;
   const source = (key: keyof CaseInput) => parsedKeys.has(key) ? "발화" : "직접 입력";
 
   return <div className="kb-step">
     <ProfileBadge flow={flow} />
-    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{asks.length > 0
-      ? <>후보를 바꾸는 항목 <strong>{asks.length}개</strong>만 더 알려주시면 바로 찾아드릴게요.</>
+    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{blanks.length > 0
+      ? <>후보를 바꾸는 항목 <strong>{blanks.length}개</strong>만 더 알려주시면 바로 찾아드릴게요.</>
       : <>필요한 조건이 모두 확정됐습니다. 바로 후보를 찾을 수 있습니다.</>}</p></div>
 
     <section className="kb-condcard">
@@ -158,7 +170,7 @@ function ConfirmStep({ flow }: { flow: Jarimaegim }) {
 
     {asks.length > 0 && <section className="kb-askbox">
       <header><span>더 필요한 것</span><small>{asks.length} / 최대 3</small></header>
-      {asks.map((ask) => <label key={ask.key} className="kb-field">
+      {asks.map((ask) => <label key={ask.key} className="kb-field" data-done={filled(ask.key) ? "true" : undefined}>
         <span>{ask.label}<small>{ask.note}</small></span>
         {ask.key === "industry"
           ? <input value={form.industry} onChange={(event) => setField("industry", event.target.value)} placeholder="예: 카페" />

@@ -98,7 +98,23 @@ const condition = {
   // 답이 후보를 바꾸는 항목만, 최대 3개까지만 묻는다.
   askCount: await panel.locator(".kb-askbox .kb-field").count()
 };
-if (condition.askCount > 0) await panel.locator(".kb-askbox input").first().fill("2500000");
+// 묻는 항목은 답을 입력하는 도중에 사라지면 안 된다. 값이 채워지는 순간 질문 목록에서 빠지면
+// 자기 입력이 자기 필드를 언마운트한다 — 스피너 위로 버튼 한 번에 10만 원이 확정되고, 타이핑은
+// 첫 글자만 남는다. .fill() 은 이벤트가 한 번이라 이 결함을 통과시키므로 한 글자씩 넣어 확인한다.
+const rentField = panel.locator(".kb-askbox input[type=number]");
+const rentAsked = await rentField.count() > 0;
+const asking = { rentAsked, survivesStep: true, typed: "", survivesTyping: true };
+if (rentAsked) {
+  await rentField.press("ArrowUp"); // 네이티브 스피너 위로 버튼과 같은 경로
+  asking.survivesStep = await rentField.count() > 0;
+  if (asking.survivesStep) {
+    await rentField.fill("");
+    await rentField.pressSequentially("2500000");
+    asking.typed = await rentField.inputValue().catch(() => "");
+  }
+  asking.survivesTyping = asking.typed === "2500000";
+}
+if (rentAsked && await rentField.count() > 0) await rentField.fill("2500000");
 
 const bandsResponsePromise = page.waitForResponse(r => r.url().includes("/api/v1/funding-bands") && r.request().method() === "POST");
 await panel.getByRole("button", { name: "이 조건으로 입지 찾기" }).click();
@@ -257,7 +273,7 @@ const productTab = {
   noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
 };
 
-const result = { stepper, overview, drilldown, returned, profile, persistence, condition, flowOrder, lease, bands, location, cost, funding, recommendation, prescription, policyTab, productTab, axes, errors };
+const result = { stepper, overview, drilldown, returned, profile, persistence, condition, asking, flowOrder, lease, bands, location, cost, funding, recommendation, prescription, policyTab, productTab, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 const expected = ["조건", "입지", "처방"];
@@ -266,6 +282,7 @@ if (errors.length || !stepperOk
   || !profile.gateVisible || !profile.mydataGated || !profile.lockExplained || profile.manualAdapterFields !== 3
   || !persistence.gateSkipped || !persistence.badgeCarriesEquity || !persistence.storageDisclosed || !persistence.erasable
   || !condition.equityCarried || !condition.profileBadgeShown || condition.askCount > 3
+  || !asking.survivesStep || !asking.survivesTyping
   || !flowOrder.bandsBeforeSearch || !flowOrder.landsOnLocation || !flowOrder.bandSummaryInPlace
   || !lease.fieldsPresent || !lease.profileNotReasked || !lease.stillOnLocation || !lease.noRawParamKeys
   || !bands.autoComputed || !bands.safeState || !bands.noInventedTradeAreaCount || !bands.noInventedRunway

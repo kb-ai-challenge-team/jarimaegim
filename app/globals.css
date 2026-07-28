@@ -881,6 +881,8 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-askbox{display:grid;gap:10px;padding:13px;border:1px solid var(--kb-blue);border-radius:12px;background:#fff}
 .kb-askbox>header{display:flex;align-items:baseline;justify-content:space-between;font-size:12px;font-weight:700;color:var(--kb-blue)}
 .kb-askbox>header small{font-weight:600;color:var(--kb-mute);font-variant-numeric:tabular-nums}
+/* 답한 항목은 자리를 지킨 채 표시만 바뀐다. 사라지면 입력 도중 필드가 없어진다. */
+.kb-askbox .kb-field[data-done=true] input{border-color:var(--positive);background:var(--positive-soft)}
 .kb-disclosure{border:1px solid var(--kb-line);border-radius:12px;background:#fff;overflow:hidden}
 .kb-disclosure>button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:11px 13px;border:0;background:none;text-align:left;font-size:12.5px;font-weight:600;color:var(--kb-ink)}
 .kb-disclosure>button small{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:500;color:var(--kb-mute)}
