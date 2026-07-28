@@ -1,3 +1,5 @@
+import pytest
+
 from app.document_store import FUNDING_OMITTED, funding_section_lines, render_case_pdf, selection_section_lines
 
 RECOMMENDED = {"band": "RECOMMENDED", "ceiling_krw": 120_000_000, "loan_krw": 40_000_000,
@@ -46,6 +48,25 @@ def test_a_computation_without_a_recommended_band_is_treated_as_omitted():
 def test_the_source_line_falls_back_to_확인_필요():
     lines = funding_section_lines(computed(as_of=None))
     assert any(line.startswith("출처:") and "확인 필요" in line for line in lines)
+
+
+def test_compute_bands_output_satisfies_the_funding_section():
+    """funding_section_lines 는 compute_bands 출력을 그대로 받는다. 두 계약이 어긋나면
+    KeyError 가 나므로, 실제 출력으로 한 번 통과시켜 계약을 고정한다."""
+    from app.config import get_settings
+    from app.funding import compute_bands
+    from app.policy_params import PolicyParams
+    params = PolicyParams.load(get_settings().policy_params_path)
+    industry = "카페"
+    if params.missing(industry):
+        pytest.skip("업종 파라미터가 등록되지 않아 계약을 검증할 수 없습니다")
+    computed_bands = compute_bands(params, industry=industry, area_pyeong=None, deposit_krw=None,
+                                   monthly_rent_krw=2_500_000, monthly_maintenance_krw=0,
+                                   key_money_krw=0, fitout_krw=None, equity_krw=100_000_000,
+                                   existing_debt_krw=0, other_monthly_fixed_krw=0)
+    lines = funding_section_lines({**computed_bands, "assumed": [], "as_of": "2026-07-28"})
+    assert lines[0] == "자금조달 요약"
+    assert any("권장 조달선" in line for line in lines)
 
 
 PRODUCT = {"id": "kb-1", "name": "KB 소호모바일대출", "loan_limit": "최대 1억원",
@@ -112,6 +133,11 @@ def test_everything_dropped_still_produces_the_section():
     lines = selection_section_lines([], [], 3)
     assert lines[0] == "고른 조달 수단"
     assert any("3건" in line for line in lines)
+
+
+def test_an_empty_required_field_falls_back_instead_of_printing_blank():
+    lines = selection_section_lines([{**PRODUCT, "name": ""}], [], 0)
+    assert any("이름 확인 필요" in line for line in lines)
 
 
 CASE = {"id": "22222222-2222-2222-2222-222222222222", "title": "강남구 카페", "version": 2,

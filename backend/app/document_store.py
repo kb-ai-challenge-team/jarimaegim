@@ -99,15 +99,15 @@ def selection_section_lines(products: list[dict[str, Any]], programs: list[dict[
         return ["고른 조달 수단", "고른 조달 수단이 없습니다."]
     lines = ["고른 조달 수단"]
     for product in products:
-        lines.append(f"[KB 공시] {product.get('name', '이름 확인 필요')} · "
+        lines.append(f"[KB 공시] {product.get('name') or '이름 확인 필요'} · "
                      f"{product.get('loan_limit') or '한도 원문 확인'} · {rate_text(product)} · "
                      f"기준월 {product.get('source_as_of') or '확인 필요'}")
-        lines.append(f"원문: {product.get('official_url', '확인 필요')}")
+        lines.append(f"원문: {product.get('official_url') or '확인 필요'}")
     for program in programs:
-        lines.append(f"[공고] {program.get('title', '제목 확인 필요')} · "
-                     f"{program.get('organization', '기관 확인 필요')} · "
+        lines.append(f"[공고] {program.get('title') or '제목 확인 필요'} · "
+                     f"{program.get('organization') or '기관 확인 필요'} · "
                      f"{program.get('application_period') or '기간 원문 확인'}")
-        lines.append(f"원문: {program.get('official_url', '확인 필요')}")
+        lines.append(f"원문: {program.get('official_url') or '확인 필요'}")
     lines.append("공시·공고 문구와 입력 조건을 텍스트로 대조해 고른 목록이며, 자격이나 승인 가능성을 판단한 것이 아닙니다.")
     if dropped:
         lines.append(f"{dropped}건은 공시 목록에서 확인되지 않아 제외했습니다.")
