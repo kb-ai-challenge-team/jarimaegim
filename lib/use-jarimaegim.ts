@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, formatKrw } from "./constants";
+import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
-import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AnalysisResult, BandLine, PrescribeResult, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
 // 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 처방 세 단계로 간다. 프로필은 스텝이 아니라 진입 관문이고,
 // 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
@@ -22,16 +22,35 @@ const INTRO: ChatMessage = { role: "assistant", text: "어떤 업종으로, 서�
 const EMPTY_TRACE: TraceRun = { steps: [], state: "idle", totalMs: null };
 const HANDOFF_MS = 900;
 
-/** The trace mirrors the real awaits in `start()` — one step per network boundary, nothing scripted. */
+/** 제안서 03장의 12개 에이전트가 그대로 한 줄씩이다. 순서는 백엔드가 이벤트를 내보내는 순서와
+ *  같아야 한다 — `settleStep` 이 정착한 줄의 다음 줄을 활성으로 올리기 때문이다.
+ *
+ *  마지막 줄의 id 가 에이전트 키가 아니라 `grade` 인 것은 의도적이다. AgentRunOverlay 가 완료
+ *  문구를 `steps.find(step => step.id === "grade")` 의 note 에서 읽는데, 그 컴포넌트는 이번
+ *  변경의 범위 밖이라 고치지 않는다. 메인 에이전트가 내는 것이 실제로 종합 요약이므로 이 자리에
+ *  놓는 것이 내용상으로도 맞다. */
+const AGENT_ROWS: { id: string; label: string; detail: string }[] = [
+  { id: "condition.location", label: "입지 조건 확정", detail: "업종·자치구·평수·운영형태·희망 임대조건. 최소 조건이 덜 차면 후보를 만들지 않고 되묻습니다." },
+  { id: "condition.finance", label: "금융 프로필 확정", detail: "자기자본·기존부채·월고정지출. 마이데이터는 꺼져 있고 수동 입력이 같은 스키마를 채웁니다." },
+  { id: "finance.band", label: "조달 밴드 산출", detail: "자기자본선·권장 조달선·최대 조달선과 손익분기선. 제도 파라미터가 없으면 추정하지 않습니다." },
+  { id: "finance.stress", label: "창업 금융 스트레스 테스트", detail: "매출 −20%에서 상환 부담과 현금소진을 봅니다. 권장 조달선은 이 시험을 통과하는 최대치입니다." },
+  { id: "finance.kb_products", label: "KB 상품 조합", detail: "금융감독원 공시의 개인사업자대출 금리를 정책자금 금리와 나란히 놓습니다. 한도가 문장이라 조합은 계산하지 않습니다." },
+  { id: "finance.subsidy", label: "정부·지자체 지원정책", detail: "기업마당·K-Startup 공고. 지원 규모가 구조화 필드로 오지 않아 조달선 상향은 반영하지 않습니다." },
+  { id: "location.demand", label: "수요", detail: "유동·상주·직장인구와 배후 구매력. 서울시 상권분석 집계이므로 근거 B입니다." },
+  { id: "location.competition", label: "경쟁", detail: "동종 점포밀도와 신규·폐업 추세. 상권 단위 집계입니다." },
+  { id: "location.viability", label: "달성 가능성", detail: "목표매출을 상권 동종 매출 분포에 대입해 어디쯤인지 봅니다." },
+  { id: "location.survival", label: "생존시기", detail: "18/24개월 영업유지율. 인허가 이력 코호트가 있어야 하는 유일한 근거 A 경로입니다." },
+  { id: "timing.policy", label: "국가 부동산·개발정책", detail: "재개발·교통·주택공급·공사 일정. 원천이 없으면 시점을 권하지 않고 판단을 유보합니다." },
+  { id: "grade", label: "팀 보고 통합", detail: "팀이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
+];
+
+/** 전체 실행은 12개 에이전트가 한 줄씩이고, 재조회는 매물 조회 leg 만 다시 돈다. */
 function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
-  const steps: TraceStep[] = [
-    { id: "session", label: "익명 세션 확인", detail: "계정 없이 익명 세션으로 진행합니다. 조건은 최대 24시간만 보관합니다.", status: "idle" },
-    { id: "case", label: "입력 조건 확정", detail: "서울 25개 자치구 범위인지 서버에서 검증하고 케이스로 저장합니다.", status: "idle" },
-    { id: "bands", label: "조달 밴드 산출", detail: "자기자본과 임대 조건으로 자기자본선·권장 조달선·최대 조달선과 손익분기선을 계산합니다. 외부 데이터는 쓰지 않습니다.", status: "idle" },
-    { id: "search", label: "시연용 매물 데이터 조회", detail: `시연용 매물 데이터 · 서울 ${inputs.district} · 보증금이 총예산 이하인 매물만 · 월세 낮은 순 최대 4곳. 업종은 후보 선별에 쓰이지 않습니다.`, status: "idle" },
-    { id: "grade", label: "근거 등급·출처 정리", detail: "시연용 매물은 좌표만 확인된 상태라 모두 근거 C이며, 출처는 시연용 생성 데이터로 표시합니다. 없는 근거는 만들지 않습니다.", status: "idle" }
+  if (leg === "full") return AGENT_ROWS.map((row) => ({ ...row, status: "idle" as const }));
+  return [
+    { id: "search", label: "시연용 매물 데이터 조회", detail: `시연용 매물 데이터 · 서울 ${inputs.district} · 보증금이 총예산 이하인 매물만 · 월세 낮은 순 최대 4곳.`, status: "idle" },
+    { id: "grade", label: "근거 등급·출처 정리", detail: "시연용 매물은 좌표만 확인된 상태라 모두 근거 C이며, 출처는 시연용 생성 데이터로 표시합니다.", status: "idle" }
   ];
-  return leg === "full" ? steps : steps.slice(3);
 }
 
 function gradeNote(candidates: Candidate[]) {
@@ -253,21 +272,48 @@ export function useJarimaegim() {
     beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
-      settleStep("session", "done", "익명 세션 확인됨");
       const title = `${inputs.district} ${inputs.industry}`.trim() || "새 케이스";
       const created = await api.createCase(inputs, title);
       setCaseData(created);
-      settleStep("case", "done", `케이스 저장됨 · 버전 ${created.version}`);
+
+      // 실행 순서는 이제 백엔드의 메인 에이전트가 가진다. 여기서는 도착한 판정을 줄에 옮길 뿐,
+      // 어느 팀이 먼저인지도 어디서 멈추는지도 클라이언트가 정하지 않는다.
+      const settled = new Set<string>();
+      const rowId = (key: string) => (key === "main.integrate" ? "grade" : key);
+      let outcome: PrescribeResult | null = null;
+      await api.prescribeStream(created.id, {
+        monthly_rent_krw: bandForm.monthly_rent_krw, monthly_maintenance_krw: bandForm.monthly_maintenance_krw,
+        key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
+        deposit_krw: bandForm.deposit_krw || null, fitout_krw: bandForm.fitout_krw || null,
+        existing_debt_krw: profile.existing_debt_krw, other_monthly_fixed_krw: profile.other_monthly_fixed_krw,
+      }, {
+        onRunStart: () => {},
+        onTeamStart: () => {},
+        onAgentEnd: (agent) => {
+          settled.add(rowId(agent.key));
+          // 상태를 여기서 다시 판정하지 않는다. 판정에 성공한 것만 done 이고, 나머지는 왜 그런지를
+          // note 로 그대로 옮긴다 — 원천이 없다는 사실이 실패로 보이면 안 된다.
+          settleStep(rowId(agent.key), agent.status === "ok" ? "done" : "skipped",
+            agent.message || (agent.status === "integration_pending" ? "연동 대기" : agent.status === "withheld" ? "판단 유보" : undefined));
+        },
+        onDone: (result) => {
+          outcome = result;
+          // 멈춘 실행에서는 뒤쪽 에이전트에게 순서가 오지 않아 이벤트가 없다. 남은 줄을 여기서
+          // 닫아야 마지막 줄이 정착하며 트레이스가 done 으로 넘어간다.
+          for (const row of AGENT_ROWS) {
+            if (!settled.has(row.id)) settleStep(row.id, "skipped", "앞 단계에서 멈춰 순서가 오지 않았습니다.");
+          }
+        },
+      });
+
+      // 밴드 산출물은 처방 화면이 통째로 쓰므로 기존 경로를 그대로 유지한다. 같은 compute_bands 를
+      // 부르므로 두 경로가 다른 답을 낼 수는 없다. 페이로드 통합은 별도 변경으로 다룬다.
       const band = await runBands(created, bandForm, profile);
       const line = recommendedLine(band);
-      settleStep("bands", band.status === "integration_pending" ? "skipped" : "done",
-        line
-          ? `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`
-          : band.message || "제도 파라미터 등록 대기");
+      const ceiling = (outcome as PrescribeResult | null)?.summary?.recommended_ceiling_krw ?? line?.ceiling_krw ?? null;
       // 후보를 거르는 상한은 사용자가 스스로 좁힌 예산이 아니라 산출된 권장 조달선이다.
-      // 밴드를 못 냈으면 자기자본선으로 남겨 둔다 — 넓히기 위해 추정하지 않는다.
-      const record = line && line.ceiling_krw > created.inputs.budget_krw
-        ? await api.updateCase(created.id, created.version, { budget_krw: line.ceiling_krw })
+      const record = ceiling && ceiling > created.inputs.budget_krw
+        ? await api.updateCase(created.id, created.version, { budget_krw: ceiling })
         : created;
       if (record !== created) setCaseData(record);
       await runSearch(record);
