@@ -81,6 +81,39 @@ def funding_section_lines(funding: dict[str, Any] | None) -> list[str]:
     return lines
 
 
+def rate_text(product: dict[str, Any]) -> str:
+    """공시 금리 표기. 두 공시값을 나란히 적을 뿐 평균·환산 같은 계산을 하지 않는다.
+    화면의 rateLabel(components/kb/JarimaegimPlan.tsx)과 같은 규칙이어야 문서와 화면이 갈라지지 않는다."""
+    low, high = product.get("rate_min"), product.get("rate_max")
+    if low is None and high is None:
+        return "공시 금리 확인 필요"
+    if low == high:
+        return f"{low}%"
+    return f"{'?' if low is None else low}~{'?' if high is None else high}%"
+
+
+def selection_section_lines(products: list[dict[str, Any]], programs: list[dict[str, Any]],
+                            dropped: int) -> list[str]:
+    """사용자가 고른 조달 수단. 전달된 dict 는 서버 카탈로그에서 되찾은 것이며 클라이언트 문자열이 아니다."""
+    if not products and not programs and dropped == 0:
+        return ["고른 조달 수단", "고른 조달 수단이 없습니다."]
+    lines = ["고른 조달 수단"]
+    for product in products:
+        lines.append(f"[KB 공시] {product.get('name', '이름 확인 필요')} · "
+                     f"{product.get('loan_limit') or '한도 원문 확인'} · {rate_text(product)} · "
+                     f"기준월 {product.get('source_as_of') or '확인 필요'}")
+        lines.append(f"원문: {product.get('official_url', '확인 필요')}")
+    for program in programs:
+        lines.append(f"[공고] {program.get('title', '제목 확인 필요')} · "
+                     f"{program.get('organization', '기관 확인 필요')} · "
+                     f"{program.get('application_period') or '기간 원문 확인'}")
+        lines.append(f"원문: {program.get('official_url', '확인 필요')}")
+    lines.append("공시·공고 문구와 입력 조건을 텍스트로 대조해 고른 목록이며, 자격이나 승인 가능성을 판단한 것이 아닙니다.")
+    if dropped:
+        lines.append(f"{dropped}건은 공시 목록에서 확인되지 않아 제외했습니다.")
+    return lines
+
+
 def listing_section_lines(case: dict[str, Any]) -> list[str]:
     """Lines for the committed-listing block; empty when the case has no committed listing.
 
