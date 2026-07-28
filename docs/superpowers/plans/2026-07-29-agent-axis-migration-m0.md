@@ -1624,3 +1624,22 @@ git commit -m "feat(conditions): recover from an industry that cannot be normali
 | **M3** 팀 계층 제거 | `TeamReport` 삭제, halt 규칙을 orchestrator 한 곳으로, 축 이벤트로 교체 | halt 규칙이 셋이 아니라 **둘**이다 (입력 정합성 유보가 M2 에서 사라지므로). `lib/use-jarimaegim.ts:33` 의 `AGENT_ROWS` 12행 하드코딩과 `settleStep` 의 순서 결합, `AgentRunOverlay` 의 `id === "grade"` 조회가 함께 무너진다 |
 | **M4** 커널 분리와 축 재편 | 축 8개로 재편, 접근성 축 신설, 축소 규칙 결정론 모듈 분리 | **여력 커널 분리는 M0 가 이미 했다.** `_narrow` 에 탈락 경로가 **둘**이다(viability + `stress_check`) — 후자는 `main.py:407` 에서 배선되지 않아 죽어 있고 `test_agent_location.py:102` 만 살려 두고 있다. 매출 축은 어댑터가 영구 `integration_pending` 이라 **한 번도 돈 적이 없고**, `main.py:183` 은 `enabled=True` 로 보고해 모순이다 — 이걸 고치는 것이 M4 완료 정의에 들어간다 |
 | **M5** 병렬 실행과 부분 무효화 | `asyncio.gather` 병렬화, 축 단위 부분 해시 | `RunBudget` 이 선착순(`llm.py:54`)이라 병렬화하면 **어느 축이 `budget_exhausted` 를 받는지가 스케줄링에 좌우된다** — 가드 2(같은 조건 같은 결과)가 깨지므로, 축별 결정론적 예산 배분이 병렬화보다 먼저다 |
+
+---
+
+## 병합 시 할 일 — `CLAUDE.md`
+
+`CLAUDE.md` 는 워크스페이스 루트(`KB AI Challenge/`)에 있고 **git 저장소 밖**이다. 모든 브랜치와
+워크트리가 같은 파일 하나를 공유하므로, 이 브랜치가 병합되기 전에 고치면 `main`(646 tests)과
+`feat/listing-attributes` 를 보는 사람에게 존재하지 않는 흐름을 사실처럼 설명하게 된다.
+그래서 M0 작업 중에는 건드리지 않고, 병합할 때 아래를 반영한다.
+
+- `npm run api:test` 설명의 테스트 개수를 **677** 로 갱신 (문서에는 아직 191 로 적혀 있다)
+- 조건 흐름 서술: "확인 후 수정하고 시작" 게이트가 사라졌다. 발화에 업종이 있으면 확인 클릭
+  없이 여력 산출과 입지 판단까지 자동 진행하고, 조건은 `ConditionStrip` 으로 실행 화면에
+  상주하며 값·근거 인용·출처를 계속 보여주고 인라인 수정이 재실행을 유발한다.
+- 되묻기 규칙: 최소 조건 5개가 아니라 **차단 3개(업종·자치구·자기자본)** 만 되묻는다.
+  희망 월세·평수·보증금은 되묻지 않고 그 수치만 유보한다(`deferred`).
+- 금액 산술의 단일 출처가 `condition_parse.amount_from` 이라는 사실. 실행 경로의
+  `amount_krw` 는 삭제됐다.
+- `flow-check.mjs` 가 확인 클릭 없는 자동 진행, 근거 상주, 월세 없는 실행을 단언한다는 사실.
