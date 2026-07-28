@@ -207,8 +207,11 @@ const bandBannerShown = await kb.locator(".kb-band-banner").count() > 0;
 const kbFlow = {
   gateVisible,
   stepCount: stepperLabels.length,
-  // 자금·근거가 별도 스텝으로 남아 있으면 재설계가 되돌아간 것이다.
-  stepsAreThree: stepperLabels.length === 3 && !stepperLabels.some(label => label.includes("자금") || label.includes("근거")),
+  // 처방 한 칸이 조달·서류 두 칸으로 갈라졌는지만 본다. 칸 수를 세지 않는 이유는 자금 단계
+  // 분리가 먼저 들어오면 앞에 한 칸이 더 붙기 때문이다 — 그때도 이 단언은 그대로 옳다.
+  prescribeSplit: stepperLabels.some(label => label.includes("조달"))
+    && stepperLabels.some(label => label.includes("서류"))
+    && !stepperLabels.some(label => label.includes("처방")),
   candidates: await kb.locator(".kb-candidates li").count(),
   tuningInPlace: await kb.getByRole("button", { name: /정밀하게 맞추기/ }).count() > 0,
   // 제도 파라미터가 미등록이면 밴드를 지어내지 않고 사유를 밝혀야 한다.
@@ -225,10 +228,59 @@ if (kbFlow.candidates > 0) {
   kbFlow.evidenceInline = true;
 }
 
-const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, mydataGate, conditionStep, errors };
+// ④ 조달 · ⑤ 서류. 후보를 확정해야 부족분이 확정되므로 확정 전에는 다음으로 갈 수 없어야 한다.
+const prescribe = { reachedFunding: false, reachedPaperwork: false };
+// 아직 없는 화면을 기본 대기시간으로 기다리면 스크립트가 멎은 것처럼 보인다. 멎은 검사는 실패한
+// 검사보다 나쁜 신호이므로, 이 구간만 대기 상한을 낮추고 첫 실패를 prescribe.error 에 적고 빠져나온다.
+kb.setDefaultTimeout(20000);
+// 단계 이동 버튼은 .kb-stepnav 안에만 있다. 오른쪽 대화 칼럼의 추천 질문("다음에 뭘 해야 해?")도
+// 버튼이라 이름만으로 고르면 두 개가 잡힌다. 라벨을 추측하는 대신 컨테이너로 좁힌다.
+const nextStep = () => kb.locator(".kb-stepnav").getByRole("button", { name: /다음/ });
+try {
+  if (kbFlow.candidates > 0) {
+    prescribe.nextLockedBeforeCommit = await nextStep().isDisabled();
+    await kb.getByRole("button", { name: "계획 기준으로 확정" }).first().click();
+    // 계획 기준 배지는 조달 화면에만 있다. 확정 직후에는 아직 입지 화면이므로 목록 안에서
+    // 확정 표시(kb-primary-sm)로 바뀐 것을 기다린다.
+    await kb.waitForSelector(".kb-candidate-actions .kb-primary-sm");
+    prescribe.nextUnlockedAfterCommit = !(await nextStep().isDisabled());
+
+    await nextStep().click();
+    await kb.waitForSelector(".kb-gap-card");
+    prescribe.reachedFunding = true;
+    // 무키 환경에서는 Supabase 가 없어 공시·공고가 둘 다 0건이다. 그것이 정상 경로이며,
+    // 그때도 서류로 넘어갈 수 있어야 한다. 문구는 대화 칼럼이 아니라 단계 본문에서 찾는다 —
+    // getByText 는 여러 개가 잡혀도 count 로는 터지지 않으므로, 대화 말풍선이 같은 말을 하면
+    // 조달 화면을 확인하지 않고도 조용히 통과해 버린다.
+    prescribe.emptyCatalogExplained = await kb.locator(".kb-step").getByText("고를 수단이 없습니다").count() > 0
+      || await kb.locator(".kb-select-row").count() > 0;
+
+    await kb.getByRole("button", { name: /문서 만들기|서류로/ }).click();
+    await kb.waitForSelector(".kb-doc-preview");
+    prescribe.reachedPaperwork = true;
+    prescribe.previewListsSections = (await kb.locator(".kb-doc-preview li").count()) >= 4;
+    // 동의 전에는 준비 버튼이 잠겨 있어야 한다. 서버의 422 는 그대로 남아 있는 방어선이다.
+    prescribe.prepareLockedBeforeConsent = await kb.getByRole("button", { name: /초안 준비하기/ }).isDisabled();
+    await kb.getByRole("checkbox", { name: /문서에 담기는 것을 확인/ }).check();
+    prescribe.prepareUnlockedAfterConsent = !(await kb.getByRole("button", { name: /초안 준비하기/ }).isDisabled());
+  }
+} catch (error) {
+  // 첫 줄만 남기면 "Timeout 20000ms exceeded." 뿐이라 무엇을 못 찾았는지가 사라진다.
+  // 어떤 셀렉터에서 멈췄는지가 이 검사의 알맹이이므로 call log 의 대기 대상 줄을 같이 남긴다.
+  // playwright 는 call log 를 ANSI dim 으로 감싸므로 JSON 에 그대로 실리지 않게 벗겨낸다.
+  const lines = String(error?.message ?? error).replace(/\[\d+m/g, "").split("\n").map(line => line.trim()).filter(Boolean);
+  prescribe.error = [lines[0], lines.find(line => /waiting for/.test(line))].filter(Boolean).join(" ");
+}
+kb.setDefaultTimeout(30000);
+// 번호 매긴 처방 블록이 남아 있으면 단계 분리가 되돌아간 것이다.
+prescribe.noNumberedBlocks = await kb.locator(".kb-prescription-no").count() === 0;
+
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, prescribe, mydataGate, conditionStep, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
-if (!kbFlow.gateVisible || !kbFlow.stepsAreThree || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.evidenceInline) process.exitCode = 1;
+if (!kbFlow.gateVisible || !kbFlow.prescribeSplit || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.evidenceInline) process.exitCode = 1;
+if (!prescribe.noNumberedBlocks) process.exitCode = 1;
+if (kbFlow.candidates > 0 && (!prescribe.reachedFunding || !prescribe.reachedPaperwork || !prescribe.nextLockedBeforeCommit || !prescribe.nextUnlockedAfterCommit || !prescribe.emptyCatalogExplained || !prescribe.previewListsSections || !prescribe.prepareLockedBeforeConsent || !prescribe.prepareUnlockedAfterConsent)) process.exitCode = 1;
 if (!mydataGate.buttonDisabled || !mydataGate.lockExplained || !mydataGate.manualAdapter) process.exitCode = 1;
 if (conditionStep.askCount !== 1 || !conditionStep.equityCarried || !conditionStep.districtParsed) process.exitCode = 1;
