@@ -217,6 +217,24 @@ class FundingBand(StrEnum):
     OUT_OF_RANGE = "OUT_OF_RANGE"
 
 
+class PrescribeRequest(BaseModel):
+    """메인 에이전트 1회 실행의 입력.
+
+    업종·자치구는 케이스에서 읽는다 — 대화나 요청 본문이 확정된 조건을 바꿀 수 없다는 규칙이
+    이 엔드포인트에도 그대로 적용된다. `confirmed_case_patch` 가 오면 422 다."""
+
+    area_pyeong: float | None = Field(default=None, gt=0, le=500)
+    deposit_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    monthly_rent_krw: int = Field(ge=0, le=1_000_000_000)
+    monthly_maintenance_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+    key_money_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+    fitout_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    existing_debt_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+    other_monthly_fixed_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+    operating_style: str = Field(default="", max_length=60)
+    confirmed_case_patch: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class FundingBandInput(BaseModel):
     """평수·보증금은 필요자금(→현금소진)에만 쓰이므로 없어도 밴드 상한과 손익분기는 계산된다."""
 

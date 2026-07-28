@@ -14,6 +14,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from .agents.conditions import ConditionLayer
+from .agents.finance import FinanceTeam
+from .agents.location import LocationTeam
+from .agents.orchestrator import MainAgent
+from .agents.registry import AGENT_SPECS
+from .agents.timing import TimingTeam
 from .chat_stream import ChatStreamer, StreamLimits
 from .chat_tools import ChatToolset, PlaceRegistry
 from .config import get_settings
@@ -24,7 +30,7 @@ from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
 from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
                      DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
-                     PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
+                     PrescribeRequest, PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .retrieval import RetrievalService
@@ -161,6 +167,7 @@ async def integration_status():
         "ipzitalk": mcp_client.available,
     }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled},
         "knowledge_index": await knowledge.freshness(),
+        "agents": agent_roster(),
         "axes": analysis_axes(),
         "limits": {"chat_daily_turns": {
             "per_session": settings.ai_daily_request_limit,
@@ -303,6 +310,90 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
                                                   contribution_margin_ratio=computed["contribution_margin_ratio"],
                                                   assumptions=assumptions),
                              provenance=provenance)
+
+
+#: 케이스별 메인 에이전트. 가드 2(동일 조건 재실행 금지)의 캐시가 인스턴스 안에 있으므로
+#: 요청마다 새로 만들면 캐시가 절대 맞지 않는다. `repository` 의 일일 한도 카운터와 같은
+#: 성질의 프로세스 로컬 상태이고, 같은 한계(다중 워커·재시작에서 유지되지 않음)를 갖는다.
+_main_agents: dict[UUID, MainAgent] = {}
+
+
+def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
+                   programs: list[dict[str, Any]]) -> MainAgent:
+    agent = _main_agents.get(case_id)
+    if agent is None:
+        agent = MainAgent(
+            conditions=ConditionLayer(mydata_enabled=settings.mydata_enabled),
+            finance=FinanceTeam(policy_params, kb_products=kb_products, programs=programs),
+            # 상권 프로파일 모듈이 붙으면 여기에 주입된다. 없는 동안 세 축은 스스로
+            # integration_pending 을 선언하고, 판정하지 못한 축은 후보를 떨어뜨리지 않는다.
+            location=LocationTeam(trade_area=None),
+            timing=TimingTeam())
+        _main_agents[case_id] = agent
+    return agent
+
+
+def agent_roster() -> dict[str, Any]:
+    return {"total": len(AGENT_SPECS),
+            "agents": [{"key": item.key, "team": item.team, "name": item.name,
+                        "source_name": item.source_name, "produces": item.produces,
+                        "evidence_grade": item.evidence_grade} for item in AGENT_SPECS]}
+
+
+@app.get("/api/v1/agents")
+async def list_agents():
+    """선언은 공개다 — 어떤 분석이 있고 무엇이 그 근거인지는 세션 없이도 읽을 수 있어야 한다."""
+    return agent_roster()
+
+
+@app.post("/api/v1/cases/{case_id}/prescribe")
+async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID = Depends(current_session)):
+    """메인 에이전트 1회 실행. 팀·에이전트 단위 진행을 SSE 로 중계한다."""
+    case = owned_case(session_id, case_id)
+    if payload.confirmed_case_patch:
+        raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "이 화면에서는 대화의 조건 변경을 자동 적용하지 않습니다."})
+
+    conditions = {**payload.model_dump(exclude={"confirmed_case_patch"}),
+                  "industry": case.inputs.industry, "district": case.inputs.district,
+                  "equity_krw": case.inputs.equity_krw}
+    listings, _, _ = listings_service.search(case.inputs.district, case.inputs.budget_krw, 8)
+    candidates = [{"id": item.id, "name": item.name, "address": item.address,
+                   "admin_dong": getattr(item, "admin_dong", None),
+                   "monthly_rent_krw": item.listing.monthly_rent_krw if item.listing else None}
+                  for item in listings]
+
+    kb_products = await knowledge.kb_products()
+    programs = await knowledge.programs()
+    agent = main_agent_for(case_id, kb_products, programs)
+
+    def frames():
+        try:
+            for event in agent.run_events(conditions, candidates):
+                if event["event"] != "done":
+                    yield sse_frame({"event": event.pop("event"), "data": event})
+                    continue
+                result = event["result"]
+                yield sse_frame({"event": "done", "data": {
+                    "fingerprint": result.fingerprint, "reused": result.reused,
+                    "halted_at": result.halted_at, "questions": result.questions,
+                    "activation": result.activation, "summary": result.summary,
+                    "surviving": result.surviving, "dropped": result.dropped,
+                    "reports": [{"team": report.team, "name": report.name,
+                                 "blocking": report.blocking, "halted": report.halted,
+                                 "outcomes": [{"key": item.key, "name": item.name,
+                                               "status": item.status, "message": item.message,
+                                               "data": item.data,
+                                               "required_actions": item.required_actions}
+                                              for item in report.outcomes]}
+                                for report in result.reports]}})
+        except Exception as exc:
+            # 헤더가 이미 나간 뒤이므로 예외를 던져 봐야 스트림만 잘린다 — chat 스트림과 같은 규칙.
+            logger.warning("처방 실행 중 예기치 않은 오류: %s", type(exc).__name__)
+            yield sse_frame({"event": "error", "data": {"code": "PRESCRIBE_FAILED",
+                             "message": "분석을 완료하지 못했습니다.", "retryable": True}})
+
+    return StreamingResponse(frames(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/v1/programs")
