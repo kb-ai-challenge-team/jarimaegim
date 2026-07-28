@@ -56,7 +56,7 @@ function missingBandInputs(input: BandForm): string[] {
 function inputPending(gaps: string[]): FundingBandResult {
   return {
     status: "integration_pending", required_capital_krw: null, required_capital_band: null,
-    bands: [], break_even: null, missing_params: gaps,
+    bands: [], break_even: null, parameter_status: "VERIFIED", unverified_params: [], missing_params: gaps,
     message: `${gaps.join(" · ")}을 입력하면 조달 밴드를 계산합니다. 입력 전에는 값을 추정하지 않습니다.`, provenance: null
   };
 }

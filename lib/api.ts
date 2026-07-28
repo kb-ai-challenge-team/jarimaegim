@@ -1,4 +1,4 @@
-import type { AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, Program, RetrievalResponse, StatusResponse } from "./types";
+import type { AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, ConditionInterpretResult, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, FundingCapacityResult, KbProduct, Program, RetrievalResponse, StatusResponse } from "./types";
 import { createSseParser, type SseEvent } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
@@ -213,6 +213,9 @@ export const api = {
   searchPrograms: (query: string, district?: string, limit = 8) => request<RetrievalResponse>(`/knowledge/search?q=${encodeURIComponent(query)}&kind=PROGRAM${district ? `&district=${encodeURIComponent(district)}` : ""}&limit=${limit}`),
   createCostPlan: (caseId: string, items: { key: string; label: string; min_krw: number | null; max_krw: number | null; source_type: string }[]) => request<CostPlan>("/cost-plans", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, items }) }),
   fundingBands: (caseId: string, inputs: FundingBandInput) => request<FundingBandResult>("/funding-bands", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, ...inputs }) }),
+  // 서버 상태를 만들지 않는 조회형 POST 다. 같은 성격인 searchLocations 처럼 Idempotency-Key 를 붙이지 않는다.
+  fundingCapacity: (equity_krw: number, existing_debt_krw: number) => request<FundingCapacityResult>("/funding-capacity", { method: "POST", body: JSON.stringify({ equity_krw, existing_debt_krw }) }),
+  interpretConditions: (text: string) => request<ConditionInterpretResult>("/conditions/interpret", { method: "POST", body: JSON.stringify({ text }) }),
   // Non-streaming, no tools. `AIService.explain` always returns `citations: []` -- the Citation[]
   // type is what the envelope permits, not what this endpoint delivers. Use chatStream for sourced
   // answers.

@@ -361,9 +361,39 @@ export interface FundingBandResult {
   required_capital_band: FundingBandKey | null;
   bands: BandLine[];
   break_even: BreakEven | null;
+  parameter_status: "VERIFIED" | "DEMO";
+  unverified_params: string[];
   missing_params: string[];
   message: string | null;
   provenance: Provenance | null;
+}
+
+/** 1단계의 완결 결과. 권장 조달선은 여기 없고, 왜 아직 없는지를 문장으로 말한다. */
+export interface FundingCapacityResult {
+  status: "computed" | "integration_pending";
+  equity_line_krw: number;
+  borrowing_headroom_krw: number;
+  maximum_line_krw: number;
+  parameter_status: "VERIFIED" | "DEMO";
+  unverified_params: string[];
+  recommended_line_pending: string;
+  missing_params: string[];
+  message: string | null;
+  provenance: Provenance | null;
+}
+
+export type ConditionKey = "industry" | "district" | "monthly_rent_krw" | "business_stage" | "startup_type" | "priority";
+
+/** evidence 는 사용자 원문의 부분문자열이며, 서버 검증을 통과한 값만 채워져 온다. */
+export interface ConditionField { value: string | number | null; evidence: string | null }
+
+/** 조건 제안. 케이스가 아니며 확인 화면의 승인이 있어야 조건이 된다.
+ *  equity_krw·budget_krw 는 의도적으로 없다 — 1단계 금융 프로필이 소유한다. */
+export interface ConditionInterpretResult {
+  source: "AI" | "RULE";
+  fields: Record<ConditionKey, ConditionField>;
+  unresolved: string[];
+  message: string;
 }
 
 /** 의미 검색 결과 한 건. backend/app/models.py의 RetrievedDocument와 필드 대 필드로 맞춘다. */
