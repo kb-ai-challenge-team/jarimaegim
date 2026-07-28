@@ -59,6 +59,39 @@ def test_industry_returns_field_map():
     assert PolicyParams(FULL).industry("카페")["cogs_ratio"] == 0.35
 
 
+def test_unverified_is_empty_when_nothing_is_flagged():
+    """verified 키가 없는 항목은 검증된 것으로 본다 — 배포 설정은 별도 테스트가 명시를 강제한다."""
+    assert PolicyParams(FULL).unverified("카페") == []
+
+
+def test_unverified_lists_demo_entries():
+    raw = json.loads(json.dumps(FULL))
+    raw["entries"]["loan.policy_fund_ceiling_krw"]["verified"] = False
+    assert PolicyParams(raw).unverified("카페") == ["loan.policy_fund_ceiling_krw"]
+
+
+def test_unverified_lists_a_demo_industry():
+    raw = json.loads(json.dumps(FULL))
+    raw["industries"]["카페"]["verified"] = False
+    assert PolicyParams(raw).unverified("카페") == ["industries.카페"]
+
+
+def test_unverified_ignores_industries_other_than_the_one_asked_for():
+    raw = json.loads(json.dumps(FULL))
+    raw["industries"]["분식점"] = {"cogs_ratio": 0.4, "labor_ratio": 0.2, "fitout_krw_per_pyeong": 1,
+                                   "operating_days_per_month": 26, "verified": False,
+                                   "source": "테스트", "as_of": "2026-07-01"}
+    assert PolicyParams(raw).unverified("카페") == []
+
+
+def test_missing_of_reports_only_the_keys_asked_for():
+    raw = json.loads(json.dumps(FULL))
+    raw["entries"]["loan.term_months"]["value"] = None
+    params = PolicyParams(raw)
+    assert params.missing_of(("loan.guarantee_ceiling_krw",)) == []
+    assert params.missing_of(("loan.term_months",)) == ["loan.term_months"]
+
+
 def _shipped_config() -> dict:
     from pathlib import Path
     path = Path(__file__).resolve().parents[2] / "config" / "policy-params.json"

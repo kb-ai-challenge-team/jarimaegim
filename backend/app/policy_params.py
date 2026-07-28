@@ -27,9 +27,12 @@ class PolicyParams:
             return cls({})
         return cls(json.loads(target.read_text(encoding="utf-8")))
 
+    def missing_of(self, keys: tuple[str, ...]) -> list[str]:
+        """주어진 키 중 값이 없는 것. 산출마다 필요한 키가 다르므로 목록을 받는다."""
+        return [key for key in keys if (self._entries.get(key) or {}).get("value") is None]
+
     def missing(self, industry: str) -> list[str]:
-        gaps = [key for key in REQUIRED_ENTRIES
-                if (self._entries.get(key) or {}).get("value") is None]
+        gaps = self.missing_of(REQUIRED_ENTRIES)
         profile = self._industries.get(industry)
         if not profile:
             gaps.append(f"industries.{industry}")
@@ -37,6 +40,18 @@ class PolicyParams:
         gaps.extend(f"industries.{industry}.{field}" for field in REQUIRED_INDUSTRY_FIELDS
                     if profile.get(field) is None)
         return gaps
+
+    def unverified_of(self, keys: tuple[str, ...]) -> list[str]:
+        """주어진 키 중 verified 가 명시적으로 false 인 것. 값이 없는 키는 missing 이 먼저 잡는다."""
+        return [key for key in keys if (self._entries.get(key) or {}).get("verified") is False]
+
+    def unverified(self, industry: str) -> list[str]:
+        """이 업종의 밴드 산출에 실제로 쓰이는 값 중 미검증인 것.
+        화면이 '시연용'을 표시할지 결정하는 단일 근거다 — 비어 있지 않으면 반드시 표시한다."""
+        keys = self.unverified_of(REQUIRED_ENTRIES)
+        if (self._industries.get(industry) or {}).get("verified") is False:
+            keys.append(f"industries.{industry}")
+        return keys
 
     def value(self, key: str) -> float:
         entry = self._entries.get(key) or {}
