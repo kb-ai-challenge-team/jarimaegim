@@ -176,3 +176,42 @@ async def test_the_finance_agent_records_what_the_model_chose():
 def test_the_synchronous_path_still_works_without_any_model():
     report = ConditionLayer().run(COMPLETE)
     assert report.settled is True
+
+
+# ── 충돌은 덮어쓰지 않고 제안으로 올린다 ──────────────────────────────────
+
+async def test_an_utterance_that_contradicts_a_settled_value_never_overwrites_it():
+    """폼에 강남구를 확정해 놓고 "마포는 어때" 라고 말해도 조건은 바뀌지 않는다.
+    조건 변경은 재실행을 유발하므로 조용히 일어나면 안 된다."""
+    responder = ScriptedResponder(mentions({"field": "district", "span": "마포구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "마포구는 어때요"})
+    assert report.conditions["district"] == "강남구"
+
+
+async def test_a_contradicting_utterance_is_surfaced_as_a_proposal():
+    responder = ScriptedResponder(mentions({"field": "district", "span": "마포구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "마포구는 어때요"})
+    assert report.proposals == [
+        {"field": "district", "current": "강남구", "proposed": "마포구", "span": "마포구"}]
+
+
+async def test_an_utterance_that_agrees_with_a_settled_value_is_not_a_proposal():
+    """같은 값을 다시 말한 것은 변경 제안이 아니다."""
+    responder = ScriptedResponder(mentions({"field": "district", "span": "강남구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "강남구에서 찾고 있어요"})
+    assert report.proposals == []
+
+
+async def test_a_span_that_is_not_in_the_utterance_never_becomes_a_proposal_either():
+    """검증은 채우기와 제안 양쪽에 똑같이 걸린다."""
+    responder = ScriptedResponder(mentions({"field": "district", "span": "송파구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "마포구는 어때요"})
+    assert report.proposals == []

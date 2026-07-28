@@ -25,7 +25,11 @@ condition.finance 는 되물을 항목을 고른다. 모델은 **실제로 비�
 있고, 상한 3개는 코드가 다시 강제한다. 모델이 고르지 않으면 선언 순서로 되돌아간다.
 
 추출은 **비어 있던 항목만 채운다.** 사용자가 화면에서 확정한 값을 모델의 해석이 덮어쓰면
-"확인 후 수정하고 시작해 주세요"라는 화면의 약속이 거짓이 된다.
+그 사람이 정한 것이 조용히 뒤집힌다.
+
+발화가 이미 확정된 값과 어긋나면 덮어쓰지 않고 **변경 제안으로 올린다**(`proposals`). 조건
+변경은 재실행을 유발하므로 사용자가 모르는 사이에 일어나면 안 된다. 확인 클릭을 없앤 뒤에도
+이 경계는 남는다 — 없앤 것은 "맞다고 눌러야 시작한다"이지 "말한 적 없는 값이 들어간다"가 아니다.
 """
 from __future__ import annotations
 
@@ -147,7 +151,7 @@ class ConditionLayer:
                                                           schema=EXTRACT_SCHEMA.name)
         asked = asked or Decision.deterministic("condition.finance", schema="select_questions")
         extracted = self._extracted(conditions, extraction)
-        proposals: list[dict[str, Any]] = []
+        proposals = self._proposals(conditions, extraction)
         merged = {**conditions, **extracted}
 
         blocking_gaps = _missing(merged, BLOCKING)
@@ -199,24 +203,31 @@ class ConditionLayer:
     # ── condition.location · 발화에서 읽기 ──────────────────────────────
     async def _extract(self, conditions: dict[str, Any]) -> Decision:
         utterance = str(conditions.get("utterance") or "").strip()
-        gaps = [key for key, _ in (BLOCKING + DEFERRABLE)
-                if _blank(conditions.get(key))]
-        if self.llm is None or not utterance or not gaps:
-            # 대조할 원문이 없거나 채울 칸이 없으면 부르지 않는다 — 검증할 수 없는 추출은 하지 않고,
-            # 이미 확정된 조건을 다시 해석해 봐야 덮어쓸 수도 없으므로 호출이 낭비다.
+        if self.llm is None or not utterance:
+            # 대조할 원문이 없으면 부르지 않는다 — 검증할 수 없는 추출은 하지 않는다.
+            #
+            # 예전에는 "빈 칸이 없으면" 도 부르지 않았다. 이제는 이미 확정된 값과 발화가
+            # 어긋나는 것을 찾아야 하므로 빈 칸이 없어도 부른다. 덮어쓰지는 않는다 —
+            # 어긋난 것은 `_proposals` 가 변경 제안으로만 올린다.
             return Decision.deterministic("condition.location", schema=EXTRACT_SCHEMA.name)
         return await self.llm.choose(
             agent_key="condition.location", schema=EXTRACT_SCHEMA, verify_against=utterance,
-            instruction=("발화에서 아직 비어 있는 조건이 언급된 곳을 가리키세요. "
+            instruction=("발화에서 각 조건이 언급된 곳을 가리키세요. 이미 확정된 항목이라도 "
+                         "발화가 다른 값을 말하면 그것도 가리키세요 — 덮어쓰지 않고 확인만 받습니다. "
                          "금액을 계산하지 말고 원문 조각을 그대로 적으세요."),
-            context={"발화": utterance, "비어 있는 항목": gaps,
+            context={"발화": utterance,
+                     "비어 있는 항목": [key for key, _ in BLOCKING + DEFERRABLE
+                                  if _blank(conditions.get(key))],
                      "이미 확정된 항목": {key: conditions.get(key)
                                     for key, _ in BLOCKING + DEFERRABLE
                                     if not _blank(conditions.get(key))}})
 
     @staticmethod
     def _extracted(conditions: dict[str, Any], extraction: Decision) -> dict[str, Any]:
-        """검증된 조각에서 값을 읽어, 비어 있던 항목만 채운다."""
+        """검증된 조각에서 값을 읽어, 비어 있던 항목만 채운다.
+
+        사용자가 화면에서 확정한 값을 모델의 해석이 덮어쓰면 조건이 조용히 바뀌고, 조건이
+        바뀌면 재실행이 일어난다. 재실행은 사용자가 아는 상태에서만 일어나야 한다."""
         filled: dict[str, Any] = {}
         for row in extraction.chosen.get("mentions", []):
             name = row.get("field")
@@ -226,6 +237,26 @@ class ConditionLayer:
             if value is not None:
                 filled[name] = value
         return filled
+
+    @staticmethod
+    def _proposals(conditions: dict[str, Any], extraction: Decision) -> list[dict[str, Any]]:
+        """발화가 이미 확정된 값과 다른 값을 말한 것. 적용하지 않고 화면에 올리기만 한다.
+
+        검증은 채우기와 똑같다 — 원문에 없는 조각은 제안도 되지 못한다. 그렇지 않으면
+        "덮어쓰지는 않으니까" 를 핑계로 검증되지 않은 값이 화면에 오른다."""
+        seen: set[str] = set()
+        found: list[dict[str, Any]] = []
+        for row in extraction.chosen.get("mentions", []):
+            name = row.get("field")
+            if name not in EXTRACTABLE or name in seen or _blank(conditions.get(name)):
+                continue
+            value = resolve_mention(name, row.get("span", ""))
+            if value is None or value == conditions.get(name):
+                continue
+            seen.add(name)
+            found.append({"field": name, "current": conditions.get(name),
+                          "proposed": value, "span": row.get("span", "")})
+        return found
 
     # ── condition.finance · 무엇을 되물을지 고르기 ───────────────────────
     async def _ask(self, merged: dict[str, Any]) -> Decision:
