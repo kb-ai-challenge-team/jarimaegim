@@ -103,19 +103,23 @@ api_fingerprint() {
 }
 say "동기화"
 LOCK_BEFORE="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "md5sum '$APP_DIR/package-lock.json' 2>/dev/null | cut -d' ' -f1 || echo none")"
+REQ_BEFORE="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "md5sum '$APP_DIR/backend/requirements.txt' 2>/dev/null | cut -d' ' -f1 || echo none")"
 API_BEFORE="$(api_fingerprint)"
 rsync -rlzc --delete -e "ssh ${SSH_OPTS[*]}" "${EXCLUDES[@]}" \
   "$STAGE"/ "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/"
 LOCK_AFTER="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "md5sum '$APP_DIR/package-lock.json' | cut -d' ' -f1")"
+REQ_AFTER="$(ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "md5sum '$APP_DIR/backend/requirements.txt' | cut -d' ' -f1")"
 API_AFTER="$(api_fingerprint)"
 
 # ── 7. 의존성·재시작 ────────────────────────────────────────────────────────
 say "의존성 · 재시작"
 LOCK_CHANGED=0
 [ "$LOCK_BEFORE" != "$LOCK_AFTER" ] && LOCK_CHANGED=1
+REQ_CHANGED=0
+[ "$REQ_BEFORE" != "$REQ_AFTER" ] && REQ_CHANGED=1
 API_CHANGED=0
 [ "$API_BEFORE" != "$API_AFTER" ] && API_CHANGED=1
-echo "  package-lock 변경: $LOCK_CHANGED · backend·config 변경: $API_CHANGED"
+echo "  package-lock 변경: $LOCK_CHANGED · requirements 변경: $REQ_CHANGED · backend·config 변경: $API_CHANGED"
 ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "set -euo pipefail
   cd '$APP_DIR'
   if [ '$LOCK_CHANGED' = '1' ]; then
@@ -123,6 +127,18 @@ ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "set -euo pipefail
     npm ci --no-audit --no-fund
   else
     echo '  package-lock 동일 — npm ci 생략'
+  fi
+  # backend/.venv 는 rsync 에서 제외된다(서버가 자기 가상환경을 소유한다). 그래서 새 파이썬
+  # 의존성은 여기서 설치하지 않으면 서버에 영영 도착하지 않는다. main.py 는 mcp_client·
+  # knowledge·retrieval 을 조건 없이 import 하므로, 빠진 패키지 하나면 기능 플래그와 무관하게
+  # API 가 import 단계에서 죽는다. 반드시 아래 systemctl restart 보다 먼저 실행해야 한다 --
+  # 순서가 뒤집히면 API 가 의존성 없이 재시작하고, readiness 루프가 60초를 기다린 뒤 배포가
+  # 스스로를 실패로 판정해 멀쩡한 프론트엔드까지 롤백한다.
+  if [ '$REQ_CHANGED' = '1' ]; then
+    echo '  pip install (requirements 변경)'
+    backend/.venv/bin/pip install -q -r backend/requirements.txt
+  else
+    echo '  requirements 동일 — pip install 생략'
   fi
   if [ '$API_CHANGED' = '1' ]; then
     echo '  restart api (backend·config 변경 — 설정을 import 시점에 읽는다)'
