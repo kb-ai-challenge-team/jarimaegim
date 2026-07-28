@@ -176,83 +176,129 @@ const location = {
   committable: candidateCount === 0 || (await panel.locator(".kb-candidates li").first().innerText()).includes("계획 기준")
 };
 
-// 처방 — 입지 다음 단계. 공고 조회 응답을 기다린다.
-const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
-await panel.locator(".kb-stepnav .kb-primary-sm").click();
-await programsResponse;
-await page.waitForFunction(() => {
-  const root = window.document.querySelector(".kb-ai-panel");
-  if (!root || root.querySelector(".kb-loading")) return false;
-  return root.querySelectorAll(".kb-program-list li").length > 0
-    || Array.from(root.querySelectorAll(".kb-empty strong")).some(el => el.textContent?.includes("공식 공고"));
-}, null, { timeout: 30000 });
-const programItems = await panel.locator(".kb-program-list li").all();
-let withSource = 0;
-for (const item of programItems) if (await item.locator('a[href^="http"]').count() > 0) withSource += 1;
-const funding = {
-  subsidyConfigured,
-  programCount: programItems.length,
-  // 공고가 있으면 모두 공식 원문 링크를 가져야 하고, 없으면 빈 상태가 보여야 한다
-  safeState: programItems.length > 0
-    ? withSource === programItems.length
-    : await panel.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible().catch(() => false),
-  // 지원금이 밴드에 반영되지 않았음을 고지한다
-  subsidyGapDisclosed: (await panel.locator(".kb-note").allInnerTexts()).some(text => text.includes("지원사업 endpoint 연동 후"))
-};
-
-// 처방 — 제안서 6·7단계. 계획 기준 후보 · 레포트 · 문서 초안 세 블록.
-const blocks = (await panel.locator(".kb-prescription-block h3").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
-const docResponse = page.waitForResponse((r) => r.url().includes("/api/v1/documents") && r.request().method() === "POST", { timeout: 30000 }).catch(() => null);
-await panel.locator(".kb-doc-actions button").first().click();
-const documentResponse = await docResponse;
-await page.waitForTimeout(1200);
-// 처방에 뜬 상품은 전부 추천 근거를 달고 있어야 한다. 근거 없는 행이 하나라도 있으면
-// 조건과 무관한 공시가 다시 새어 들어온 것이다.
-const productRows = await panel.locator(".kb-products ul li").count();
-let rowsWithReason = 0;
-for (const row of await panel.locator(".kb-products ul li").all()) {
-  if (await row.locator(".kb-match-reasons span").count() > 0) rowsWithReason += 1;
-}
-// 공고도 같은 규칙을 받는다 — 근거를 달고, 다른 광역자치단체 공고는 아예 오르지 않는다.
-const programRows = await panel.locator(".kb-program-list li").count();
-let programRowsWithReason = 0;
-for (const row of await panel.locator(".kb-program-list li").all()) {
-  if (await row.locator(".kb-match-reasons span").count() > 0) programRowsWithReason += 1;
-}
+// ④ 조달 · ⑤ 서류 — 옛 "처방" 한 화면이 두 단계로 갈라졌다. 단계 잠금·화면 전환·동의 게이트 같은
+// "도달했는가"는 flow-check 의 prescribe 블록이 이미 판정하므로 여기서는 되풀이하지 않고 두 화면의
+// 내용만 본다 — 원문 링크, 상위 N 상한, 추천 근거, 게이트 고지, 그리고 실제 문서 생성(201).
+// 번호 매긴 처방 블록 세 칸(.kb-prescription-block)을 세던 단언은 화면 자체가 사라졌으므로 폐기했다.
+// 분리가 되돌아갔는지는 아래 두 가지가 대신 잡는다 — 스테퍼 라벨 네 칸(파일 끝 stepperOk), 그리고
+// funding.noDocActions / paperwork.noSelectRows(고르기와 문서화가 한 화면으로 다시 합쳐지지 않았는가).
 const OTHER_REGIONS = ["부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"];
-const programTitles = await panel.locator(".kb-program-list li strong").allInnerTexts();
+const funding = { subsidyConfigured, reached: false };
+const recommendation = {};
+const paperwork = { reached: false };
+// 후보를 확정해야 부족분이 서고, 부족분이 서야 조달 화면의 질문이 성립한다. 확정 전에는 다음이
+// 잠겨 있으므로 후보가 0건인 환경에서는 두 화면 모두 도달할 수 없다 — 그때는 이 묶음을 판정하지 않는다.
+if (candidateCount > 0) {
+  // 확정이 목록에 반영되기 전에는 .kb-stepnav 의 다음이 잠겨 있다. 확정 표시가 뜬 뒤에 누른다.
+  await panel.locator(".kb-candidate-actions .kb-primary-sm").first().waitFor({ timeout: 15000 });
+  // 공시·공고는 이 화면에 들어선 뒤에 조회된다(use-jarimaegim 의 step==="funding" 효과).
+  const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
+  const kbProductsResponse = page.waitForResponse(r => r.url().includes("/api/v1/products/kb"), { timeout: 30000 }).catch(() => null);
+  // 단계 이동 버튼은 .kb-stepnav 안에만 있다. 오른쪽 대화 칼럼의 추천 질문("다음에 뭘 해야 해?")도
+  // 버튼이라 이름만으로 고르면 두 개가 잡힌다.
+  await panel.locator(".kb-stepnav").getByRole("button", { name: /다음/ }).click();
+  // 부족분 카드는 단계가 뜨는 순간 그려진다 — 어떤 fetch 도 기다리지 않는다.
+  await panel.locator(".kb-gap-card").waitFor({ timeout: 20000 });
+  funding.reached = true;
+  await Promise.all([programsResponse, kbProductsResponse]);
+  // 응답이 온 것과 목록이 그려진 것은 다르다. 두 로더가 모두 걷힐 때까지 기다린 뒤에 센다 —
+  // 먼저 세면 3건짜리 목록을 0건으로 읽고 "빈 상태니까 통과"로 새어 나간다.
+  await page.waitForFunction(() => {
+    const step = window.document.querySelector(".kb-ai-panel .kb-step");
+    return Boolean(step) && !step.querySelector(".kb-loading");
+  }, null, { timeout: 40000 });
 
-const recommendation = {
-  productRows,
-  everyRowHasReason: rowsWithReason === productRows,
-  // "나머지 N건 보기"가 되살아나면 비추천 상품이 다시 화면에 들어온다.
-  noBulkExpander: await panel.getByRole("button", { name: /나머지 \d+건 보기/ }).count() === 0,
-  // 검토할 수 있는 분량을 넘기지 않는다. 넘긴다면 조용히 자른 것이 아니라 상한이 풀린 것이다.
-  productsWithinTop: productRows <= 3,
-  programRows,
-  everyProgramHasReason: programRowsWithReason === programRows,
-  programsWithinTop: programRows <= 3,
-  // 서울 창업자가 받을 수 없는 공고가 처방에 오르면 안 된다.
-  noOtherRegionPrograms: programTitles.every((title) => title.includes("서울") || !OTHER_REGIONS.some((region) => title.includes(region)))
-};
+  // 조달에 뜬 상품은 전부 추천 근거를 달고 있어야 한다. 근거 없는 행이 하나라도 있으면
+  // 조건과 무관한 공시가 다시 새어 들어온 것이다. 원문으로 갈 길도 행마다 있어야 한다.
+  const productItems = await panel.locator(".kb-products ul li").all();
+  let rowsWithReason = 0, rowsWithSource = 0;
+  for (const row of productItems) {
+    if (await row.locator(".kb-match-reasons span").count() > 0) rowsWithReason += 1;
+    if (await row.locator('a[href^="http"]').count() > 0) rowsWithSource += 1;
+  }
+  // 공고도 같은 규칙을 받는다 — 근거를 달고, 다른 광역자치단체 공고는 아예 오르지 않는다.
+  const programItems = await panel.locator(".kb-program-list li").all();
+  let programRowsWithReason = 0, programRowsWithSource = 0;
+  for (const row of programItems) {
+    if (await row.locator(".kb-match-reasons span").count() > 0) programRowsWithReason += 1;
+    if (await row.locator('a[href^="http"]').count() > 0) programRowsWithSource += 1;
+  }
+  const programTitles = await panel.locator(".kb-program-list li strong").allInnerTexts();
+  Object.assign(recommendation, {
+    productRows: productItems.length,
+    everyRowHasReason: rowsWithReason === productItems.length,
+    // "나머지 N건 보기"가 되살아나면 비추천 상품이 다시 화면에 들어온다.
+    noBulkExpander: await panel.getByRole("button", { name: /나머지 \d+건 보기/ }).count() === 0,
+    // 검토할 수 있는 분량을 넘기지 않는다. 넘긴다면 조용히 자른 것이 아니라 상한이 풀린 것이다.
+    productsWithinTop: productItems.length <= 3,
+    programRows: programItems.length,
+    everyProgramHasReason: programRowsWithReason === programItems.length,
+    programsWithinTop: programItems.length <= 3,
+    // 서울 창업자가 받을 수 없는 공고가 조달 목록에 오르면 안 된다.
+    noOtherRegionPrograms: programTitles.every((title) => title.includes("서울") || !OTHER_REGIONS.some((region) => title.includes(region)))
+  });
 
-const prescription = {
-  blocks: blocks.length,
-  committedShown: candidateCount === 0 || await panel.locator(".kb-committed").count() > 0,
-  documentCreated: Boolean(documentResponse && documentResponse.status() === 201),
-  // 밴드 표는 입지 화면에서 이미 봤다. 처방에서 반복하지 않는다.
-  noDuplicateBandTable: await panel.locator(".kb-band-table").count() === 0,
-  // 상담 자동 연결은 게이트가 꺼져 있으므로 그 사실을 고지해야 한다 (부록 A 불변조건 5)
-  consultationDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("상담 자동 연결은 제공하지 않습니다")),
-  // 초안 설명은 render_case_pdf 가 실제로 담는 것만 말해야 한다. 문서에 없는 것을 약속하면 안 된다.
-  documentCopyHonest: await (async () => {
-    const notes = (await panel.locator(".kb-prescription-block").last().locator(".kb-note").allInnerTexts()).join(" ");
-    const promisesProvenance = notes.includes("출처와 기준일") && !notes.includes("포함되지 않습니다");
-    return notes.includes("확정한 조건") && notes.includes("포함되지 않습니다") && !promisesProvenance;
-  })()
-};
+  Object.assign(funding, {
+    programCount: programItems.length,
+    productCount: productItems.length,
+    // 원문 이동은 조달 화면에서만 살아 있다(정책·상품 탭에서는 제거되었다 — 아래에서 따로 센다).
+    // 목록에 오른 줄은 상품이든 공고든 예외 없이 공식 원문으로 갈 길을 달고 있어야 한다.
+    everyRowHasSource: rowsWithSource === productItems.length && programRowsWithSource === programItems.length,
+    // 무엇을 기준으로 한 부족분인지가 화면에 남아 있어야 한다. 옛 .kb-committed 자리다.
+    planBadgeShown: await panel.locator(".kb-plan-badge").count() > 0,
+    // 밴드 표는 입지 화면에서 이미 봤다. 조달에서 반복하지 않는다.
+    noDuplicateBandTable: await panel.locator(".kb-band-table").count() === 0,
+    // 지원금이 밴드에 반영되지 않았음을 고지한다
+    subsidyGapDisclosed: (await panel.locator(".kb-note").allInnerTexts()).some(text => text.includes("지원사업 endpoint 연동 후")),
+    // 고르는 것은 신청이 아니다 — 신청 게이트가 꺼져 있음을 이 화면이 스스로 밝혀야 한다 (부록 A 불변조건 5)
+    applicationLockDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("고르는 것은 문서에 담는다는 뜻이며 신청이 아닙니다")),
+    // 문서를 만드는 것은 ⑤ 서류의 일이다. 조달 화면에 초안 버튼이 되살아나면 두 단계가 다시 합쳐진 것이다.
+    noDocActions: await panel.locator(".kb-doc-actions").count() === 0
+      && await panel.getByRole("button", { name: /초안 준비하기|초안 내려받기/ }).count() === 0
+  });
 
-// 원문 이동은 최종 추천(처방)에서만 살아 있다. 정책·상품 탭에서는 제거되었으므로, 되살아나면
+  // 고른 것이 문서에 그대로 실리는지 보려면 무엇을 골랐는지 알아야 한다. 체크박스의 접근성 이름이
+  // "<상품명> 문서에 담기"이므로 뒤 문구를 떼면 이름이 남는다.
+  const firstBox = panel.locator(".kb-select-row input[type=checkbox]").first();
+  let chosenName = "";
+  if (await firstBox.count() > 0) {
+    chosenName = ((await firstBox.getAttribute("aria-label")) || "").replace(/\s*문서에 담기$/, "").trim();
+    await firstBox.check();
+  }
+  const nextLabel = await panel.getByRole("button", { name: /문서 만들기|서류로/ }).innerText();
+  // 체크가 실제로 선택으로 등록되는지는 버튼 라벨이 말한다. 등록되지 않으면 골라도 "선택 없이"로 남는다.
+  funding.buttonCountsSelection = chosenName ? nextLabel.includes("고른 1건") : nextLabel.includes("선택 없이");
+
+  await panel.getByRole("button", { name: /문서 만들기|서류로/ }).click();
+  await panel.locator(".kb-doc-preview").waitFor({ timeout: 20000 });
+  paperwork.reached = true;
+  const previewText = await panel.locator(".kb-doc-preview").innerText();
+  Object.assign(paperwork, {
+    previewRows: await panel.locator(".kb-doc-preview li").count(),
+    // 고르기는 ④ 의 일이다. 서류 화면에 체크박스가 되살아나면 두 단계가 다시 합쳐진 것이다.
+    noSelectRows: await panel.locator(".kb-select-row").count() === 0,
+    noDuplicateBandTable: await panel.locator(".kb-band-table").count() === 0,
+    // 미리보기는 render_case_pdf 가 담는 것과 1:1 이어야 한다. 조달에서 고른 수단이 이름 그대로
+    // 나타나지 않으면 화면이 문서가 아니라 상투 문구를 보여주고 있는 것이다 — 옛 documentCopyHonest 가
+    // "약속한 것보다 문서가 적지 않은가"를 문구로 물었다면, 여기서는 실제 선택으로 되묻는다.
+    previewMirrorsSelection: chosenName ? previewText.includes(chosenName) : previewText.includes("고른 조달 수단이 없습니다"),
+    // 출처·기준일과 비보장 고지는 문서가 실제로 싣는 줄이다 (부록 A 불변조건 3).
+    disclosesSourceAndNonGuarantee: previewText.includes("출처") && previewText.includes("기준일") && previewText.includes("보장하지 않습니다"),
+    // 상담 자동 연결은 게이트가 꺼져 있으므로 그 사실을 고지해야 한다 (부록 A 불변조건 5)
+    consultationDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("상담 자동 연결은 제공하지 않습니다"))
+  });
+
+  // 동의한 뒤 실제로 초안을 만든다. flow-check 는 버튼이 잠기고 풀리는 데까지만 보므로, 문서가
+  // 정말 만들어지는지(201)를 확인하는 곳은 여기뿐이다.
+  const docResponse = page.waitForResponse((r) => r.url().includes("/api/v1/documents") && r.request().method() === "POST", { timeout: 30000 }).catch(() => null);
+  await panel.getByRole("checkbox", { name: "위 내용이 문서에 담기는 것을 확인했습니다" }).check();
+  await panel.getByRole("button", { name: /초안 준비하기/ }).click();
+  const documentResponse = await docResponse;
+  paperwork.documentCreated = Boolean(documentResponse && documentResponse.status() === 201);
+  await page.waitForTimeout(800);
+}
+
+// 원문 이동은 조달 화면(④)에서만 살아 있다. 정책·상품 탭에서는 제거되었으므로, 되살아나면
 // 여기서 걸린다. 두 패널은 같은 .kb-policy 루트를 쓰므로 탭을 전환해 가며 따로 센다.
 await page.getByRole("button", { name: "정책" }).click();
 await page.waitForFunction(() => {
@@ -273,11 +319,12 @@ const productTab = {
   noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
 };
 
-const result = { stepper, overview, drilldown, returned, profile, persistence, condition, asking, flowOrder, lease, bands, location, cost, funding, recommendation, prescription, policyTab, productTab, axes, errors };
+const result = { stepper, overview, drilldown, returned, profile, persistence, condition, asking, flowOrder, lease, bands, location, cost, funding, recommendation, paperwork, policyTab, productTab, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-const expected = ["조건", "입지", "처방"];
-const stepperOk = stepper.labels.length === 3 && expected.every((label, index) => (stepper.labels[index] || "").includes(label));
+// 처방 한 칸이 조달·서류 둘로 갈라졌다. 라벨을 순서대로 확인하므로 분리가 되돌아가면 여기서 걸린다.
+const expected = ["조건", "입지", "조달", "서류"];
+const stepperOk = stepper.labels.length === 4 && expected.every((label, index) => (stepper.labels[index] || "").includes(label));
 if (errors.length || !stepperOk
   || !profile.gateVisible || !profile.mydataGated || !profile.lockExplained || profile.manualAdapterFields !== 3
   || !persistence.gateSkipped || !persistence.badgeCarriesEquity || !persistence.storageDisclosed || !persistence.erasable
@@ -287,15 +334,22 @@ if (errors.length || !stepperOk
   || !lease.fieldsPresent || !lease.profileNotReasked || !lease.stillOnLocation || !lease.noRawParamKeys
   || !bands.autoComputed || !bands.safeState || !bands.noInventedTradeAreaCount || !bands.noInventedRunway
   || !location.rendered || !location.evidenceInline || !cost.bandTableShown
-  || !funding.safeState || !funding.subsidyGapDisclosed
   || !location.committable || (location.candidateCount > 0 && location.demoBadges === 0)
-  || !recommendation.everyRowHasReason || !recommendation.noBulkExpander || !recommendation.productsWithinTop
-  || !recommendation.everyProgramHasReason || !recommendation.programsWithinTop || !recommendation.noOtherRegionPrograms
-  || prescription.blocks !== 3 || !prescription.committedShown || !prescription.noDuplicateBandTable
-  || !prescription.documentCreated || !prescription.consultationDisclosed
-  || !prescription.documentCopyHonest
   || !policyTab.noOutboundLinks || !productTab.noOutboundLinks
   || !axes.disabledCarryReason
   || overview.pins !== overview.expected || overview.markersBefore !== 0
   || drilldown.markers === 0 || drilldown.badges < 1 || !drilldown.pinsGone
   || returned.pins !== overview.expected) process.exitCode = 1;
+
+// ④ 조달 · ⑤ 서류 는 후보를 확정해야 도달할 수 있다. 시연용 매물이 없는 환경에서는 두 화면이
+// 존재하지 않으므로 판정하지 않는다 — 무키 환경에서도 통과해야 한다는 규칙이 이 게이트의 이유다.
+if (location.candidateCount > 0 && (!funding.reached || !paperwork.reached
+  || !recommendation.everyRowHasReason || !recommendation.noBulkExpander || !recommendation.productsWithinTop
+  || !recommendation.everyProgramHasReason || !recommendation.programsWithinTop || !recommendation.noOtherRegionPrograms
+  || !funding.planBadgeShown || !funding.everyRowHasSource || !funding.subsidyGapDisclosed
+  || !funding.noDuplicateBandTable || !funding.applicationLockDisclosed || !funding.buttonCountsSelection
+  // 고르기는 ④ 에만, 문서화는 ⑤ 에만 있어야 한다. 둘 중 하나라도 반대편에 나타나면 두 단계가 다시 합쳐진 것이다.
+  || !funding.noDocActions || !paperwork.noSelectRows
+  || !paperwork.noDuplicateBandTable || paperwork.previewRows < 4
+  || !paperwork.previewMirrorsSelection || !paperwork.disclosesSourceAndNonGuarantee
+  || !paperwork.consultationDisclosed || !paperwork.documentCreated)) process.exitCode = 1;
