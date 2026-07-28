@@ -197,11 +197,27 @@ let rowsWithReason = 0;
 for (const row of await panel.locator(".kb-products ul li").all()) {
   if (await row.locator(".kb-match-reasons span").count() > 0) rowsWithReason += 1;
 }
+// 공고도 같은 규칙을 받는다 — 근거를 달고, 다른 광역자치단체 공고는 아예 오르지 않는다.
+const programRows = await panel.locator(".kb-program-list li").count();
+let programRowsWithReason = 0;
+for (const row of await panel.locator(".kb-program-list li").all()) {
+  if (await row.locator(".kb-match-reasons span").count() > 0) programRowsWithReason += 1;
+}
+const OTHER_REGIONS = ["부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"];
+const programTitles = await panel.locator(".kb-program-list li strong").allInnerTexts();
+
 const recommendation = {
   productRows,
   everyRowHasReason: rowsWithReason === productRows,
   // "나머지 N건 보기"가 되살아나면 비추천 상품이 다시 화면에 들어온다.
-  noBulkExpander: await panel.getByRole("button", { name: /나머지 \d+건 보기/ }).count() === 0
+  noBulkExpander: await panel.getByRole("button", { name: /나머지 \d+건 보기/ }).count() === 0,
+  // 검토할 수 있는 분량을 넘기지 않는다. 넘긴다면 조용히 자른 것이 아니라 상한이 풀린 것이다.
+  productsWithinTop: productRows <= 3,
+  programRows,
+  everyProgramHasReason: programRowsWithReason === programRows,
+  programsWithinTop: programRows <= 3,
+  // 서울 창업자가 받을 수 없는 공고가 처방에 오르면 안 된다.
+  noOtherRegionPrograms: programTitles.every((title) => title.includes("서울") || !OTHER_REGIONS.some((region) => title.includes(region)))
 };
 
 const prescription = {
@@ -256,7 +272,8 @@ if (errors.length || !stepperOk
   || !location.rendered || !location.evidenceInline || !cost.bandTableShown
   || !funding.safeState || !funding.subsidyGapDisclosed
   || !location.committable || (location.candidateCount > 0 && location.demoBadges === 0)
-  || !recommendation.everyRowHasReason || !recommendation.noBulkExpander
+  || !recommendation.everyRowHasReason || !recommendation.noBulkExpander || !recommendation.productsWithinTop
+  || !recommendation.everyProgramHasReason || !recommendation.programsWithinTop || !recommendation.noOtherRegionPrograms
   || prescription.blocks !== 3 || !prescription.committedShown || !prescription.noDuplicateBandTable
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest

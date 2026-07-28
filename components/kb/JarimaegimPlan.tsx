@@ -5,6 +5,7 @@ import { CircleHelp, Coins, ExternalLink, FileDown, FileText, Info, Landmark, Lo
 import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
 import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
+import { matchPrograms } from "@/lib/program-match";
 import { ProvenanceBar } from "../ProvenanceBar";
 import type { BandForm, LocationState, Profile } from "@/lib/use-jarimaegim";
 
@@ -126,9 +127,38 @@ function ProductRow({ product, reasons }: { product: KbProduct; reasons?: string
   </li>;
 }
 
+/** 처방은 검토할 수 있는 분량이어야 한다. 관련도 순으로 이만큼만 보여주고, 줄인 건수를 밝힌다. */
+const TOP_N = 3;
+
+/** 전국 공고 카탈로그에서 이 케이스와 겹치는 것만 관련도 순으로 추린다.
+ *  다른 광역자치단체 공고와 근거 없는 공고는 아예 내보내지 않는다. */
+function ProgramSection({ programs, inputs }: { programs: Program[]; inputs: CaseRecord["inputs"] }) {
+  const matches = useMemo(() => matchPrograms(programs, inputs), [programs, inputs]);
+  const shown = matches.slice(0, TOP_N);
+  if (matches.length === 0) return <div className="kb-empty compact">
+    <Coins aria-hidden="true" />
+    <strong>이 조건과 겹치는 공고가 없습니다</strong>
+    <p>확인한 {programs.length}건은 다른 지역 공고이거나 이 케이스와 겹치는 문구가 없어 추천하지 않습니다. 전체 공고는 왼쪽 <strong>정책</strong> 메뉴에서 볼 수 있습니다.</p>
+  </div>;
+
+  return <>
+    <p className="kb-match-lead"><Sparkles aria-hidden="true" />확인한 {programs.length}건 중 이 조건과 가장 많이 겹치는 {shown.length}건입니다. 자격을 판단한 것이 아닙니다.</p>
+    <ul className="kb-program-list">{shown.map(({ program, reasons }) => <li key={program.id}>
+      <span className="kb-program-tag">{PROGRAM_CATEGORY_LABELS[program.category]}</span>
+      <strong>{program.title}</strong>
+      <small>{program.organization} · {program.application_period || "기간 원문 확인"}</small>
+      <div className="kb-match-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
+      {program.unknown_conditions.length > 0 && <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>}
+      <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
+    </li>)}</ul>
+    {matches.length > shown.length && <p className="kb-note"><Info aria-hidden="true" />겹치는 {matches.length}건 중 관련도 상위 {shown.length}건만 보여드립니다. 나머지 {matches.length - shown.length}건을 포함한 전체 공고는 왼쪽 <strong>정책</strong> 메뉴에 있습니다.</p>}
+  </>;
+}
+
 /** KB국민은행 개인사업자대출 공시. Matched rows lead; rates are the disclosed month's range, never an offer. */
 function KbProductSection({ products, state, inputs, gapKrw }: { products: KbProduct[]; state: LocationState; inputs: CaseRecord["inputs"]; gapKrw: number | null }) {
   const matches = useMemo(() => matchKbProducts(products, inputs, gapKrw), [products, inputs, gapKrw]);
+  const shown = matches.slice(0, TOP_N);
   if (state === "loading") return <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />KB 금융상품 공시를 불러오고 있습니다.</div>;
   if (products.length === 0) return null;
 
@@ -138,8 +168,10 @@ function KbProductSection({ products, state, inputs, gapKrw }: { products: KbPro
     <header><Landmark aria-hidden="true" /><div><strong>KB 금융상품</strong><small>개인사업자대출 공시 {products.length}건 대조 · 기준월 {products[0].source_as_of || "확인 필요"}</small></div></header>
 
     {matches.length > 0 ? <>
-      <p className="kb-match-lead"><Sparkles aria-hidden="true" />입력한 조건이 공시 문구와 겹치는 {matches.length}건입니다. 자격이나 승인 가능성을 판단한 것이 아닙니다.</p>
-      <ul>{matches.map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} />)}</ul>
+      <p className="kb-match-lead"><Sparkles aria-hidden="true" />조건과 가장 많이 겹치는 {shown.length}건입니다. 자격이나 승인 가능성을 판단한 것이 아닙니다.</p>
+      <ul>{shown.map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} />)}</ul>
+      {/* 몇 건을 줄였는지 밝힌다. 조용히 자르면 "이게 전부"로 읽힌다. */}
+      {matches.length > shown.length && <p className="kb-note"><Info aria-hidden="true" />겹치는 {matches.length}건 중 관련도 상위 {shown.length}건만 보여드립니다. 나머지 {matches.length - shown.length}건을 포함한 전체 공시는 왼쪽 <strong>상품</strong> 메뉴에 있습니다.</p>}
     </> : <div className="kb-empty compact">
       <Landmark aria-hidden="true" />
       <strong>현재 조건과 겹치는 공시 문구가 없습니다</strong>
@@ -195,13 +227,7 @@ export function PlanPrescription({ caseData, committed, programs, state, applica
         <strong>표시할 수 있는 공식 공고가 없습니다</strong>
         <p>검증된 공공 API endpoint와 키가 설정되기 전에는 공고를 만들어 표시하지 않습니다.</p>
       </div>}
-      {programs.length > 0 && <ul className="kb-program-list">{programs.map((program) => <li key={program.id}>
-        <span className="kb-program-tag">{PROGRAM_CATEGORY_LABELS[program.category]}</span>
-        <strong>{program.title}</strong>
-        <small>{program.organization} · {program.application_period || "기간 원문 확인"}</small>
-        {program.unknown_conditions.length > 0 && <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>}
-        <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
-      </li>)}</ul>}
+      {programs.length > 0 && <ProgramSection programs={programs} inputs={caseData.inputs} />}
     </section>
 
     <section className="kb-prescription-block">

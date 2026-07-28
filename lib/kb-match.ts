@@ -42,11 +42,14 @@ export function matchKbProducts(products: KbProduct[], inputs: CaseInput, gapKrw
     const limit = parseLimitKrw(product.loan_limit);
     if (gapKrw !== null && gapKrw > 0 && limit !== null && limit >= gapKrw) add("조달 차이가 공시 한도 이내", WEIGHTS.gap);
     if (/소상공인|소호|사장님/.test(name)) add("소상공인·소호 대상", WEIGHTS.generic);
+    // 가입 채널은 이 상품이 이 케이스에 맞는 이유가 아니라 부가 정보다. 단독으로는 추천 자격이 없다 —
+    // 이것만으로 걸리면 매출채권·공급망 대출 같은 B2B 상품이 창업자금 추천에 섞여 들어온다.
+    const qualifying = reasons.length;
     if (/인터넷|스마트폰/.test(product.join_way || "")) add("비대면 가입 가능", WEIGHTS.generic);
 
     // Bank-assessed products only surface alongside another match, never on their own.
-    if (reasons.length === 0) continue;
-    if (BANK_ASSESSED.test(name) && reasons.length < 2) continue;
+    if (qualifying === 0) continue;
+    if (BANK_ASSESSED.test(name) && qualifying < 2) continue;
     matches.push({ product, reasons, score });
   }
 
