@@ -214,8 +214,17 @@ function BandBanner({ bands }: { bands: FundingBandResult }) {
     <div className="kb-band-banner-row kb-band-banner-source"><span>자기자본 {formatKrw(equity.ceiling_krw)} + 차입 {formatKrw(recommended.loan_krw)}</span><span>금융 프로필에서 자동 반영</span></div>
     <div className="kb-band-banner-row"><span>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</span><span>{describe(equity)}</span></div>
     <div className="kb-band-banner-row"><span>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</span><span>{describe(maximum)}{maximum.stress_pass ? "" : " · 스트레스 실패"}</span></div>
+    {/* 이 배너는 화면에서 가장 구체적인 금액을 보여 주는 자리다. 그 숫자가 시연용 가정값
+        위에 서 있다면 숫자 옆에서 말해야 한다 — API 응답에만 있고 화면에 없으면 고지한 게
+        아니다. 파라미터가 전부 공시값으로 바뀌면 이 줄은 저절로 사라진다. */}
+    {assumedNotice(bands) && <p className="kb-band-banner-warning"><AlertCircle aria-hidden="true" />{assumedNotice(bands)}</p>}
     <p className="kb-band-banner-note">아래 목록은 보증금이 권장 조달선을 넘는 매물을 제외한 결과입니다. 밴드별로 열리는 상권 수는 상권 임대 수준 데이터 연동 후 제공합니다.</p>
   </div>;
+}
+
+/** 조달 밴드가 시연용 가정값 위에 서 있으면 그 고지 문장을 돌려준다. 아니면 null. */
+function assumedNotice(bands: FundingBandResult): string | null {
+  return bands.provenance?.limitations.find((line) => line.includes("시연용 가정값")) ?? null;
 }
 
 /** 매물의 가정값 속성. 실측이 아니므로 임대 조건과 같은 줄에 섞지 않고 별도 줄에 둔다.
@@ -249,7 +258,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{trace.state === "running"
       ? `${conditions} 시연용 매물 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
-      : caseData ? `${caseData.inputs.district} 시연용 매물을 월세 낮은 순으로 확인했습니다. 업종은 후보 선별에 쓰이지 않았습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+      : caseData ? `${caseData.inputs.district} 시연용 매물을 ${caseData.inputs.industry} 업종의 서울시 상권분석 집계로 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
 
     {bands && bands.status !== "integration_pending" && <BandBanner bands={bands} />}
     {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />{bands.message}</p>}
@@ -267,7 +276,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
     {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />
       <strong>{locationState === "integration_pending" ? "시연용 매물 데이터 연결을 기다리고 있습니다" : "현재 조건에서 표시할 후보가 없습니다"}</strong>
-      <p>{locationState === "integration_pending" ? "매물 데이터가 연결되면 후보를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "시연용 매물이 준비된 자치구인지, 총예산이 보증금보다 낮지 않은지 확인해 주세요. 업종은 후보 선별에 쓰이지 않습니다."}</p>
+      <p>{locationState === "integration_pending" ? "매물 데이터가 연결되면 후보를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "시연용 매물이 준비된 자치구인지, 총예산이 보증금보다 낮지 않은지 확인해 주세요."}</p>
       <button className="kb-ghost" onClick={flow.retrySearch}><RefreshCw aria-hidden="true" /> 다시 확인</button>
     </div>}
 

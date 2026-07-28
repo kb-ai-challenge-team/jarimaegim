@@ -814,6 +814,9 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .listing-terms{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)}
 .listing-terms strong{color:var(--ink)}
 .demo-badge{padding:1px 6px;border-radius:999px;background:#8a5a00;color:#fff;font-size:10px;font-weight:700}
+/* 조달 밴드가 시연용 가정값 위에 서 있을 때의 고지. 금액 바로 아래에 붙어야 읽힌다. */
+.kb-band-banner-warning{display:flex;gap:6px;align-items:flex-start;margin-top:10px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.5}
+.kb-band-banner-warning svg{width:14px;height:14px;flex-shrink:0;margin-top:2px}
 /* 가정값 줄. 실측 조건보다 한 단계 약하게 보여 두 성격이 눈으로 구분되게 한다. */
 .listing-assumed{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px;font-size:11px;color:var(--muted);opacity:.85}
 .assumed-badge{padding:1px 6px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:10px;font-weight:700;cursor:help}
