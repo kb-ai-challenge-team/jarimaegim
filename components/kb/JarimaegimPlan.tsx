@@ -238,6 +238,10 @@ export function PlanFunding({ caseData, committed, bands, programs, programState
     <PlanBadge committed={committed} onBack={onBackToLocation} />
 
     <section className="kb-gap-card">
+      {/* 이 화면에서 가장 구체적인 숫자가 부족분이다. 그 숫자가 미검증 시연용 파라미터 위에 서
+          있다면 숫자 옆에서 말해야 한다 — 값을 숨기는 대신 값의 성격을 밝히는 것이 부록 A
+          불변조건 1을 지키는 방식이다. 파라미터가 전부 공시값이 되면 이 줄은 저절로 사라진다. */}
+      {bands?.parameter_status === "DEMO" && <p className="kb-capacity-demo"><span className="demo-badge">시연용</span>미검증 시연용 제도 파라미터로 계산한 값입니다. 실제 심사 결과가 아닙니다.</p>}
       <dl>
         <div><dt>필요자금</dt><dd>{bands?.required_capital_krw === null || bands?.required_capital_krw === undefined ? "확인 필요" : formatKrw(bands.required_capital_krw)}</dd></div>
         {/* 자기자본선은 EQUITY_ONLY 밴드가 이미 들고 있는 값이다. 권장선에서 차입액을 빼는

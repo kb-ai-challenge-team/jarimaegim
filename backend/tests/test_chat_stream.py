@@ -524,3 +524,74 @@ async def test_the_same_tool_citing_the_same_page_twice_still_collapses():
                    {"text": "확인했습니다.", "tool_calls": []}])
     events = await collect(ChatStreamer(llm, tools, StreamLimits()))
     assert len(events[-1]["data"]["citations"]) == 1
+
+
+# --- 서브에이전트 경로의 temperature. 가드 2(동일 조건 재실행 금지)는 같은 입력에 같은 선택을
+# --- 요구하므로 에이전트 호출만 temperature 0 으로 고정한다. 대화 경로는 지금 값을 유지한다.
+
+class RecordingResponses:
+    """responses.create 가 받은 키워드를 기록하고, 대본에 따라 실패시킨다."""
+
+    def __init__(self, *, reject: str | None = None):
+        self.reject, self.payloads = reject, []
+
+    async def create(self, **payload):
+        self.payloads.append(payload)
+        if self.reject and self.reject in payload:
+            raise ValueError(f"Unsupported parameter: '{self.reject}'")
+        return type("Response", (), {"output_text": "", "output": []})()
+
+
+def recording_responder(**kwargs):
+    responses = RecordingResponses(**kwargs)
+    client = type("Client", (), {"responses": responses})()
+    return OpenAIResponder(client, "gpt-5"), responses
+
+
+async def test_the_chat_path_still_sends_no_temperature():
+    responder, responses = recording_responder()
+    await responder.respond([{"role": "user", "content": "질문"}], [])
+    assert "temperature" not in responses.payloads[0]
+
+
+async def test_the_agent_path_pins_temperature_to_zero():
+    responder, responses = recording_responder()
+    await responder.respond([{"role": "user", "content": "질문"}], [], temperature=0)
+    assert responses.payloads[0]["temperature"] == 0
+
+
+async def test_a_model_that_rejects_temperature_is_retried_without_it_rather_than_failing():
+    # reasoning 파라미터와 같은 문제이고 같은 해법이다 — 못 받는 모델에서 실행이 죽으면 안 된다.
+    responder, responses = recording_responder(reject="temperature")
+    await responder.respond([{"role": "user", "content": "질문"}], [], temperature=0)
+    assert len(responses.payloads) == 2
+    assert "temperature" not in responses.payloads[-1]
+
+
+# --- 서브에이전트와 메인 에이전트는 다른 모델을 쓴다. 서브는 열거된 선택지를 고르는 일이라
+# --- 작은 모델로 충분하고, 메인은 팀 보고 전체를 읽고 설명문을 쓰므로 추론 여력이 필요하다.
+
+def test_the_agent_model_falls_back_to_the_chat_model_when_unset():
+    # 두 값을 명시적으로 비운다 — Settings 는 .env 를 읽으므로, 비우지 않으면 이 테스트가
+    # 개발 기계의 설정에 따라 통과하거나 실패한다.
+    settings = Settings(openai_api_key="sk-test", ai_chat_model="gpt-5-mini",
+                        ai_agent_model="", ai_main_model="", ai_explanation_enabled=True)
+    assert settings.agent_model == "gpt-5-mini"
+    assert settings.main_agent_model == "gpt-5-mini"
+
+
+def test_the_main_agent_can_be_pointed_at_a_stronger_model():
+    settings = Settings(openai_api_key="sk-test", ai_chat_model="gpt-5-mini",
+                        ai_agent_model="gpt-5-mini", ai_main_model="gpt-5",
+                        ai_explanation_enabled=True)
+    assert settings.agent_model == "gpt-5-mini"
+    assert settings.main_agent_model == "gpt-5"
+
+
+def test_a_responder_can_be_built_for_a_named_model():
+    responder = ai_service(ai_chat_model="gpt-5-mini").responder("gpt-5")
+    assert responder.model == "gpt-5"
+
+
+def test_a_responder_for_a_named_model_is_still_none_without_a_key():
+    assert ai_service(openai_api_key="").responder("gpt-5") is None

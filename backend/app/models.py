@@ -277,6 +277,35 @@ class FundingBand(StrEnum):
     OUT_OF_RANGE = "OUT_OF_RANGE"
 
 
+class PrescribeRequest(BaseModel):
+    """메인 에이전트 1회 실행의 입력.
+
+    업종·자치구는 케이스에서 읽는다 — 대화나 요청 본문이 확정된 조건을 바꿀 수 없다는 규칙이
+    이 엔드포인트에도 그대로 적용된다. `confirmed_case_patch` 가 오면 422 다."""
+
+    area_pyeong: float | None = Field(default=None, gt=0, le=500)
+    deposit_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    monthly_rent_krw: int = Field(ge=0, le=1_000_000_000)
+    monthly_maintenance_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+    key_money_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+    fitout_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
+    existing_debt_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+    other_monthly_fixed_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+    operating_style: str = Field(default="", max_length=60)
+    #: 조건을 만든 발화. condition.location 이 아직 비어 있는 항목을 여기서 읽는다. 이미 확정된
+    #: 값은 덮어쓰지 않으므로, 이 필드가 케이스 조건을 바꾸는 경로가 되지는 않는다.
+    utterance: str = Field(default="", max_length=1000)
+    confirmed_case_patch: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ConditionInterpret(BaseModel):
+    """자유 문장 한 개를 조건으로 읽는 요청. 케이스를 만들기 전에 쓰인다."""
+
+    utterance: str = Field(min_length=1, max_length=1000)
+    #: 이미 확정된 값. 채워져 있는 항목은 덮어쓰지 않는다.
+    known: dict[str, Any] = Field(default_factory=dict)
+
+
 class FundingFacts(BaseModel):
     """밴드 산출에 필요한 사실만. 케이스 식별자는 담지 않는다 — 문서 요청처럼 바깥에 이미
     case_id 가 있는 곳에서 두 번 싣지 않기 위해서다.
@@ -336,6 +365,41 @@ class BreakEven(BaseModel):
     assumptions: list[str] = Field(min_length=1)
 
 
+class FundingCapacityInput(BaseModel):
+    """조달 여력은 금융 프로필만 요구한다. 업종·임대조건은 2단계에서 받는다."""
+
+    equity_krw: int = Field(ge=0, le=100_000_000_000)
+    existing_debt_krw: int = Field(default=0, ge=0, le=100_000_000_000)
+
+
+class FundingCapacityResult(BaseModel):
+    """1단계의 완결 결과. 권장 조달선은 여기서 내지 않고 왜 아직 없는지를 문장으로 말한다."""
+
+    status: Literal["computed", "integration_pending"]
+    equity_line_krw: int = Field(default=0, ge=0)
+    borrowing_headroom_krw: int = Field(default=0, ge=0)
+    maximum_line_krw: int = Field(default=0, ge=0)
+    parameter_status: Literal["VERIFIED", "DEMO"] = "VERIFIED"
+    unverified_params: list[str] = Field(default_factory=list)
+    recommended_line_pending: str = Field(min_length=1)
+    missing_params: list[str] = Field(default_factory=list)
+    message: str | None = None
+    provenance: Provenance | None = None
+
+    @model_validator(mode="after")
+    def capacity_contract(self):
+        if self.unverified_params and self.parameter_status != "DEMO":
+            raise ValueError("unverified parameters must mark the result as DEMO")
+        if self.status == "computed" and self.maximum_line_krw < self.equity_line_krw:
+            raise ValueError("maximum line cannot fall below the equity line")
+        if self.status == "integration_pending":
+            if not self.missing_params:
+                raise ValueError("integration_pending result requires missing_params")
+            if self.equity_line_krw or self.borrowing_headroom_krw or self.maximum_line_krw:
+                raise ValueError("integration_pending result must not carry computed lines")
+        return self
+
+
 class FundingBandResult(BaseModel):
     """partial 은 밴드 상한과 손익분기는 냈으나 필요자금·현금소진을 낼 입력이 없는 상태다.
     빠진 입력을 추정으로 메우지 않고, 낼 수 있는 값까지만 내고 나머지는 None 으로 둔다."""
@@ -345,12 +409,16 @@ class FundingBandResult(BaseModel):
     required_capital_band: FundingBand | None = None
     bands: list[BandLine] = Field(default_factory=list)
     break_even: BreakEven | None = None
+    parameter_status: Literal["VERIFIED", "DEMO"] = "VERIFIED"
+    unverified_params: list[str] = Field(default_factory=list)
     missing_params: list[str] = Field(default_factory=list)
     message: str | None = None
     provenance: Provenance | None = None
 
     @model_validator(mode="after")
     def result_contract(self):
+        if self.unverified_params and self.parameter_status != "DEMO":
+            raise ValueError("unverified parameters must mark the result as DEMO")
         if self.status == "computed":
             if not self.bands or self.break_even is None or self.required_capital_krw is None:
                 raise ValueError("computed result requires bands, break_even and required capital")
@@ -399,3 +467,25 @@ class RetrievalResponse(BaseModel):
     status: Literal["success", "integration_pending", "unavailable"]
     message: str | None = None
     evidence_grade: Literal["C"] = "C"
+
+
+class ConditionField(BaseModel):
+    """추출된 값 하나와 그 근거. evidence 는 사용자 원문의 부분문자열이며 서버가 검증한 뒤에만 채워진다."""
+
+    value: str | int | None = None
+    evidence: str | None = None
+
+
+class ConditionInterpretRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
+class ConditionInterpretResult(BaseModel):
+    """조건 제안. 케이스를 만들지 않으며, 사용자가 확인 화면에서 승인해야 조건이 된다.
+    equity_krw·budget_krw 는 의도적으로 없다 — 1단계 금융 프로필이 소유하는 값이다."""
+
+    source: Literal["AI", "RULE"]
+    fields: dict[Literal["industry", "district", "monthly_rent_krw",
+                         "business_stage", "startup_type", "priority"], ConditionField]
+    unresolved: list[str] = Field(default_factory=list)
+    message: str

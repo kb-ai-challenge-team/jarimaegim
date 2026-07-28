@@ -136,6 +136,21 @@ class CostService:
         }
 
 
+def _loads_object(text: str) -> Any:
+    """모델이 JSON 을 코드펜스나 설명 문장으로 감싸는 일이 잦다. 그대로 파싱해 보고,
+    실패하면 가장 바깥 중괄호 구간만 떼어 한 번 더 시도한다. 그래도 안 되면 호출부가 규칙 경로로 간다."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            return json.loads(text[start:end + 1])
+        except ValueError:
+            return None
+
+
 class AIService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -166,6 +181,43 @@ class AIService:
         except Exception:
             return {"message": "AI 설명 연결이 지연되고 있습니다. 저장된 분석과 공식 원문은 계속 사용할 수 있습니다.", "citations": [], "integration_status": "unavailable"}
 
+    # 모델에게 값을 채우게 하지 않고 "어느 구간이 그 말을 하는가"를 지목하게 한다.
+    # 금액 환산조차 시키지 않는다 — monthly_rent_krw 의 value 는 서버가 evidence 에서 다시 계산한다.
+    def build_interpret_prompt(self, user_text: str) -> str:
+        """조건 추출기의 지시문. explain 과 마찬가지로 키 없이도 단정할 수 있게 분리해 둔다."""
+        return (
+            "당신은 자리매김의 조건 추출기입니다. 사용자 문장이 명시적으로 말한 것만 뽑습니다.\n"
+            "industry·district·monthly_rent_krw·business_stage·startup_type·priority 여섯 필드를 "
+            "각각 {\"value\": ..., \"evidence\": ...} 형태로 담은 JSON 객체 하나만 출력하세요.\n"
+            "1. 문장에 없는 값은 반드시 null 로 두세요. 추론·보완·평균값 채우기를 금지합니다.\n"
+            "2. 값을 채운 필드는 evidence 에 근거가 된 사용자 문장의 일부를 원문 그대로 복사하세요. "
+            "요약·번역·재작성은 금지이며, 원문에 없는 문구를 넣으면 그 필드는 버려집니다.\n"
+            "3. 어떤 계산도 하지 마세요. 합계·단위 환산·비율·기간 환산 전부 금지입니다.\n"
+            "4. district 는 서울 25개 자치구 이름만 허용합니다. 그 밖의 지역은 null 입니다.\n"
+            "5. monthly_rent_krw 는 value 를 null 로 두고 evidence 에 월세를 말한 구간만 넣으세요. "
+            "금액 환산은 서버가 합니다.\n"
+            "6. business_stage 는 PRE_OPEN·RELOCATING·SECOND_STORE, "
+            "startup_type 은 INDEPENDENT·FRANCHISE·UNDECIDED, "
+            "priority 는 STABILITY·DEMAND·COST·GROWTH 중 하나입니다.\n"
+            f"사용자 문장: {user_text}"
+        )
+
+    async def interpret_conditions(self, user_text: str) -> dict[str, Any] | None:
+        """모델이 제안한 필드 맵. 키가 없거나 호출이 실패하면 None 을 돌려주고 호출부가 규칙 경로로 간다.
+
+        여기서 나온 값은 아직 신뢰 대상이 아니다 — condition_interpret.sanitize 를 반드시 통과해야 한다."""
+        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+            return None
+        try:
+            response = await self._respond(self.build_interpret_prompt(user_text))
+            text = (response.output_text or "").strip()
+            if not text:
+                return None
+            parsed = _loads_object(text)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
     async def _respond(self, prompt: str):
         """Reasoning models need headroom beyond the reasoning pass; non-reasoning models reject `reasoning`."""
         common = {"model": self.settings.ai_chat_model, "input": prompt, "store": False, "max_output_tokens": 2000}
@@ -178,10 +230,13 @@ class AIService:
                 raise
             return await self.client.responses.create(**common)
 
-    def responder(self) -> "OpenAIResponder | None":
-        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+    def responder(self, model: str | None = None) -> "OpenAIResponder | None":
+        """`model` 을 주면 그 모델로 부른다 — 서브에이전트와 메인 에이전트가 서로 다른 모델을
+        쓰기 때문이고, 어느 쪽이든 키나 게이트가 없으면 None 이라는 계약은 같다."""
+        chosen = model or self.settings.ai_chat_model
+        if not self.client or not chosen or not self.settings.ai_explanation_enabled:
             return None
-        return OpenAIResponder(self.client, self.settings.ai_chat_model)
+        return OpenAIResponder(self.client, chosen)
 
 
 class OpenAIResponder:
@@ -202,9 +257,16 @@ class OpenAIResponder:
     def __init__(self, client: AsyncOpenAI, model: str):
         self.client, self.model = client, model
 
-    async def respond(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+    async def respond(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+                      *, temperature: float | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"model": self.model, "input": self._translate(messages), "store": False,
                                     "max_output_tokens": 2000}
+        # The agent path (agents/llm.py) pins temperature to 0 because guard 2 -- "no re-run under
+        # identical conditions" -- needs the same input to yield the same choice. The chat path
+        # passes nothing and keeps whatever the model defaults to; changing that would alter
+        # answers on a route this change has no business touching.
+        if temperature is not None:
+            payload["temperature"] = temperature
         if tools:
             # `strict` MUST stay False. Verified against the live Responses API, not just the SDK
             # stub: `strict: True` requires `required` to list every key in `properties`, and four
@@ -216,6 +278,21 @@ class OpenAIResponder:
             # explicitly anyway so the value is a decision on the page rather than a default.
             payload["tools"] = [{"type": "function", "name": tool["name"], "description": tool["description"],
                                  "parameters": tool["parameters"], "strict": False} for tool in tools]
+        # Reasoning models reject `temperature` outright. Same shape of compatibility problem as
+        # `reasoning` below and the same fix -- retry without it -- but layered outside, because
+        # dropping temperature must not also drop the reasoning negotiation. Losing temperature
+        # costs determinism, not correctness: the schema validation in agents/llm.py is what keeps
+        # a model-invented value out of the result, and it does not depend on this parameter.
+        try:
+            response = await self._create(payload)
+        except Exception as exc:
+            if "temperature" not in payload or "temperature" not in str(exc):
+                raise
+            response = await self._create({key: value for key, value in payload.items()
+                                           if key != "temperature"})
+        return self._parse(response)
+
+    async def _create(self, payload: dict[str, Any]):
         # Same reasoning-parameter compatibility problem AIService._respond solves for explain(),
         # and the same fix, in the same order: TypeError means this SDK build's `responses.create`
         # doesn't accept `reasoning` as a keyword at all (a local, unconditional signature
@@ -225,14 +302,13 @@ class OpenAIResponder:
         # limit, context length, ...) that must propagate so ChatStreamer's `except Exception`
         # reports it as UPSTREAM_UNAVAILABLE instead of this method silently eating it.
         try:
-            response = await self.client.responses.create(**payload, reasoning={"effort": "low"})
+            return await self.client.responses.create(**payload, reasoning={"effort": "low"})
         except TypeError:
-            response = await self.client.responses.create(**payload)
+            return await self.client.responses.create(**payload)
         except Exception as exc:
             if "reasoning" not in str(exc):
                 raise
-            response = await self.client.responses.create(**payload)
-        return self._parse(response)
+            return await self.client.responses.create(**payload)
 
     @staticmethod
     def _translate(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

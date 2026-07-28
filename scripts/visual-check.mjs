@@ -37,6 +37,21 @@ for (const viewport of viewports) {
     const slug = route === "/" ? "landing" : route.split("?")[0].replaceAll("/", "-").replace(/^-/, "");
     await page.screenshot({ path: outputPath(`${viewport.name}-${slug}.png`), fullPage: true });
     results.push({ viewport: viewport.name, route, ...geometry });
+    // /kb 는 1단계 첫 화면(프로필)만 보여준다. 단계의 완결점인 조달 여력까지 밀어 한 장 더 찍는다.
+    if (route === "/kb") {
+      await page.locator(".kb-profile-form input").nth(0).fill("50000000");
+      await page.getByRole("button", { name: /확정하고 조달 여력 보기/ }).click();
+      await page.waitForSelector(".kb-capacity, .kb-step > .kb-note", { timeout: 20000 });
+      const capacity = await page.evaluate(() => ({
+        title: document.title,
+        viewportWidth: document.documentElement.clientWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        main: Boolean(document.querySelector("main")),
+        horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+      }));
+      await page.screenshot({ path: outputPath(`${viewport.name}-kb-capacity.png`), fullPage: true });
+      results.push({ viewport: viewport.name, route: "/kb (조달 여력)", ...capacity });
+    }
   }
   // KB 흐름의 ④ 조달 · ⑤ 서류. 시연용 매물이 없으면 도달할 수 없으므로 건너뛴 사실을 남긴다 —
   // 조용히 지나가면 "찍었다"로 읽힌다.

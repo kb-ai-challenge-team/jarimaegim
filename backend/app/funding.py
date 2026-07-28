@@ -1,5 +1,37 @@
 from __future__ import annotations
 
+from typing import Any
+
+
+class ScenarioParams:
+    """제도 파라미터 몇 개만 갈아 끼운 읽기 전용 겹침.
+
+    스트레스 시나리오("매출 −30%이면?", "금리가 1%p 오르면?")를 계산하려면 같은 산식을 다른
+    파라미터로 한 번 더 돌려야 한다. 그 산식을 에이전트 쪽에 복제하면 두 곳이 갈라지므로,
+    파라미터만 덮고 `compute_bands` 를 그대로 다시 부른다. 원본은 건드리지 않는다 —
+    같은 요청 안의 다른 밴드가 갈아 낀 값을 보게 되면 화면의 수치가 서로 어긋난다."""
+
+    def __init__(self, base: Any, overrides: dict[str, float]):
+        self._base, self._overrides = base, overrides
+
+    @property
+    def updated_at(self) -> Any:
+        return self._base.updated_at
+
+    def value(self, key: str) -> float:
+        if key in self._overrides:
+            return self._overrides[key]
+        return self._base.value(key)
+
+    def industry(self, name: str) -> dict[str, Any]:
+        return self._base.industry(name)
+
+    def missing(self, industry: str) -> list[str]:
+        return self._base.missing(industry)
+
+    def sources(self, industry: str) -> list[str]:
+        return self._base.sources(industry)
+
 
 def monthly_annuity_krw(principal_krw: int, annual_rate_percent: float, term_months: int) -> int:
     """원리금균등 월 상환액. 원 단위로 내림한다."""
@@ -25,6 +57,21 @@ def breakeven_monthly_revenue_krw(fixed_cost_krw: int, cogs_ratio: float, labor_
 
 
 BAND_ORDER = ("EQUITY_ONLY", "RECOMMENDED", "MAXIMUM")
+
+# 여력 산출에만 필요한 키. 업종 파라미터도 임대조건도 요구하지 않는다.
+CAPACITY_ENTRIES = ("loan.guarantee_ceiling_krw", "loan.policy_fund_ceiling_krw")
+
+
+def compute_capacity(params, *, equity_krw: int, existing_debt_krw: int) -> dict:
+    """자기자본선·차입 여력·최대 조달선. 금융 프로필만으로 나온다.
+
+    권장 조달선은 스트레스 테스트(업종 원가율·인건비율 + 월 고정비)를 요구하므로 여기서 내지 않는다.
+    그 경계가 1단계(자금)와 2단계(조건)를 가르는 근거다. 한도가 미등록이면 KeyError 를 던지고,
+    호출부가 integration_pending 으로 바꾼다 — 추정으로 메우지 않는다."""
+    headroom = max(0, int(params.value("loan.guarantee_ceiling_krw")
+                          + params.value("loan.policy_fund_ceiling_krw") - existing_debt_krw))
+    return {"equity_line_krw": int(equity_krw), "borrowing_headroom_krw": headroom,
+            "maximum_line_krw": int(equity_krw) + headroom}
 
 
 def _band_line(band: str, ceiling_krw: int, *, equity_krw: int, required_capital_krw: int | None,
@@ -81,9 +128,9 @@ def compute_bands(params, *, industry: str, area_pyeong: float | None, deposit_k
     working_capital = int(base_monthly_fixed * params.value("working_capital.months"))
     required_capital = None if (fitout is None or deposit_krw is None) else int(deposit_krw + key_money_krw + fitout + working_capital)
 
-    borrow_ceiling = max(0, int(params.value("loan.guarantee_ceiling_krw")
-                                + params.value("loan.policy_fund_ceiling_krw") - existing_debt_krw))
-    maximum_ceiling = int(equity_krw + borrow_ceiling)
+    # 여력과 밴드가 같은 산식을 쓰도록 한 곳에서만 계산한다. 두 화면이 다른 최대선을 말하면 안 된다.
+    maximum_ceiling = compute_capacity(params, equity_krw=equity_krw,
+                                       existing_debt_krw=existing_debt_krw)["maximum_line_krw"]
 
     common = dict(equity_krw=equity_krw, required_capital_krw=required_capital,
                   base_monthly_fixed_krw=base_monthly_fixed, rate=rate, term=term, cogs=cogs,

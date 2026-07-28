@@ -16,6 +16,7 @@
     "test:kakao-tools": "node --test scripts/update-kakao-map-key.test.mjs scripts/check-kakao-sdk.test.mjs",
     "test:sse": "node --test scripts/sse-parser.test.mjs",
     "test:chat-stream": "node --import ./scripts/register-ts-extensionless-resolve.mjs --test scripts/chat-stream-dispatch.test.mjs",
+    "test:prescribe-stream": "node --import ./scripts/register-ts-extensionless-resolve.mjs --test scripts/prescribe-stream-dispatch.test.mjs",
     "api:check": "backend/.venv/bin/python -m compileall -q backend/app",
     "api:test": "cd backend && .venv/bin/python -m pytest",
     "config:update-kakao-map-key": "node scripts/update-kakao-map-key.mjs",

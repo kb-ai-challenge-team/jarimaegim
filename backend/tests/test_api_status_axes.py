@@ -76,3 +76,20 @@ def test_timing_axis_is_disabled_and_abstains():
 
 def test_stress_axis_is_enabled_because_it_needs_no_external_source():
     assert client().get("/api/v1/status").json()["axes"]["finance.stress"]["enabled"] is True
+
+
+def test_status_says_plainly_when_the_chat_limit_is_off(monkeypatch):
+    """한도를 끄면 /status 가 한도를 광고하면 안 된다 — 없는 제약을 있다고 말하는 셈이 된다."""
+    import app.main as main
+    monkeypatch.setattr(main.settings, "ai_daily_request_limit", -1)
+    limits = client().get("/api/v1/status").json()["limits"]["chat_daily_turns"]
+    assert limits["enabled"] is False
+    assert limits["per_session"] is None
+
+
+def test_status_reports_the_limit_when_it_is_on(monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main.settings, "ai_daily_request_limit", 20)
+    limits = client().get("/api/v1/status").json()["limits"]["chat_daily_turns"]
+    assert limits["enabled"] is True
+    assert limits["per_session"] == 20

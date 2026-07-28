@@ -1,4 +1,4 @@
-import type { AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, Program, RetrievalResponse, StatusResponse } from "./types";
+import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, ConditionInterpretResult, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, FundingCapacityResult, KbProduct, PrescribeStreamHandlers, Program, RetrievalResponse, StatusResponse } from "./types";
 import { createSseParser, type SseEvent } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
@@ -194,6 +194,75 @@ async function chatStream(caseId: string, content: string, handlers: ChatStreamH
   if (!settled) throw new ApiError("UPSTREAM_UNAVAILABLE", "AI 응답이 도중에 끊겼습니다. 다시 시도해 주세요.", 502, true);
 }
 
+function asRecordList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object") : [];
+}
+
+/** Pure, network-free interpretation of one already-parsed prescribe frame, exported for
+ * scripts/prescribe-stream-dispatch.test.mjs exactly like `applyChatStreamFrame`. Returns true
+ * once the run is over. `status` is forwarded verbatim: this client must not re-judge an agent the
+ * backend already judged, and an axis that could not run must never be repainted as broken. */
+export function applyPrescribeFrame(frame: SseEvent, handlers: PrescribeStreamHandlers): boolean {
+  if (frame.event === "run_start") { handlers.onRunStart({ total_agents: Number(frame.data.total_agents) || 0, fingerprint: asString(frame.data.fingerprint) }); return false; }
+  if (frame.event === "team_start") { handlers.onTeamStart({ team: asString(frame.data.team), name: asString(frame.data.name), agent_count: Number(frame.data.agent_count) || 0 }); return false; }
+  if (frame.event === "agent_end") {
+    const agent: AgentProgress = { team: asString(frame.data.team), key: asString(frame.data.key), name: asString(frame.data.name), status: asString(frame.data.status, "unknown") };
+    if (typeof frame.data.message === "string") agent.message = frame.data.message;
+    // 에이전트가 낸 값을 그대로 실어 보낸다. 화면은 여기 담긴 수치를 인용만 하고 다시 계산하지
+    // 않는다 — 조달 밴드 줄이 "완료" 대신 자기가 낸 상한과 목표 일매출을 적을 수 있게 하는 통로다.
+    if (frame.data.data && typeof frame.data.data === "object") agent.data = frame.data.data as Record<string, unknown>;
+    handlers.onAgentEnd(agent);
+    return false;
+  }
+  if (frame.event === "team_end") return false;
+  if (frame.event === "done") {
+    const activation = (frame.data.activation ?? {}) as Record<string, unknown>;
+    handlers.onDone({
+      fingerprint: asString(frame.data.fingerprint) || undefined,
+      reused: Boolean(frame.data.reused),
+      halted_at: typeof frame.data.halted_at === "string" ? frame.data.halted_at : null,
+      questions: asRecordList(frame.data.questions).map(item => ({ field: asString(item.field), label: asString(item.label) })),
+      activation: { total: Number(activation.total) || 0, active: Number(activation.active) || 0, by_key: (activation.by_key ?? {}) as Record<string, AgentRunStatus | null> },
+      summary: (frame.data.summary ?? {}) as Record<string, number | null>,
+      surviving: asRecordList(frame.data.surviving),
+      dropped: asRecordList(frame.data.dropped),
+    });
+    return true;
+  }
+  if (frame.event === "error") throw new ApiError(asString(frame.data.code, "PRESCRIBE_FAILED"), asString(frame.data.message, "분석을 완료하지 못했습니다."), 502, Boolean(frame.data.retryable));
+  return false; // unknown event name: forward-compatible no-op
+}
+
+async function prescribeStream(caseId: string, body: Record<string, unknown>, handlers: PrescribeStreamHandlers, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/prescribe`, {
+    method: "POST", credentials: "include", signal,
+    headers: { "Content-Type": "application/json", "Accept": "text/event-stream", "Idempotency-Key": requestId() },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await responseError(response);
+  if (!response.body) throw new ApiError("PRESCRIBE_FAILED", "분석 스트림을 열지 못했습니다.", 502, true);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const parser = createSseParser();
+  let settled = false;
+  try {
+    while (!settled) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // { stream: true }: every team and agent name on this wire is Korean, so a chunk boundary
+      // can land inside a multi-byte sequence.
+      for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+        if (applyPrescribeFrame(frame, handlers)) { settled = true; break; }
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  // Ending without done/error is a dropped connection, not an empty result.
+  if (!settled) throw new ApiError("PRESCRIBE_FAILED", "분석이 도중에 끊겼습니다. 다시 시도해 주세요.", 502, true);
+}
+
 export const api = {
   status: () => request<StatusResponse>("/status"),
   createAnonymousSession: () => request<{ session_id: string; expires_at: string }>("/sessions/anonymous", { method: "POST", body: JSON.stringify({ retention_notice_accepted: true }) }),
@@ -213,11 +282,16 @@ export const api = {
   searchPrograms: (query: string, district?: string, limit = 8) => request<RetrievalResponse>(`/knowledge/search?q=${encodeURIComponent(query)}&kind=PROGRAM${district ? `&district=${encodeURIComponent(district)}` : ""}&limit=${limit}`),
   createCostPlan: (caseId: string, items: { key: string; label: string; min_krw: number | null; max_krw: number | null; source_type: string }[]) => request<CostPlan>("/cost-plans", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, items }) }),
   fundingBands: (caseId: string, inputs: FundingBandInput) => request<FundingBandResult>("/funding-bands", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, ...inputs }) }),
+  // 서버 상태를 만들지 않는 조회형 POST 다. 같은 성격인 searchLocations 처럼 Idempotency-Key 를 붙이지 않는다.
+  fundingCapacity: (equity_krw: number, existing_debt_krw: number) => request<FundingCapacityResult>("/funding-capacity", { method: "POST", body: JSON.stringify({ equity_krw, existing_debt_krw }) }),
+  interpretConditions: (text: string) => request<ConditionInterpretResult>("/conditions/interpret", { method: "POST", body: JSON.stringify({ text }) }),
   // Non-streaming, no tools. `AIService.explain` always returns `citations: []` -- the Citation[]
   // type is what the envelope permits, not what this endpoint delivers. Use chatStream for sourced
   // answers.
   chat: (caseId: string, content: string) => request<{ message: string; citations: Citation[]; integration_status: string }>(`/cases/${caseId}/messages`, { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ client_message_id: requestId(), content, base_case_version: 1, confirmed_case_patch: [], locale: "ko-KR" }) }),
   chatStream: (caseId: string, content: string, handlers: ChatStreamHandlers, signal?: AbortSignal) => chatStream(caseId, content, handlers, signal),
+  listAgents: () => request<{ total: number; agents: AgentSpec[] }>("/agents"),
+  prescribeStream: (caseId: string, body: Record<string, unknown>, handlers: PrescribeStreamHandlers, signal?: AbortSignal) => prescribeStream(caseId, body, handlers, signal),
   // 선택은 id 로만 보낸다. 이름·금리·URL 을 실어 보내면 서버가 그것을 그대로 인쇄하게 되고,
   // 조작된 문자열이 KB 문서 모양으로 찍히는 길이 열린다.
   createDocument: (caseId: string, template: string, plan: { confirmed: boolean; selected_product_ids: string[]; selected_program_ids: string[]; funding_input: FundingBandInput | null }) =>

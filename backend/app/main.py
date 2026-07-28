@@ -14,16 +14,29 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from .agents.conditions import ConditionLayer
+from .agents.finance import FinanceTeam
+from .agents.location import LocationTeam
+from .agents.llm import AgentLLM, RunBudget
+from .agents.orchestrator import MainAgent
+from .agents.registry import AGENT_SPECS
+from .agents.timing import TimingTeam
+from .agents.trade_area_adapter import TradeAreaProfiles
 from .chat_stream import ChatStreamer, StreamLimits
 from .chat_tools import ChatToolset, PlaceRegistry
+from .condition_interpret import sanitize as sanitize_conditions
+from .condition_parse import parse_conditions
 from .config import get_settings
+from .districts import SEOUL_DISTRICTS
 from .document_store import DocumentStore, render_case_pdf, selection_note
-from .funding import compute_bands
+from .funding import CAPACITY_ENTRIES, compute_bands, compute_capacity
 from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
-from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
-                     DocumentCreate, FundingBandInput, FundingBandResult, FundingFacts, LocationSearch, MessageCreate,
+from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord,
+                     ConditionInterpretRequest, ConditionInterpretResult, CostPlanCreate,
+                     DocumentCreate, FundingBandInput, FundingBandResult, FundingCapacityInput,
+                     FundingCapacityResult, FundingFacts, LocationSearch, MessageCreate, PrescribeRequest,
                      PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
@@ -50,7 +63,22 @@ policy_params = PolicyParams.load(settings.policy_params_path)
 app = FastAPI(title="자리매김 API", version="1.0.0", docs_url="/api/v1/docs" if settings.app_env != "production" else None, redoc_url=None, openapi_url="/api/v1/openapi.json" if settings.app_env != "production" else None)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Idempotency-Key", "If-Match", "Last-Event-ID"])
 
-SEOUL_DISTRICTS = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"}
+
+#: SSE 응답이 중간 계층에서 모이지 않게 하는 헤더 묶음.
+#:
+#: `no-transform` 이 핵심이다. 브라우저는 gzip 을 요청하고, 앞단(개발 시 Next 의 rewrite 프록시,
+#: 운영 시 nginx)이 그 요청에 맞춰 스트림을 압축하면 압축기가 블록이 찰 때까지 바이트를 쥐고
+#: 있는다. 그러면 서버가 5초에 한 팀씩 내보내도 브라우저는 마지막에 전부를 한꺼번에 받는다.
+#: 실측으로 확인한 값이다 — curl 은 5.1s / 23.6s 로 나눠 받고, `--compressed` 를 붙이는 순간
+#: 전부 15.9s 에 한꺼번에 도착했다. 브라우저 안에서 fetch 로 직접 읽어도 같았다.
+#: `no-transform` 은 중간 계층에 "본문을 바꾸지 말라"고 말하는 표준 지시자이고, Next 의 압축이
+#: 이것을 존중하는 것을 실측으로 확인했다. 응답에 `Content-Encoding: identity` 를 실어 보는
+#: 방법도 시도했으나 프록시가 그대로 gzip 으로 덮어써서 듣지 않는다.
+#:
+#: `X-Accel-Buffering: no` 는 nginx 의 버퍼링만 끄고 압축은 끄지 못하므로 이것을 대신하지 못한다.
+#: 진행 표시는 장식이 아니라 "12개 분석이 실제로 돌았다"의 근거이므로(제안서 11장), 이 헤더가
+#: 빠지면 화면은 25초 동안 1단계에 멈춰 있다가 한 번에 끝난 것처럼 보인다.
+SSE_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"}
 
 
 def error_payload(code: str, message: str, request_id: str, retryable: bool = False, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -174,14 +202,19 @@ async def integration_status():
         "ipzitalk": mcp_client.available,
     }, "feature_flags": {"financial_application": settings.financial_application_enabled, "consultation_transfer": settings.consultation_transfer_enabled, "mydata": settings.mydata_enabled},
         "knowledge_index": await knowledge.freshness(),
+        "agents": agent_roster(),
         "axes": analysis_axes(),
-        "limits": {"chat_daily_turns": {
-            # 음수는 '한도 없음'이다. 그대로 -1 을 내보내면 읽는 쪽이 한도로 오해하므로 null 로 낸다.
-            "per_session": None if settings.ai_daily_request_limit < 0 else settings.ai_daily_request_limit,
-            "unlimited": settings.ai_daily_request_limit < 0,
-            "scope": "process_local",
-            "note": "다중 워커·재시작 환경에서는 이 한도가 실제로 적용되지 않는 알려진 한계입니다 (세션별 카운터가 프로세스 메모리에만 있습니다).",
-        }}}
+        "limits": {"chat_daily_turns": _chat_turn_limit()}}
+
+
+def _chat_turn_limit() -> dict[str, Any]:
+    """한도를 껐으면 한도를 광고하지 않는다. 없는 제약을 있다고 말하면 그 자체가 사실이 아니다."""
+    limit = settings.ai_daily_request_limit
+    if limit < 0:
+        return {"enabled": False, "per_session": None, "scope": "process_local",
+                "note": "AI 대화 일일 한도가 꺼져 있습니다. 턴 수를 세지 않습니다."}
+    return {"enabled": True, "per_session": limit, "scope": "process_local",
+            "note": "다중 워커·재시작 환경에서는 이 한도가 실제로 적용되지 않는 알려진 한계입니다 (세션별 카운터가 프로세스 메모리에만 있습니다)."}
 
 
 @app.post("/api/v1/sessions/anonymous", status_code=201)
@@ -332,6 +365,8 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
     return FundingBandResult(status="partial" if partial else "computed",
                              required_capital_krw=computed["required_capital_krw"],
                              required_capital_band=computed["required_capital_band"],
+                             parameter_status="DEMO" if assumed else "VERIFIED",
+                             unverified_params=assumed,
                              missing_params=missing_capital if partial else [],
                              message=f"{' · '.join(missing_capital)}을 입력하면 현금소진까지 계산합니다." if partial else None,
                              bands=[BandLine(**band) for band in computed["bands"]],
@@ -341,6 +376,152 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
                                                   contribution_margin_ratio=computed["contribution_margin_ratio"],
                                                   assumptions=assumptions),
                              provenance=provenance)
+
+
+#: 케이스별 메인 에이전트. 가드 2(동일 조건 재실행 금지)의 캐시가 인스턴스 안에 있으므로
+#: 요청마다 새로 만들면 캐시가 절대 맞지 않는다. `repository` 의 일일 한도 카운터와 같은
+#: 성질의 프로세스 로컬 상태이고, 같은 한계(다중 워커·재시작에서 유지되지 않음)를 갖는다.
+_main_agents: dict[UUID, MainAgent] = {}
+
+
+def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
+                   programs: list[dict[str, Any]]) -> MainAgent:
+    agent = _main_agents.get(case_id)
+    if agent is None:
+        # 키가 없으면 `responder()` 가 None 이고, 그때 12개 에이전트는 전부 결정론 경로로
+        # 내려간다. LLM 이 없다고 실행이 멈추지는 않는다 — 없을 때의 동작이 계약이다.
+        #
+        # 모델은 둘로 나뉜다. 서브에이전트 11개는 열거된 선택지를 고르는 일이라 작은 모델로
+        # 충분하고 호출 수가 많다. 메인은 실행당 한 번, 팀 보고 전체를 읽고 문장을 쓴다.
+        # 예산(RunBudget)은 하나를 공유한다 — 상한은 모델별이 아니라 실행당이다.
+        budget = RunBudget()
+        reasoner = AgentLLM(ai.responder(settings.agent_model), budget=budget)
+        integrator = AgentLLM(ai.responder(settings.main_agent_model), budget=budget)
+        agent = MainAgent(
+            conditions=ConditionLayer(mydata_enabled=settings.mydata_enabled, llm=reasoner),
+            finance=FinanceTeam(policy_params, kb_products=kb_products, programs=programs,
+                                llm=reasoner),
+            # 상권 프로파일은 어댑터를 거쳐 들어온다. 어댑터가 옮기는 것은 원천이 이미 내린
+            # 판정이고, 옮길 수 없는 축(달성 가능성)은 사유와 함께 꺼진 채로 남는다.
+            # 프로파일이 없으면 세 축 모두 integration_pending 이고 모델도 부르지 않는다(가드 3).
+            location=LocationTeam(trade_area=TradeAreaProfiles(trade_areas), llm=reasoner),
+            # 일정 문서 원천이 아직 없다. 문서가 붙기 전에는 관련성 판단도 하지 않는다.
+            timing=TimingTeam(llm=reasoner),
+            llm=integrator, budget=budget)
+        _main_agents[case_id] = agent
+    return agent
+
+
+def agent_roster() -> dict[str, Any]:
+    return {"total": len(AGENT_SPECS),
+            "agents": [{"key": item.key, "team": item.team, "name": item.name,
+                        "source_name": item.source_name, "produces": item.produces,
+                        "evidence_grade": item.evidence_grade} for item in AGENT_SPECS]}
+
+
+@app.get("/api/v1/agents")
+async def list_agents():
+    """선언은 공개다 — 어떤 분석이 있고 무엇이 그 근거인지는 세션 없이도 읽을 수 있어야 한다."""
+    return agent_roster()
+
+
+@app.post("/api/v1/cases/{case_id}/prescribe")
+async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID = Depends(current_session)):
+    """메인 에이전트 1회 실행. 팀·에이전트 단위 진행을 SSE 로 중계한다."""
+    case = owned_case(session_id, case_id)
+    if payload.confirmed_case_patch:
+        raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "이 화면에서는 대화의 조건 변경을 자동 적용하지 않습니다."})
+
+    conditions = {**payload.model_dump(exclude={"confirmed_case_patch"}),
+                  "industry": case.inputs.industry, "district": case.inputs.district,
+                  "equity_krw": case.inputs.equity_krw}
+    listings, _, _ = listings_service.search(case.inputs.district, case.inputs.budget_krw, 8)
+    # 상권 결합은 이름이 아니라 코드로 한다. 행정동 이름은 화면 표시용이고, 코드가 없으면
+    # 그 후보는 상권 축에서 판정되지 않는다 — 이름으로 맞추려 들면 유사 매칭이 되살아난다.
+    candidates = [{"id": item.id, "name": item.name, "address": item.address,
+                   "admin_dong": getattr(item, "admin_dong", None),
+                   "admin_dong_code": getattr(item, "admin_dong_code", None),
+                   "monthly_rent_krw": item.listing.monthly_rent_krw if item.listing else None}
+                  for item in listings]
+
+    kb_products = await knowledge.kb_products()
+    programs = await knowledge.programs()
+    agent = main_agent_for(case_id, kb_products, programs)
+
+    async def frames():
+        try:
+            async for event in agent.run_events(conditions, candidates):
+                if event["event"] != "done":
+                    yield sse_frame({"event": event.pop("event"), "data": event})
+                    continue
+                result = event["result"]
+                yield sse_frame({"event": "done", "data": {
+                    "fingerprint": result.fingerprint, "reused": result.reused,
+                    "halted_at": result.halted_at, "questions": result.questions,
+                    "activation": result.activation, "summary": result.summary,
+                    "surviving": result.surviving, "dropped": result.dropped,
+                    "reports": [{"team": report.team, "name": report.name,
+                                 "blocking": report.blocking, "halted": report.halted,
+                                 "outcomes": [{"key": item.key, "name": item.name,
+                                               "status": item.status, "message": item.message,
+                                               "data": item.data,
+                                               "required_actions": item.required_actions}
+                                              for item in report.outcomes]}
+                                for report in result.reports]}})
+        except Exception as exc:
+            # 헤더가 이미 나간 뒤이므로 예외를 던져 봐야 스트림만 잘린다 — chat 스트림과 같은 규칙.
+            logger.warning("처방 실행 중 예기치 않은 오류: %s", type(exc).__name__)
+            yield sse_frame({"event": "error", "data": {"code": "PRESCRIBE_FAILED",
+                             "message": "분석을 완료하지 못했습니다.", "retryable": True}})
+
+    return StreamingResponse(frames(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+RECOMMENDED_LINE_PENDING = ("권장 조달선은 업종과 희망 월세를 받은 뒤 스트레스 테스트로 계산합니다. "
+                            "지금은 추정하지 않습니다.")
+
+
+@app.post("/api/v1/funding-capacity", response_model=FundingCapacityResult)
+async def create_funding_capacity(payload: FundingCapacityInput, session_id: UUID = Depends(current_session)):
+    """1단계의 완결점. 케이스 이전에 돌며 금융 프로필만으로 나오는 세 줄을 돌려준다."""
+    missing = policy_params.missing_of(CAPACITY_ENTRIES)
+    if missing:
+        return FundingCapacityResult(
+            status="integration_pending", missing_params=missing,
+            recommended_line_pending=RECOMMENDED_LINE_PENDING,
+            message="조달 한도 파라미터가 아직 등록되지 않았습니다. 등록 전에는 추정하지 않습니다.")
+    computed = compute_capacity(policy_params, equity_krw=payload.equity_krw,
+                                existing_debt_krw=payload.existing_debt_krw)
+    unverified = policy_params.assumed_of(CAPACITY_ENTRIES)
+    limitations = ["최대 조달선은 신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다",
+                   "권장 조달선은 업종 파라미터와 희망 월세가 있어야 계산됩니다"]
+    if unverified:
+        limitations.insert(0, f"미검증 시연용 파라미터로 계산했습니다: {' · '.join(unverified)}")
+    if computed["borrowing_headroom_krw"] == 0 and payload.existing_debt_krw > 0:
+        limitations.append("기존 대출 잔액이 한도를 모두 소진해 추가 차입 여력이 없습니다")
+    provenance = Provenance(source_name="자리매김 조달 여력 계산", industry_scope="업종 무관",
+                            spatial_unit="사용자 입력 금융 프로필", source_as_of=policy_params.updated_at,
+                            confidence="LOW", limitations=limitations)
+    return FundingCapacityResult(status="computed", **computed,
+                                 parameter_status="DEMO" if unverified else "VERIFIED",
+                                 unverified_params=unverified,
+                                 recommended_line_pending=RECOMMENDED_LINE_PENDING,
+                                 provenance=provenance)
+
+
+@app.post("/api/v1/conditions/interpret", response_model=ConditionInterpretResult)
+async def interpret_conditions(payload: ConditionInterpretRequest,
+                               session_id: UUID = Depends(current_session)):
+    """발화를 조건 제안으로 바꾼다. 케이스를 만들지 않으며, 확인 화면의 승인이 있어야 조건이 된다.
+
+    AI 경로와 규칙 경로가 같은 sanitize 게이트를 지난다. AI 가 없거나 실패하면 규칙 경로로
+    내려가며, 두 경로 모두 evidence 가 사용자 원문의 부분문자열임을 검증받는다."""
+    proposed = await ai.interpret_conditions(payload.text)
+    source = "AI" if proposed is not None else "RULE"
+    if proposed is None:
+        proposed = parse_conditions(payload.text)
+    result = sanitize_conditions(payload.text, proposed)
+    return ConditionInterpretResult(source=source, **result)
 
 
 @app.get("/api/v1/programs")
@@ -569,7 +750,7 @@ async def create_message_stream(case_id: UUID, payload: MessageCreate, session_i
     # comment frames from heartbeat_frames are what actually keeps idle proxies from dropping the
     # connection; a `Connection` header was never doing that job.
     return StreamingResponse(heartbeat_frames(frames(), interval_s=15.0), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers=SSE_HEADERS)
 
 
 async def catalog_selection(payload: DocumentCreate) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, bool]:

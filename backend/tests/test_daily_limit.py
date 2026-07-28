@@ -61,3 +61,22 @@ def test_the_counter_resets_on_a_new_day(monkeypatch):
     assert repo.consume_daily_turn(session, limit=3) is False
     monkeypatch.setattr(repository_module, "_today", lambda: "2099-01-01")
     assert repo.consume_daily_turn(session, limit=3) is True
+
+
+def test_a_negative_limit_means_unlimited():
+    # 0 은 이미 "한 턴도 허용하지 않음"이라는 뜻을 갖고 있으므로 무제한에 쓸 수 없다.
+    # 음수를 무제한으로 둬서 세 상태(양수=한도, 0=차단, 음수=무제한)를 모두 표현한다.
+    repo, session = repository(), uuid4()
+    assert [repo.consume_daily_turn(session, limit=-1) for _ in range(50)] == [True] * 50
+
+
+def test_zero_still_refuses_every_turn():
+    assert repository().consume_daily_turn(uuid4(), limit=0) is False
+
+
+def test_an_unlimited_setting_does_not_accumulate_a_counter():
+    # 셀 필요가 없으므로 세지 않는다. 무제한인데 카운터가 무한히 자라면 그 자체가 누수다.
+    repo, session = repository(), uuid4()
+    for _ in range(10):
+        repo.consume_daily_turn(session, limit=-1)
+    assert repo._daily_turns == {}

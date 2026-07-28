@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, PRIORITY_LABELS, PYEONG_IN_M2, formatKrw } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
-import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AgentProgress, AnalysisResult, BandLine, PrescribeResult, Candidate, CaseInput, CaseRecord, ConditionInterpretResult, DistrictSummary, FundingBandResult, FundingCapacityResult, KbProduct, Program, StatusResponse } from "./types";
 
-// 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 조달 → 서류로 간다. 프로필은 스텝이 아니라 진입 관문이고,
-// 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
-// 조달과 서류가 갈라져 있는 이유는 데이터에 있다 — 부족분은 후보를 확정해야 확정되고, 조달에서 고른
-// 수단은 서류가 만드는 문서의 내용을 바꾼다.
-export type FlowStep = "profile" | "ask" | "confirm" | "recommend" | "funding" | "paperwork";
+// 금융 프로필은 관문이 아니라 1단계다. 자기자본을 입력한 사용자는 그 자리에서 조달 여력을
+// 돌려받고 단계를 끝낸다(capacity). 조건은 그다음 단계이며 금융 입력을 일절 받지 않는다.
+// 최대 조달선은 프로필만으로 나오고 권장 조달선만 업종·월세를 요구한다 — 이 경계가 단계를 가른다.
+// 옛 처방은 조달·서류로 갈라졌고 그 경계도 데이터가 정한다 — 부족분은 후보를 확정해야 확정되고,
+// 조달에서 고른 수단은 서류가 만드는 문서의 내용을 바꾼다.
+export type FlowStep = "profile" | "capacity" | "ask" | "confirm" | "recommend" | "funding" | "paperwork";
 export type BandForm = typeof DEFAULT_BAND_FORM;
 export type { Profile } from "./profile-storage";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
@@ -24,16 +25,61 @@ const INTRO: ChatMessage = { role: "assistant", text: "어떤 업종으로, 서�
 const EMPTY_TRACE: TraceRun = { steps: [], state: "idle", totalMs: null };
 const HANDOFF_MS = 900;
 
-/** The trace mirrors the real awaits in `start()` — one step per network boundary, nothing scripted. */
+/** 제안서 03장의 12개 에이전트가 그대로 한 줄씩이다. 순서는 백엔드가 이벤트를 내보내는 순서와
+ *  같아야 한다 — `settleStep` 이 정착한 줄의 다음 줄을 활성으로 올리기 때문이다.
+ *
+ *  마지막 줄의 id 가 에이전트 키가 아니라 `grade` 인 것은 의도적이다. AgentRunOverlay 가 완료
+ *  문구를 `steps.find(step => step.id === "grade")` 의 note 에서 읽는데, 그 컴포넌트는 이번
+ *  변경의 범위 밖이라 고치지 않는다. 메인 에이전트가 내는 것이 실제로 종합 요약이므로 이 자리에
+ *  놓는 것이 내용상으로도 맞다. */
+const AGENT_ROWS: { id: string; label: string; detail: string }[] = [
+  { id: "condition.location", label: "입지 조건 확정", detail: "업종·자치구·평수·운영형태·희망 임대조건. 최소 조건이 덜 차면 후보를 만들지 않고 되묻습니다." },
+  { id: "condition.finance", label: "금융 프로필 확정", detail: "자기자본·기존부채·월고정지출. 마이데이터는 꺼져 있고 수동 입력이 같은 스키마를 채웁니다." },
+  { id: "finance.band", label: "조달 밴드 산출", detail: "자기자본선·권장 조달선·최대 조달선과 손익분기선. 제도 파라미터가 없으면 추정하지 않습니다." },
+  { id: "finance.stress", label: "창업 금융 스트레스 테스트", detail: "매출 −20%에서 상환 부담과 현금소진을 봅니다. 권장 조달선은 이 시험을 통과하는 최대치입니다." },
+  { id: "finance.kb_products", label: "KB 상품 조합", detail: "금융감독원 공시의 개인사업자대출 금리를 정책자금 금리와 나란히 놓습니다. 한도가 문장이라 조합은 계산하지 않습니다." },
+  { id: "finance.subsidy", label: "정부·지자체 지원정책", detail: "기업마당·K-Startup 공고. 지원 규모가 구조화 필드로 오지 않아 조달선 상향은 반영하지 않습니다." },
+  { id: "location.demand", label: "수요", detail: "유동·상주·직장인구와 배후 구매력. 서울시 상권분석 집계이므로 근거 B입니다." },
+  { id: "location.competition", label: "경쟁", detail: "동종 점포밀도와 신규·폐업 추세. 상권 단위 집계입니다." },
+  { id: "location.viability", label: "달성 가능성", detail: "목표매출을 상권 동종 매출 분포에 대입해 어디쯤인지 봅니다." },
+  { id: "location.survival", label: "생존시기", detail: "18/24개월 영업유지율. 인허가 이력 코호트가 있어야 하는 유일한 근거 A 경로입니다." },
+  { id: "timing.policy", label: "국가 부동산·개발정책", detail: "재개발·교통·주택공급·공사 일정. 원천이 없으면 시점을 권하지 않고 판단을 유보합니다." },
+  { id: "grade", label: "팀 보고 통합", detail: "팀이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
+];
+
+/** 백엔드가 준 문구를 그대로 옮긴다. 없을 때만 상태를 사람 말로 바꾼다.
+ *
+ *  조달 밴드는 예외적으로 수치를 적는다 — 그 줄이 낸 결론이 문장이 아니라 금액이기 때문이다.
+ *  단 그 금액은 이 에이전트가 이벤트에 실어 보낸 값을 **형식만 바꿔** 적는 것이고, 여기서
+ *  더하거나 고르거나 다시 계산하지 않는다. */
+function noteFor(agent: AgentProgress): string | undefined {
+  if (agent.key === "finance.band" && agent.status === "ok") {
+    const quoted = bandNote(agent.data);
+    if (quoted) return quoted;
+  }
+  if (agent.message) return agent.message;
+  if (agent.status === "integration_pending") return "연동 대기";
+  if (agent.status === "withheld") return "판단 유보";
+  return undefined;
+}
+
+/** 에이전트가 낸 권장 조달선 한 줄만 꺼내 읽는다. 없으면 아무것도 적지 않는다. */
+function bandNote(data: Record<string, unknown> | undefined): string | undefined {
+  const bands = Array.isArray(data?.bands) ? (data.bands as Record<string, unknown>[]) : null;
+  const line = bands?.find((item) => item.band === "RECOMMENDED");
+  if (typeof line?.ceiling_krw !== "number" || typeof line?.target_daily_revenue_krw !== "number") return undefined;
+  return `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`;
+}
+
+/** 전체 실행은 12개 에이전트가 한 줄씩이고, 재조회는 매물 조회 leg 만 다시 돈다. */
 function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
-  const steps: TraceStep[] = [
-    { id: "session", label: "익명 세션 확인", detail: "계정 없이 익명 세션으로 진행합니다. 조건은 최대 24시간만 보관합니다.", status: "idle" },
-    { id: "case", label: "입력 조건 확정", detail: "서울 25개 자치구 범위인지 서버에서 검증하고 케이스로 저장합니다.", status: "idle" },
-    { id: "bands", label: "조달 밴드 산출", detail: "자기자본과 임대 조건으로 자기자본선·권장 조달선·최대 조달선과 손익분기선을 계산합니다. 외부 데이터는 쓰지 않습니다.", status: "idle" },
+  // 전체 실행의 줄은 백엔드의 12개 에이전트가 그대로다. 재조회는 매물 조회 leg 만 다시 도므로
+  // 두 줄로 남고, 그 문구는 상권 프로파일이 켜진 뒤의 사실을 따른다 — 이제 후보는 근거 B 로도 나온다.
+  if (leg === "full") return AGENT_ROWS.map((row) => ({ ...row, status: "idle" as const }));
+  return [
     { id: "search", label: "시연용 매물 데이터 조회", detail: `시연용 매물 데이터 · 서울 ${inputs.district} · 보증금이 총예산 이하인 매물만 · ${inputs.industry} 업종의 서울시 상권분석 집계와 '${PRIORITY_LABELS[inputs.priority]}' 우선순위로 정렬 · 최대 4곳.`, status: "idle" },
     { id: "grade", label: "근거 등급·출처 정리", detail: "상권 통계를 확인한 후보는 근거 B(상권 위험 진단), 확인하지 못한 후보는 근거 C로 남습니다. 개별 이력이 없으므로 근거 A는 나오지 않습니다.", status: "idle" }
   ];
-  return leg === "full" ? steps : steps.slice(3);
 }
 
 function gradeNote(candidates: Candidate[]) {
@@ -58,7 +104,7 @@ function missingBandInputs(input: BandForm): string[] {
 function inputPending(gaps: string[]): FundingBandResult {
   return {
     status: "integration_pending", required_capital_krw: null, required_capital_band: null,
-    bands: [], break_even: null, missing_params: gaps,
+    bands: [], break_even: null, parameter_status: "VERIFIED", unverified_params: [], missing_params: gaps,
     message: `${gaps.join(" · ")}을 입력하면 조달 밴드를 계산합니다. 입력 전에는 값을 추정하지 않습니다.`, provenance: null
   };
 }
@@ -71,7 +117,14 @@ export function useJarimaegim() {
   // 저장된 값을 복원했는지. 화면이 "이 브라우저에 저장됨"을 말하려면 이 사실을 알아야 한다.
   const [profileRestored, setProfileRestored] = useState(false);
   const [form, setForm] = useState<CaseInput>(DEFAULT_CASE);
-  const [parsedKeys, setParsedKeys] = useState<Set<keyof CaseInput>>(new Set());
+  // 출처 라벨과 인용의 원본. 필드별로 "무엇에서 그렇게 읽었는지"를 화면이 말할 수 있어야 한다.
+  const [proposal, setProposal] = useState<ConditionInterpretResult | null>(null);
+  // '다시 말할게요'로 돌아갔을 때 입력했던 문장을 복원한다.
+  const [interpretText, setInterpretText] = useState("");
+  // 사용자가 직접 고친 필드. 출처 라벨이 제안보다 우선한다.
+  const [edited, setEdited] = useState<Set<string>>(new Set());
+  const [capacity, setCapacity] = useState<FundingCapacityResult | null>(null);
+  const [capacityState, setCapacityState] = useState<LocationState>("idle");
   const [caseData, setCaseData] = useState<CaseRecord | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [locationState, setLocationState] = useState<LocationState>("idle");
@@ -102,6 +155,8 @@ export function useJarimaegim() {
   const [error, setError] = useState("");
   const [trace, setTrace] = useState<TraceRun>(EMPTY_TRACE);
   const [traceOpen, setTraceOpen] = useState(false);
+  /** 조건을 만든 발화. condition.location 이 실행 중에도 이것을 읽어 아직 비어 있는 항목을 채운다. */
+  const [utterance, setUtterance] = useState("");
   const sessionReady = useRef<Promise<void> | null>(null);
   const traceMark = useRef<Record<string, number>>({});
   const traceOrigin = useRef(0);
@@ -119,15 +174,6 @@ export function useJarimaegim() {
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
 
-  /** 브라우저에 남은 프로필을 복원한다. localStorage 는 서버에 없으므로 마운트 후에만 읽는다.
-   *  복원되면 관문을 건너뛰고 조건부터 시작한다 — 같은 질문을 두 번 하지 않는 것이 저장의 목적이다. */
-  useEffect(() => {
-    const stored = loadProfile();
-    if (!stored) return;
-    setProfile(stored); setProfileConfirmed(true); setProfileRestored(true);
-    setStep((current) => current === "profile" ? "ask" : current);
-  }, []);
-
   // Landing overview. A failure leaves the map empty rather than breaking the shell —
   // the summary is orientation, not something the flow depends on.
   useEffect(() => { api.getListingSummary().then((result) => setSummary(result.districts)).catch(() => setSummary([])); }, []);
@@ -144,22 +190,49 @@ export function useJarimaegim() {
     return sessionReady.current;
   }, []);
 
-  const interpret = useCallback((text: string, patch: Partial<CaseInput>) => {
-    setForm((prev) => ({ ...prev, ...patch }));
-    setParsedKeys(new Set(Object.keys(patch) as (keyof CaseInput)[]));
-    setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "말씀하신 내용을 조건으로 정리했습니다. 확인 후 수정하고 시작해 주세요." }]);
-    setStep("confirm");
+  /** 발화를 서버 제안으로 바꾼다. 케이스는 아직 만들지 않는다 — 확인 화면의 승인이 그 일을 한다. */
+  const interpret = useCallback(async (text: string) => {
+    setBusy("interpret"); setError(""); setInterpretText(text);
+    // 발화 원문을 남긴다. 처방 실행의 condition.location 이 아직 비어 있는 항목을
+    // 이 원문에서 읽고, 그때도 원문에 그대로 있는 조각만 통과한다.
+    setUtterance(text);
+    try {
+      await ensureSession();
+      const result = await api.interpretConditions(text);
+      setProposal(result); setEdited(new Set());
+      const patch: Partial<CaseInput> = {};
+      const field = result.fields;
+      if (typeof field.industry.value === "string") patch.industry = field.industry.value;
+      if (typeof field.district.value === "string") patch.district = field.district.value;
+      if (typeof field.business_stage.value === "string") patch.business_stage = field.business_stage.value as CaseInput["business_stage"];
+      if (typeof field.startup_type.value === "string") patch.startup_type = field.startup_type.value as CaseInput["startup_type"];
+      if (typeof field.priority.value === "string") patch.priority = field.priority.value as CaseInput["priority"];
+      setForm((prev) => ({ ...prev, ...patch }));
+      const rent = field.monthly_rent_krw.value;
+      if (typeof rent === "number" && rent > 0) setBandForm((prev) => ({ ...prev, monthly_rent_krw: rent }));
+      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: result.message }]);
+      setStep("confirm");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "조건을 정리하지 못했습니다. 아래에서 직접 골라 주세요.");
+      setProposal(null); setStep("confirm");
+    } finally { setBusy(""); }
+  }, [ensureSession]);
+
+  /** 직접 입력으로 시작. 서버를 거치지 않고 빈 제안으로 확인 화면에 들어간다. */
+  const startManual = useCallback(() => {
+    setProposal(null); setEdited(new Set()); setInterpretText(""); setStep("confirm");
   }, []);
 
   const setField = useCallback(<K extends keyof CaseInput>(key: K, value: CaseInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-    setParsedKeys((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    setEdited((prev) => new Set(prev).add(key as string));
   }, []);
 
   /** 모든 BandForm 값이 number 또는 number|null 이므로 단일 시그니처로 둔다.
    *  제네릭으로 두면 컴포넌트 prop 으로 넘길 때 반공변 위치에서 타입이 어긋난다. */
   const setBandField = useCallback((key: keyof BandForm, value: number | null) => {
     setBandForm((prev) => ({ ...prev, [key]: value } as BandForm));
+    setEdited((prev) => new Set(prev).add(key as string));
   }, []);
 
   const setProfileField = useCallback((key: keyof Profile, value: number) => {
@@ -173,16 +246,39 @@ export function useJarimaegim() {
     });
   }, []);
 
-  /** 프로필 확정. 케이스·밴드·재검색이 계속 다시 읽고, 세션이 만료돼도 다시 묻지 않도록 브라우저에 남긴다. */
+  /** 조달 여력. 케이스 이전이라 프로필만 보낸다. 실패해도 조건으로 가는 길은 막지 않는다. */
+  const loadCapacity = useCallback(async (financial: Profile) => {
+    setCapacityState("loading");
+    try {
+      await ensureSession();
+      const result = await api.fundingCapacity(financial.equity_krw, financial.existing_debt_krw);
+      setCapacity(result);
+      setCapacityState(result.status === "computed" ? "success" : "integration_pending");
+    } catch { setCapacity(null); setCapacityState("error"); }
+  }, [ensureSession]);
+
+  /** 브라우저에 남은 프로필을 복원한다. localStorage 는 서버에 없으므로 마운트 후에만 읽는다.
+   *  복원되면 관문을 건너뛰고 조달 여력부터 보여준다 — 같은 질문을 두 번 하지 않는 것이 저장의 목적이다. */
+  useEffect(() => {
+    const stored = loadProfile();
+    if (!stored) return;
+    setProfile(stored); setProfileConfirmed(true); setProfileRestored(true);
+    setStep((current) => current === "profile" ? "capacity" : current);
+    void loadCapacity(stored);
+  }, [loadCapacity]);
+
+  /** 프로필 확정. 여기서 끝내지 않고 조달 여력까지 돌려준 뒤에야 1단계가 완결된다. */
   const confirmProfile = useCallback(() => {
     saveProfile(profile);
-    setProfileConfirmed(true); setProfileRestored(true); setStep("ask");
-  }, [profile]);
+    setProfileConfirmed(true); setProfileRestored(true); setStep("capacity");
+    void loadCapacity(profile);
+  }, [loadCapacity, profile]);
 
   /** 저장된 프로필을 지운다. 지우면 관문으로 돌아가고, 다음 방문에도 복원되지 않는다. */
   const forgetProfile = useCallback(() => {
     clearProfile();
     setProfile(DEFAULT_PROFILE); setProfileConfirmed(false); setProfileRestored(false); setStep("profile");
+    setCapacity(null); setCapacityState("idle");
   }, []);
 
   const beginTrace = useCallback((steps: TraceStep[]) => {
@@ -283,21 +379,63 @@ export function useJarimaegim() {
     beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
-      settleStep("session", "done", "익명 세션 확인됨");
       const title = `${inputs.district} ${inputs.industry}`.trim() || "새 케이스";
       const created = await api.createCase(inputs, title);
+      // 케이스 쓰기는 applyCase 한 곳으로 모은다 — activeCaseId 와 caseData 가 어긋나면
+      // 늦게 도착한 저장 응답이 이미 버린 케이스를 되살린다.
       applyCase(created);
-      settleStep("case", "done", `케이스 저장됨 · 버전 ${created.version}`);
+
+      // 실행 순서는 이제 백엔드의 메인 에이전트가 가진다. 여기서는 도착한 판정을 줄에 옮길 뿐,
+      // 어느 팀이 먼저인지도 어디서 멈추는지도 클라이언트가 정하지 않는다.
+      const settled = new Set<string>();
+      const rowId = (key: string) => (key === "main.integrate" ? "grade" : key);
+      let outcome: PrescribeResult | null = null;
+      let mainOutcome: AgentProgress | null = null;
+      await api.prescribeStream(created.id, {
+        monthly_rent_krw: bandForm.monthly_rent_krw, monthly_maintenance_krw: bandForm.monthly_maintenance_krw,
+        key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
+        deposit_krw: bandForm.deposit_krw || null, fitout_krw: bandForm.fitout_krw || null,
+        existing_debt_krw: profile.existing_debt_krw, other_monthly_fixed_krw: profile.other_monthly_fixed_krw,
+        // 운영형태는 화면이 묻지 않는다. 발화에 있으면 처방 때 condition.location 이 읽는다.
+        utterance,
+      }, {
+        onRunStart: () => {},
+        onTeamStart: () => {},
+        onAgentEnd: (agent) => {
+          // 메인 통합은 마지막 줄이다. 여기서 바로 정착시키면 트레이스가 done 으로 넘어가고,
+          // 그 뒤에 오는 정리 루프가 전부 무시되어 중간 줄이 "진행 중"인 채로 남는다.
+          // 실측으로 확인된 동작이라 순서를 onDone 에 맡긴다.
+          if (agent.key === "main.integrate") { mainOutcome = agent; return; }
+          settled.add(rowId(agent.key));
+          // 상태를 여기서 다시 판정하지 않는다. 판정에 성공한 것만 done 이고, 나머지는 왜 그런지를
+          // note 로 그대로 옮긴다 — 원천이 없다는 사실이 실패로 보이면 안 된다.
+          settleStep(rowId(agent.key), agent.status === "ok" ? "done" : "skipped", noteFor(agent));
+        },
+        onDone: (result) => {
+          outcome = result;
+          // 멈춘 실행에서는 뒤쪽 에이전트에게 순서가 오지 않아 이벤트가 없다. 남은 줄을 선언 순서대로
+          // 닫아야 마지막 줄이 마지막에 정착하며 트레이스가 done 으로 넘어간다.
+          for (const row of AGENT_ROWS) {
+            if (settled.has(row.id)) continue;
+            if (row.id === "grade") {
+              const main = mainOutcome;
+              settleStep("grade", main && main.status === "ok" ? "done" : "skipped",
+                main ? noteFor(main) : "실행이 끝나지 않아 종합하지 못했습니다.");
+            } else {
+              settleStep(row.id, "skipped", "앞 단계에서 멈춰 순서가 오지 않았습니다.");
+            }
+          }
+        },
+      });
+
+      // 밴드 산출물은 조달 화면이 통째로 쓰므로 기존 경로를 그대로 유지한다. 같은 compute_bands 를
+      // 부르므로 두 경로가 다른 답을 낼 수는 없다. 페이로드 통합은 별도 변경으로 다룬다.
       const band = await runBands(created, bandForm, profile);
       const line = recommendedLine(band);
-      settleStep("bands", band.status === "integration_pending" ? "skipped" : "done",
-        line
-          ? `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`
-          : band.message || "제도 파라미터 등록 대기");
+      const ceiling = (outcome as PrescribeResult | null)?.summary?.recommended_ceiling_krw ?? line?.ceiling_krw ?? null;
       // 후보를 거르는 상한은 사용자가 스스로 좁힌 예산이 아니라 산출된 권장 조달선이다.
-      // 밴드를 못 냈으면 자기자본선으로 남겨 둔다 — 넓히기 위해 추정하지 않는다.
-      const record = line && line.ceiling_krw > created.inputs.budget_krw
-        ? await api.updateCase(created.id, created.version, { budget_krw: line.ceiling_krw })
+      const record = ceiling && ceiling > created.inputs.budget_krw
+        ? await api.updateCase(created.id, created.version, { budget_krw: ceiling })
         : created;
       if (record !== created) applyCase(record);
       await runSearch(record);
@@ -306,7 +444,7 @@ export function useJarimaegim() {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [applyCase, bandForm, beginTrace, ensureSession, failTrace, handoff, profile, runBands, runInputs, runSearch, settleStep]);
+  }, [applyCase, bandForm, beginTrace, ensureSession, failTrace, handoff, profile, runBands, runInputs, runSearch, settleStep, utterance]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -503,7 +641,8 @@ export function useJarimaegim() {
   const restart = useCallback(() => {
     // applyCase(null) 로 비워야 activeCaseId 도 함께 풀린다. 떠난 케이스로 날아간 저장은
     // 새 케이스에서 같은 후보를 다시 골라도 케이스 검사에 걸려 버려진다.
-    setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); applyCase(null); commitIntent.current = null;
+    setStep("ask"); setForm(DEFAULT_CASE); setProposal(null); setInterpretText(""); setEdited(new Set());
+    applyCase(null); commitIntent.current = null;
     setCandidates([]); setLocationState("idle"); setFocused(null); setOverviewDistrict(null); setAnalysis({});
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
     setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle");
@@ -512,8 +651,9 @@ export function useJarimaegim() {
   }, [applyCase]);
 
   return {
-    step, setStep, form, runInputs, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
+    step, setStep, form, runInputs, setField, proposal, interpretText, edited, interpret, startManual, caseData, candidates, locationState, focused, setFocused,
     summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
+    capacity, capacityState, loadCapacity,
     profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
