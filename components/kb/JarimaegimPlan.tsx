@@ -6,7 +6,6 @@ import { PRIORITY_LABELS, PROGRAM_CATEGORY_LABELS, STAGE_LABELS, TYPE_LABELS, fo
 import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
 import { matchPrograms } from "@/lib/program-match";
-import { ProvenanceBar } from "../ProvenanceBar";
 import type { BandForm, LocationState, Profile } from "@/lib/use-jarimaegim";
 
 const BAND_LABELS: Record<string, string> = { EQUITY_ONLY: "자기자본선", RECOMMENDED: "권장 조달선", MAXIMUM: "최대 조달선", OUT_OF_RANGE: "조달 불가" };
@@ -118,10 +117,12 @@ function rateLabel(product: KbProduct) {
 /** 고르는 것은 문서에 담는다는 뜻이다. 자격 판정도 신청도 아니므로 라벨이 그 말을 그대로 한다. */
 type Selection = { ids: string[]; onToggle: (id: string) => void } | null;
 
-function SelectBox({ id, selection }: { id: string; selection: Selection }) {
+/** 보이는 라벨은 여섯 행이 모두 같아도 된다 — 옆에 상품명이 보이니까. 낭독기에는 그 상품명이
+ *  같이 읽히지 않으므로 어느 행인지 name 으로 접근성 이름에만 붙인다. KbMap 의 마커와 같은 방식이다. */
+function SelectBox({ id, name, selection }: { id: string; name: string; selection: Selection }) {
   if (!selection) return null;
   return <label className="kb-select-row">
-    <input type="checkbox" checked={selection.ids.includes(id)} onChange={() => selection.onToggle(id)} />
+    <input type="checkbox" aria-label={`${name} 문서에 담기`} checked={selection.ids.includes(id)} onChange={() => selection.onToggle(id)} />
     <span>문서에 담기</span>
   </label>;
 }
@@ -135,7 +136,7 @@ function ProductRow({ product, reasons, selection }: { product: KbProduct; reaso
     {reasons && reasons.length > 0 && <div className="kb-match-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
     <small>{[product.loan_limit && `한도 ${product.loan_limit}`, product.join_way, product.rate_type].filter(Boolean).join(" · ")}</small>
     <a href={product.official_url} target="_blank" rel="noopener noreferrer">공시 원문 열기 <ExternalLink aria-hidden="true" /></a>
-    <SelectBox id={product.id} selection={selection ?? null} />
+    <SelectBox id={product.id} name={product.name} selection={selection ?? null} />
   </li>;
 }
 
@@ -162,7 +163,7 @@ function ProgramSection({ programs, inputs, selection }: { programs: Program[]; 
       <div className="kb-match-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
       {program.unknown_conditions.length > 0 && <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>}
       <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
-      <SelectBox id={program.id} selection={selection ?? null} />
+      <SelectBox id={program.id} name={program.title} selection={selection ?? null} />
     </li>)}</ul>
     {matches.length > shown.length && <p className="kb-note"><Info aria-hidden="true" />겹치는 {matches.length}건 중 관련도 상위 {shown.length}건만 보여드립니다. 나머지 {matches.length - shown.length}건을 포함한 전체 공고는 왼쪽 <strong>정책</strong> 메뉴에 있습니다.</p>}
   </>;
