@@ -4,11 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, formatKrw } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
-import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, ConditionInterpretResult, DistrictSummary, FundingBandResult, FundingCapacityResult, KbProduct, Program, StatusResponse } from "./types";
 
-// 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 처방 세 단계로 간다. 프로필은 스텝이 아니라 진입 관문이고,
-// 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
-export type FlowStep = "profile" | "ask" | "confirm" | "recommend" | "prescribe";
+// 금융 프로필은 관문이 아니라 1단계다. 자기자본을 입력한 사용자는 그 자리에서 조달 여력을
+// 돌려받고 단계를 끝낸다(capacity). 조건은 그다음 단계이며 금융 입력을 일절 받지 않는다.
+// 최대 조달선은 프로필만으로 나오고 권장 조달선만 업종·월세를 요구한다 — 이 경계가 단계를 가른다.
+export type FlowStep = "profile" | "capacity" | "ask" | "confirm" | "recommend" | "prescribe";
 export type BandForm = typeof DEFAULT_BAND_FORM;
 export type { Profile } from "./profile-storage";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
@@ -69,7 +70,14 @@ export function useJarimaegim() {
   // 저장된 값을 복원했는지. 화면이 "이 브라우저에 저장됨"을 말하려면 이 사실을 알아야 한다.
   const [profileRestored, setProfileRestored] = useState(false);
   const [form, setForm] = useState<CaseInput>(DEFAULT_CASE);
-  const [parsedKeys, setParsedKeys] = useState<Set<keyof CaseInput>>(new Set());
+  // 출처 라벨과 인용의 원본. 필드별로 "무엇에서 그렇게 읽었는지"를 화면이 말할 수 있어야 한다.
+  const [proposal, setProposal] = useState<ConditionInterpretResult | null>(null);
+  // '다시 말할게요'로 돌아갔을 때 입력했던 문장을 복원한다.
+  const [interpretText, setInterpretText] = useState("");
+  // 사용자가 직접 고친 필드. 출처 라벨이 제안보다 우선한다.
+  const [edited, setEdited] = useState<Set<string>>(new Set());
+  const [capacity, setCapacity] = useState<FundingCapacityResult | null>(null);
+  const [capacityState, setCapacityState] = useState<LocationState>("idle");
   const [caseData, setCaseData] = useState<CaseRecord | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [locationState, setLocationState] = useState<LocationState>("idle");
@@ -103,15 +111,6 @@ export function useJarimaegim() {
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
 
-  /** 브라우저에 남은 프로필을 복원한다. localStorage 는 서버에 없으므로 마운트 후에만 읽는다.
-   *  복원되면 관문을 건너뛰고 조건부터 시작한다 — 같은 질문을 두 번 하지 않는 것이 저장의 목적이다. */
-  useEffect(() => {
-    const stored = loadProfile();
-    if (!stored) return;
-    setProfile(stored); setProfileConfirmed(true); setProfileRestored(true);
-    setStep((current) => current === "profile" ? "ask" : current);
-  }, []);
-
   // Landing overview. A failure leaves the map empty rather than breaking the shell —
   // the summary is orientation, not something the flow depends on.
   useEffect(() => { api.getListingSummary().then((result) => setSummary(result.districts)).catch(() => setSummary([])); }, []);
@@ -128,38 +127,85 @@ export function useJarimaegim() {
     return sessionReady.current;
   }, []);
 
-  const interpret = useCallback((text: string, patch: Partial<CaseInput>) => {
-    setForm((prev) => ({ ...prev, ...patch }));
-    setParsedKeys(new Set(Object.keys(patch) as (keyof CaseInput)[]));
-    setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "말씀하신 내용을 조건으로 정리했습니다. 확인 후 수정하고 시작해 주세요." }]);
-    setStep("confirm");
+  /** 발화를 서버 제안으로 바꾼다. 케이스는 아직 만들지 않는다 — 확인 화면의 승인이 그 일을 한다. */
+  const interpret = useCallback(async (text: string) => {
+    setBusy("interpret"); setError(""); setInterpretText(text);
+    try {
+      await ensureSession();
+      const result = await api.interpretConditions(text);
+      setProposal(result); setEdited(new Set());
+      const patch: Partial<CaseInput> = {};
+      const field = result.fields;
+      if (typeof field.industry.value === "string") patch.industry = field.industry.value;
+      if (typeof field.district.value === "string") patch.district = field.district.value;
+      if (typeof field.business_stage.value === "string") patch.business_stage = field.business_stage.value as CaseInput["business_stage"];
+      if (typeof field.startup_type.value === "string") patch.startup_type = field.startup_type.value as CaseInput["startup_type"];
+      if (typeof field.priority.value === "string") patch.priority = field.priority.value as CaseInput["priority"];
+      setForm((prev) => ({ ...prev, ...patch }));
+      const rent = field.monthly_rent_krw.value;
+      if (typeof rent === "number" && rent > 0) setBandForm((prev) => ({ ...prev, monthly_rent_krw: rent }));
+      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: result.message }]);
+      setStep("confirm");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "조건을 정리하지 못했습니다. 아래에서 직접 골라 주세요.");
+      setProposal(null); setStep("confirm");
+    } finally { setBusy(""); }
+  }, [ensureSession]);
+
+  /** 직접 입력으로 시작. 서버를 거치지 않고 빈 제안으로 확인 화면에 들어간다. */
+  const startManual = useCallback(() => {
+    setProposal(null); setEdited(new Set()); setInterpretText(""); setStep("confirm");
   }, []);
 
   const setField = useCallback(<K extends keyof CaseInput>(key: K, value: CaseInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-    setParsedKeys((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    setEdited((prev) => new Set(prev).add(key as string));
   }, []);
 
   /** 모든 BandForm 값이 number 또는 number|null 이므로 단일 시그니처로 둔다.
    *  제네릭으로 두면 컴포넌트 prop 으로 넘길 때 반공변 위치에서 타입이 어긋난다. */
   const setBandField = useCallback((key: keyof BandForm, value: number | null) => {
     setBandForm((prev) => ({ ...prev, [key]: value } as BandForm));
+    setEdited((prev) => new Set(prev).add(key as string));
   }, []);
 
   const setProfileField = useCallback((key: keyof Profile, value: number) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  /** 프로필 확정. 케이스·밴드·재검색이 계속 다시 읽고, 세션이 만료돼도 다시 묻지 않도록 브라우저에 남긴다. */
+  /** 조달 여력. 케이스 이전이라 프로필만 보낸다. 실패해도 조건으로 가는 길은 막지 않는다. */
+  const loadCapacity = useCallback(async (financial: Profile) => {
+    setCapacityState("loading");
+    try {
+      await ensureSession();
+      const result = await api.fundingCapacity(financial.equity_krw, financial.existing_debt_krw);
+      setCapacity(result);
+      setCapacityState(result.status === "computed" ? "success" : "integration_pending");
+    } catch { setCapacity(null); setCapacityState("error"); }
+  }, [ensureSession]);
+
+  /** 브라우저에 남은 프로필을 복원한다. localStorage 는 서버에 없으므로 마운트 후에만 읽는다.
+   *  복원되면 관문을 건너뛰고 조달 여력부터 보여준다 — 같은 질문을 두 번 하지 않는 것이 저장의 목적이다. */
+  useEffect(() => {
+    const stored = loadProfile();
+    if (!stored) return;
+    setProfile(stored); setProfileConfirmed(true); setProfileRestored(true);
+    setStep((current) => current === "profile" ? "capacity" : current);
+    void loadCapacity(stored);
+  }, [loadCapacity]);
+
+  /** 프로필 확정. 여기서 끝내지 않고 조달 여력까지 돌려준 뒤에야 1단계가 완결된다. */
   const confirmProfile = useCallback(() => {
     saveProfile(profile);
-    setProfileConfirmed(true); setProfileRestored(true); setStep("ask");
-  }, [profile]);
+    setProfileConfirmed(true); setProfileRestored(true); setStep("capacity");
+    void loadCapacity(profile);
+  }, [loadCapacity, profile]);
 
   /** 저장된 프로필을 지운다. 지우면 관문으로 돌아가고, 다음 방문에도 복원되지 않는다. */
   const forgetProfile = useCallback(() => {
     clearProfile();
     setProfile(DEFAULT_PROFILE); setProfileConfirmed(false); setProfileRestored(false); setStep("profile");
+    setCapacity(null); setCapacityState("idle");
   }, []);
 
   const beginTrace = useCallback((steps: TraceStep[]) => {
@@ -407,7 +453,7 @@ export function useJarimaegim() {
   /** 조건만 다시 받는다. 금융 프로필은 사용자의 성질이므로 조건을 바꾼다고 다시 묻지 않는다.
    *  프로필을 고치는 경로는 어느 화면에서나 상단 배지의 "수정" 하나뿐이다. */
   const restart = useCallback(() => {
-    setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
+    setStep("ask"); setForm(DEFAULT_CASE); setProposal(null); setInterpretText(""); setEdited(new Set()); setCaseData(null);
     setCandidates([]); setLocationState("idle"); setFocused(null); setOverviewDistrict(null); setAnalysis({});
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
     setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle");
@@ -415,8 +461,9 @@ export function useJarimaegim() {
   }, []);
 
   return {
-    step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
+    step, setStep, form, setField, proposal, interpretText, edited, interpret, startManual, caseData, candidates, locationState, focused, setFocused,
     summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
+    capacity, capacityState, loadCapacity,
     profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
