@@ -108,7 +108,17 @@ const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
           existing_debt_krw: 0, other_monthly_fixed_krw: 1000000 }
 });
 const bandsBody = await bandsResponse.json();
-const bands = { pendingSafeState: bandsBody.status === "integration_pending" && bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0 };
+// 파라미터가 미등록이면 밴드를 지어내지 않고 무엇이 빈지 밝힌다. 등록됐으면 계산하되, 그 값이
+// 미검증 시연용 파라미터에서 나왔다면 그 사실을 응답이 반드시 함께 싣는다 — 값을 숨기는 대신
+// 값의 성격을 밝히는 것이 부록 A 불변조건 1을 지키는 방식이다.
+const bands = {
+  safeState: bandsBody.status === "integration_pending"
+    ? bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0
+    : bandsBody.bands.length === 3
+      && (bandsBody.parameter_status === "DEMO") === (bandsBody.unverified_params.length > 0)
+      && (bandsBody.parameter_status !== "DEMO"
+          || bandsBody.provenance.limitations.some(item => item.includes("시연용")))
+};
 
 const statusBody = await (await page.request.get(`${base}/api/v1/status`)).json();
 const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis => axis.enabled || Boolean(axis.disabled_reason)) };
@@ -242,7 +252,7 @@ if (kbFlow.candidates > 0) {
 const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, mydataGate, capacityStep, conditionStep, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
+if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.safeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
 if (!kbFlow.stepsAreFour || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.bandDemoLabelled || !kbFlow.evidenceInline) process.exitCode = 1;
 if (!mydataGate.buttonDisabled || !mydataGate.lockExplained || !mydataGate.manualAdapter) process.exitCode = 1;
 if (!capacityStep.resolved || !capacityStep.demoLabelled || !capacityStep.recommendedDeferred || !capacityStep.noConditionInputs) process.exitCode = 1;
