@@ -178,7 +178,7 @@ async def test_a_halted_run_writes_no_narrative_at_all():
     assert "narrative" not in integrated.data
 
 
-async def test_a_run_without_a_model_still_reports_the_twelfth_agent():
+async def test_a_run_without_a_model_still_reports_the_main_agent():
     plain = MainAgent(conditions=ConditionLayer(),
                       finance=FinanceTeam(FULL, kb_products=[], programs=[]),
                       location=LocationTeam(), timing=TimingTeam())
@@ -221,7 +221,7 @@ async def test_one_run_never_exceeds_the_call_budget():
     result = await agent.run(CONDITIONS, LISTINGS)
     assert len(responder.calls) == 2
     # 상한을 넘긴 것은 에러가 아니라 부분 결과다 — 실행은 끝까지 가고 12개가 모두 보고한다.
-    assert len([item for report in result.reports for item in report.outcomes]) == 12
+    assert len([item for report in result.reports for item in report.outcomes]) == 13
 
 
 async def test_the_budget_starts_over_when_the_conditions_change():

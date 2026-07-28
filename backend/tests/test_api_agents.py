@@ -97,16 +97,18 @@ def frames(response) -> list[dict]:
 
 # ── GET /api/v1/agents ────────────────────────────────────────────
 
-def test_the_roster_lists_all_twelve_declarations(client):
+def test_the_roster_lists_every_declaration(client):
     payload = client.get("/api/v1/agents").json()
-    assert payload["total"] == 12
-    assert len(payload["agents"]) == 12
+    assert payload["total"] == len(payload["agents"])
+    # 판단 축 8 + 커널 2 + 조건 2 + 메인 1.
+    assert payload["total"] == 13
+    assert len([item for item in payload["agents"] if item["display_group"]]) == 8
 
 
 def test_every_declaration_carries_its_source_and_team(client):
     for item in client.get("/api/v1/agents").json()["agents"]:
         assert item["source_name"]
-        assert item["team"] in ("main", "condition", "finance", "location", "timing")
+        assert item["team"] in ("main", "condition", "kernel", "finance", "location", "timing")
 
 
 def test_the_roster_is_public_because_it_is_a_declaration_not_user_data():
@@ -115,9 +117,11 @@ def test_the_roster_is_public_because_it_is_a_declaration_not_user_data():
         assert anonymous.get("/api/v1/agents").status_code == 200
 
 
-def test_status_reports_the_same_twelve(client):
+def test_status_reports_the_same_roster(client):
     payload = client.get("/api/v1/status").json()
-    assert payload["agents"]["total"] == 12
+    assert payload["agents"]["total"] == 13
+    # 축 목록은 선언에서 파생된다 — 두 곳에 적으면 한쪽만 늘어난다.
+    assert len(payload["axes"]) == 8
 
 
 def test_the_roster_exposes_the_display_group(client):
@@ -162,7 +166,7 @@ def test_each_axis_reports_before_the_next_one_starts(client, case_id, filled_pa
     assert started == ["condition.location", "condition.finance",
                        "finance.band", "finance.stress", "finance.kb_products", "finance.subsidy",
                        "location.demand", "location.competition", "location.viability",
-                       "location.survival", "timing.policy", "main.integrate"]
+                       "location.survival", "location.access", "timing.policy", "main.integrate"]
 
 
 def test_an_axis_starts_before_it_ends(client, case_id, filled_params):
@@ -187,7 +191,7 @@ def test_every_agent_end_names_the_agent_and_its_status(client, case_id, filled_
 def test_the_done_frame_carries_activation_and_the_summary(client, case_id, filled_params):
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
     done = frames(response)[-1]["data"]
-    assert done["activation"]["total"] == 12
+    assert done["activation"]["total"] == 13
     assert done["summary"]["recommended_ceiling_krw"] > 0
 
 
@@ -206,7 +210,7 @@ def test_the_registered_parameters_in_this_repository_let_the_run_reach_every_te
     done = frames(response)[-1]["data"]
     assert done["halted_at"] is None
     assert done["summary"]["recommended_ceiling_krw"] > 0
-    assert len([frame for frame in frames(response) if frame["event"] == "agent_end"]) == 12
+    assert len([frame for frame in frames(response) if frame["event"] == "agent_end"]) == 13
 
 
 def test_the_chat_cannot_reach_this_endpoint_with_a_case_patch(client, case_id, filled_params):

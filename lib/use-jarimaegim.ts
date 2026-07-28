@@ -23,28 +23,30 @@ const INTRO: ChatMessage = { role: "assistant", text: "어떤 업종으로, 서�
 const EMPTY_TRACE: TraceRun = { steps: [], state: "idle", totalMs: null };
 const HANDOFF_MS = 900;
 
-/** 제안서 03장의 12개 에이전트가 그대로 한 줄씩이다. 순서는 백엔드가 이벤트를 내보내는 순서와
- *  같아야 한다 — `settleStep` 이 정착한 줄의 다음 줄을 활성으로 올리기 때문이다.
+/** 실행 한 줄 = 축 하나. 순서는 백엔드가 이벤트를 내보내는 순서와 같아야 한다 —
+ *  `settleStep` 이 정착한 줄의 다음 줄을 활성으로 올리기 때문이다.
+ *
+ *  개수를 문구로 적지 않는다. 축이 늘 때마다 화면과 서버가 어긋나므로, "N단계"는 이 배열의
+ *  길이에서 나온다(`AgentRunOverlay` 가 `trace.steps.length` 를 쓴다).
  *
  *  마지막 줄의 id 가 에이전트 키가 아니라 `grade` 인 것은 의도적이다. AgentRunOverlay 가 완료
- *  문구를 `steps.find(step => step.id === "grade")` 의 note 에서 읽는데, 그 컴포넌트는 이번
- *  변경의 범위 밖이라 고치지 않는다. 메인 에이전트가 내는 것이 실제로 종합 요약이므로 이 자리에
- *  놓는 것이 내용상으로도 맞다. */
+ *  문구를 `steps.find(step => step.id === "grade")` 의 note 에서 읽는다. 메인 에이전트가 내는
+ *  것이 실제로 종합 요약이므로 이 자리에 놓는 것이 내용상으로도 맞다. */
 const AGENT_ROWS: { id: string; label: string; detail: string }[] = [
-  { id: "condition.location", label: "입지 조건 확정", detail: "업종·자치구·평수·운영형태·희망 임대조건. 최소 조건이 덜 차면 후보를 만들지 않고 되묻습니다." },
+  { id: "condition.location", label: "입지 조건 확정", detail: "업종·자치구·자기자본만 되묻고, 희망 월세·평수·보증금은 없어도 진행합니다. 없으면 그 수치만 유보합니다." },
   { id: "condition.finance", label: "금융 프로필 확정", detail: "자기자본·기존부채·월고정지출. 마이데이터는 꺼져 있고 수동 입력이 같은 스키마를 채웁니다." },
-  { id: "finance.band", label: "조달 밴드 산출", detail: "자기자본선·권장 조달선·최대 조달선과 손익분기선. 제도 파라미터가 없으면 추정하지 않습니다." },
-  { id: "finance.stress", label: "창업 금융 스트레스 테스트", detail: "매출 −20%에서 상환 부담과 현금소진을 봅니다. 권장 조달선은 이 시험을 통과하는 최대치입니다." },
-  { id: "finance.kb_products", label: "KB 상품 조합", detail: "금융감독원 공시의 개인사업자대출 금리를 정책자금 금리와 나란히 놓습니다. 한도가 문장이라 조합은 계산하지 않습니다." },
-  { id: "finance.subsidy", label: "정부·지자체 지원정책", detail: "기업마당·K-Startup 공고. 지원 규모가 구조화 필드로 오지 않아 조달선 상향은 반영하지 않습니다." },
+  { id: "finance.band", label: "조달 밴드 산출", detail: "자기자본선·권장 조달선·최대 조달선과 손익분기선. 커널이라 모델이 끼지 않습니다." },
+  { id: "finance.stress", label: "창업 금융 스트레스 테스트", detail: "매출 −20%/−30%·금리 +1%p 세 시나리오를 항상 전부 돌립니다." },
+  { id: "finance.kb_products", label: "금융상품", detail: "금융감독원 공시의 개인사업자대출 금리를 정책자금 금리와 나란히 놓습니다. 한도가 문장이라 조합은 계산하지 않습니다." },
+  { id: "finance.subsidy", label: "정부지원", detail: "기업마당·K-Startup 공고. 지원 규모가 구조화 필드로 오지 않아 조달선 상향은 반영하지 않습니다." },
   { id: "location.demand", label: "수요", detail: "유동·상주·직장인구와 배후 구매력. 서울시 상권분석 집계이므로 근거 B입니다." },
   { id: "location.competition", label: "경쟁", detail: "동종 점포밀도와 신규·폐업 추세. 상권 단위 집계입니다." },
-  { id: "location.viability", label: "달성 가능성", detail: "목표매출을 상권 동종 매출 분포에 대입해 어디쯤인지 봅니다." },
-  { id: "location.survival", label: "생존시기", detail: "18/24개월 영업유지율. 인허가 이력 코호트가 있어야 하는 유일한 근거 A 경로입니다." },
-  { id: "timing.policy", label: "국가 부동산·개발정책", detail: "재개발·교통·주택공급·공사 일정. 원천이 없으면 시점을 권하지 않고 판단을 유보합니다." },
-  { id: "grade", label: "팀 보고 통합", detail: "팀이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
+  { id: "location.viability", label: "매출", detail: "목표매출을 상권 동종 매출 분포에 대입해 어디쯤인지 봅니다. 후보를 떨어뜨릴 수 있는 유일한 축입니다." },
+  { id: "location.survival", label: "생존이력", detail: "18/24개월 영업유지율. 인허가 이력 코호트가 있어야 하는 유일한 근거 A 경로입니다." },
+  { id: "location.access", label: "접근성", detail: "역·버스·주요 시설과의 인접 관계. 좌표계 실측 전에는 거리·소요시간을 만들지 않습니다." },
+  { id: "timing.policy", label: "시점", detail: "재개발·교통·주택공급·공사 일정. 원천이 없으면 시점을 권하지 않고 판단을 유보합니다. 후보 순위와 탈락에 관여하지 않습니다." },
+  { id: "grade", label: "종합", detail: "축이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
 ];
-
 /** 백엔드가 준 문구를 그대로 옮긴다. 없을 때만 상태를 사람 말로 바꾼다.
  *
  *  조달 밴드는 예외적으로 수치를 적는다 — 그 줄이 낸 결론이 문장이 아니라 금액이기 때문이다.
@@ -69,9 +71,9 @@ function bandNote(data: Record<string, unknown> | undefined): string | undefined
   return `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`;
 }
 
-/** 전체 실행은 12개 에이전트가 한 줄씩이고, 재조회는 매물 조회 leg 만 다시 돈다. */
+/** 전체 실행은 축마다 한 줄이고, 재조회는 매물 조회 leg 만 다시 돈다. */
 function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
-  // 전체 실행의 줄은 백엔드의 12개 에이전트가 그대로다. 재조회는 매물 조회 leg 만 다시 도므로
+  // 전체 실행의 줄은 백엔드의 축 선언이 그대로다. 재조회는 매물 조회 leg 만 다시 도므로
   // 두 줄로 남고, 그 문구는 상권 프로파일이 켜진 뒤의 사실을 따른다 — 이제 후보는 근거 B 로도 나온다.
   if (leg === "full") return AGENT_ROWS.map((row) => ({ ...row, status: "idle" as const }));
   return [

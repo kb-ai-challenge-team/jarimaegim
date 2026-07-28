@@ -1,8 +1,10 @@
 from fastapi.testclient import TestClient
 
-EXPECTED_KEYS = {"finance.band", "finance.kb_products", "finance.subsidy", "finance.stress",
+#: 판단 축 8개. 밴드·스트레스는 커널이라 여기 없다 — 계산이지 판단이 아니고, 축으로 세면
+#: 화면의 "N개 축 중 M개 가동"이 실제 판단 개수보다 많아진다.
+EXPECTED_KEYS = {"finance.kb_products", "finance.subsidy",
                  "location.demand", "location.competition", "location.viability",
-                 "location.survival", "timing.policy"}
+                 "location.survival", "location.access", "timing.policy"}
 
 
 def client():
@@ -31,7 +33,7 @@ def test_location_axes_follow_the_trade_area_profile_not_the_env(monkeypatch):
 
     monkeypatch.setattr(main, "trade_areas", Empty(), raising=False)
     axes = main.analysis_axes()
-    for key in ("location.demand", "location.competition", "location.viability"):
+    for key in ("location.demand", "location.competition"):
         assert axes[key]["enabled"] is False
         assert "미생성" in axes[key]["disabled_reason"]
 
@@ -42,9 +44,24 @@ def test_location_axes_turn_on_once_the_profile_is_loaded():
     if not trade_areas.available:
         return
     axes = client().get("/api/v1/status").json()["axes"]
-    for key in ("location.demand", "location.competition", "location.viability"):
+    for key in ("location.demand", "location.competition"):
         assert axes[key]["enabled"] is True
         assert axes[key]["disabled_reason"] is None
+
+
+def test_the_sales_axis_stays_off_even_with_a_profile_loaded():
+    """예전에는 상권 파일만 읽히면 이 축을 켜졌다고 보고했지만, 실행은 언제나 연동 대기를
+    돌려주고 있었다 — 화면과 런타임이 정반대를 말한 것이다. 백분위 정의가 정해지기 전에는
+    꺼져 있는 것이 사실이고, 탈락 권한을 가진 유일한 축이라 더욱 그렇다."""
+    axis = client().get("/api/v1/status").json()["axes"]["location.viability"]
+    assert axis["enabled"] is False
+    assert "백분위 정의" in axis["disabled_reason"]
+
+
+def test_the_access_axis_declares_why_it_is_off_rather_than_guessing_coordinates():
+    axis = client().get("/api/v1/status").json()["axes"]["location.access"]
+    if not axis["enabled"]:
+        assert "추측" in axis["disabled_reason"]
 
 
 def test_survival_axis_stays_disabled_because_it_is_the_only_grade_a_path():
@@ -74,9 +91,11 @@ def test_timing_axis_is_disabled_and_abstains():
     assert "판단 유보" in axis["disabled_reason"]
 
 
-def test_stress_axis_is_enabled_because_it_needs_no_external_source():
-    assert client().get("/api/v1/status").json()["axes"]["finance.stress"]["enabled"] is True
-
+def test_the_kernels_are_not_listed_as_axes():
+    """밴드·스트레스는 계산이지 판단이 아니다. 축으로 세면 화면의 축 개수가 판단 개수보다 많아진다."""
+    axes = client().get("/api/v1/status").json()["axes"]
+    assert "finance.band" not in axes
+    assert "finance.stress" not in axes
 
 def test_status_says_plainly_when_the_chat_limit_is_off(monkeypatch):
     """한도를 끄면 /status 가 한도를 광고하면 안 된다 — 없는 제약을 있다고 말하는 셈이 된다."""

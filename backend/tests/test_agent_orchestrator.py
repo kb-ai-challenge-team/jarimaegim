@@ -80,10 +80,24 @@ async def test_a_missing_band_stops_before_the_location_axes_run():
     assert result.surviving == []
 
 
-async def test_the_timing_team_only_sees_surviving_candidates():
+class DroppingTradeArea:
+    """매출 축만 후보를 떨어뜨릴 수 있다. l1 만 상위 10% 경계를 넘는 상권으로 둔다."""
+
+    available = True
+    keyed_by = "admin_dong"
+
+    @staticmethod
+    def reason_for(axis: str) -> str | None:
+        return None
+
+    @staticmethod
+    def profile(joiner: str, industry: str) -> dict | None:
+        return {"revenue_percentile": 0.95 if joiner == "역삼1동" else 0.4, "quarter": "2026Q1"}
+
+
+async def test_the_timing_axis_only_sees_surviving_candidates():
     timing = CountingTiming()
-    dropping = LocationTeam(stress_check=lambda candidate: {"passes": candidate["id"] != "l1",
-                                                            "runway_months": 6})
+    dropping = LocationTeam(trade_area=DroppingTradeArea())
     result = await agent(timing=timing, location=dropping).run(CONDITIONS, CANDIDATES)
     assert timing.saw == ["l2"]
     assert [item["id"] for item in result.surviving] == ["l2"]
@@ -96,9 +110,9 @@ async def test_the_finance_axes_run_once_regardless_of_candidate_count():
     assert len([item for item in finance.outcomes if item.key == "finance.band"]) == 1
 
 
-async def test_the_run_reports_how_many_of_the_twelve_agents_are_active():
+async def test_the_run_reports_how_many_agents_are_active():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    assert result.activation["total"] == 12
+    assert result.activation["total"] == 13
     # 조건 2 + 밴드 + 스트레스 + 메인 통합 = 5. 상권·생존·타이밍·KB·지원금은 원천이 없다.
     assert result.activation["active"] == 5
     assert result.activation["by_key"]["location.demand"] == AgentStatus.INTEGRATION_PENDING
@@ -136,13 +150,13 @@ async def test_the_summary_is_empty_when_the_run_halted():
     assert result.summary == {}
 
 
-async def test_the_main_agent_reports_its_own_integration_as_the_twelfth_outcome():
+async def test_the_main_agent_reports_its_own_integration_as_the_last_outcome():
     # 메인도 일을 한다 — 팀 보고를 모아 수치 카드를 만든다. 그 결과를 스스로 내지 않으면
     # 화면에는 11개만 도착하고 12번째 칸이 영원히 비어 있게 된다.
     result = await agent().run(CONDITIONS, CANDIDATES)
     keys = [item.key for report in result.reports for item in report.outcomes]
     assert keys[-1] == "main.integrate"
-    assert len(keys) == 12
+    assert len(keys) == 13
 
 
 async def test_the_main_agent_marks_itself_withheld_when_the_run_halted():

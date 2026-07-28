@@ -46,7 +46,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from .access import AccessAxis
 from .contracts import AgentOutcome, AgentStatus, AxisReport
+from .narrowing import narrow
 from .llm import AgentLLM, ChoiceSchema, Decision, Flag, Pick, Records
 from .registry import spec
 from .survival_mapping import VerificationTable
@@ -105,12 +107,13 @@ class LocationTeam:
     name = "입지추천 팀"
 
     def __init__(self, *, trade_area: Any | None = None,
-                 stress_check: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+                 toolset: Any | None = None, toolset_factory: Any | None = None,
                  llm: AgentLLM | None = None,
                  survival_table: VerificationTable | None = None,
                  licence_codes: list[str] | None = None):
         self.trade_area = trade_area
-        self.stress_check = stress_check
+        #: 접근성 축이 쓰는 대화 도구. 없으면 그 축만 꺼진다.
+        self.access = AccessAxis(toolset, toolset_factory)
         self.llm = llm
         self.survival_table = survival_table or VerificationTable()
         self.licence_codes = licence_codes or []
@@ -120,7 +123,8 @@ class LocationTeam:
         return bool(self.trade_area is not None and getattr(self.trade_area, "available", False))
 
     def run(self, candidates: list[dict[str, Any]], conditions: dict[str, Any],
-            decisions: dict[str, Decision] | None = None) -> LocationReport:
+            decisions: dict[str, Decision] | None = None,
+            access: AgentOutcome | None = None) -> LocationReport:
         chosen = decisions or {}
         industry = conditions.get("industry", "")
         profiles = self._profiles(candidates, industry)
@@ -138,14 +142,22 @@ class LocationTeam:
                               lambda value: {"HIGH": "LOW", "LOW": "HIGH"}.get(_band_of(value), "MID")),
             self._viability(candidates, profiles, viability),
             self._survival(chosen.get("location.survival")),
+            # 접근성은 조회가 비동기라 `arun` 이 미리 받아 넘긴다. 동기 경로에서는 도구를
+            # 부를 수 없으므로 연동 대기로 남는다 — 없는 조회를 흉내 내지 않는다.
+            access or spec("location.access").outcome(
+                AgentStatus.INTEGRATION_PENDING,
+                message="주변 시설 조회 도구가 연결되지 않아 접근성을 판정하지 않았습니다."),
         ]
-        surviving, dropped = self._narrow(candidates, profiles, outcomes)
+        # 축소는 결정론 모듈이 한다. 탈락 권한을 가진 축이 상수로 선언되어 있고, 그 밖의 축이
+        # 후보를 떨어뜨리려 하면 조용히 무시되는 대신 실패한다.
+        surviving, dropped = narrow(candidates, outcomes)
         return LocationReport(key=self.key, name=self.name, outcomes=outcomes,
                               surviving=surviving, dropped=dropped)
 
     async def arun(self, candidates: list[dict[str, Any]],
                    conditions: dict[str, Any]) -> LocationReport:
-        return self.run(candidates, conditions, await self.decide(candidates, conditions))
+        return self.run(candidates, conditions, await self.decide(candidates, conditions),
+                        access=await self.access.run(candidates))
 
     async def decide(self, candidates: list[dict[str, Any]],
                      conditions: dict[str, Any]) -> dict[str, Decision]:
@@ -401,34 +413,3 @@ class LocationTeam:
                          "제안은 대조 결과와 다시 맞춰 보며, 확인되지 않은 쌍은 사용되지 않습니다."),
             context={"기준 업종": industry, "인허가 업종코드": self.licence_codes,
                      "상권분석 업종": options})
-
-    # ── 축소 ───────────────────────────────────────────────────────────
-    def _narrow(self, candidates: list[dict[str, Any]], profiles: dict[str, dict[str, Any]],
-                outcomes: list[AgentOutcome]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """사유가 있는 것만 탈락시킨다. 개수는 고정하지 않는다.
-
-        판정하지 못한 축(`active` 가 아닌 것)은 이 함수가 아예 읽지 않는다."""
-        viability = next(item for item in outcomes if item.key == "location.viability")
-        viable = viability.data.get("by_candidate", {}) if viability.active else {}
-
-        surviving, dropped = [], []
-        for candidate in candidates:
-            reason = self._hard_drop_reason(candidate, viable.get(candidate["id"]))
-            if reason:
-                dropped.append({**candidate, "reason": reason})
-            else:
-                surviving.append(candidate)
-        return surviving, dropped
-
-    def _hard_drop_reason(self, candidate: dict[str, Any],
-                          viability: dict[str, Any] | None) -> str | None:
-        if viability and viability.get("above_top_decile"):
-            return ("목표매출이 상권 동종 상위 10% 경계를 넘어 분기점 미달입니다 "
-                    f"(분포 위치 {viability['value']:.0%}).")
-        if self.stress_check is not None:
-            verdict = self.stress_check(candidate)
-            if verdict is not None and not verdict.get("passes", True):
-                months = verdict.get("runway_months")
-                tail = f" ({months}개월 내 소진)" if months is not None else ""
-                return f"매출 −20% 스트레스에서 현금이 버티지 못합니다{tail}."
-        return None

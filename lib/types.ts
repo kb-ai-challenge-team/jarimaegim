@@ -364,10 +364,11 @@ export interface ChatStreamHandlers {
  *  "같이 보여주는 것"이 "같이 실행되는 것"이 된다. */
 export type DisplayGroup = "어디" | "얼마" | "언제";
 
-/** 제안서 03장의 12개 에이전트 선언. `GET /api/v1/agents` 가 주는 모양. */
+/** 에이전트 선언. `GET /api/v1/agents` 가 주는 모양.
+ *  판단 축은 `display_group` 을 가진 것이 전부다 — 개수를 문자열로 적지 않는다. */
 export interface AgentSpec {
   key: string;
-  team: "main" | "condition" | "finance" | "location" | "timing";
+  team: "main" | "condition" | "kernel" | "finance" | "location" | "timing";
   name: string;
   source_name: string;
   produces: string;
