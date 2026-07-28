@@ -82,6 +82,11 @@ def test_mydata_is_declared_off_and_manual_entry_satisfies_the_same_schema():
 
 
 def test_optional_fields_do_not_hold_the_run():
-    # 평수·운영형태는 후보를 바꾸지 않는 부가 정보다. 없어도 진행한다.
-    report = ConditionLayer().run({**COMPLETE, "area_pyeong": None, "operating_style": ""})
+    # 평수·운영형태·보증금에 더해 희망 월세까지 — 없어도 후보는 나온다.
+    # 없으면 손익분기만 못 내고, 그 사실은 `deferred` 로 밝힌다.
+    report = ConditionLayer().run({**COMPLETE, "area_pyeong": None, "operating_style": "",
+                                   "monthly_rent_krw": None, "deposit_krw": None})
     assert report.settled is True
+    assert report.halted is False
+    assert report.questions == []
+    assert set(report.deferred) >= {"monthly_rent_krw", "area_pyeong", "deposit_krw"}

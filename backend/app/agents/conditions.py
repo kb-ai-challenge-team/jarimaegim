@@ -38,13 +38,20 @@ from .contracts import AgentStatus, TeamReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick, Records, Span
 from .registry import spec
 
-#: 답이 후보를 바꾸는 항목. 이것이 최소 조건이다.
-REQUIRED_LOCATION = (("industry", "업종"), ("district", "자치구"))
-REQUIRED_FINANCE = (("equity_krw", "자기자본"), ("monthly_rent_krw", "희망 월세"))
+#: 없으면 계산 자체가 불가능한 항목. 이것만 되묻는다.
+#:
+#: 되묻기 기준을 "답이 후보를 바꾸는가" 에서 "없으면 무엇을 못 내는가" 로 옮긴 것이 이 경계다.
+#: 업종이 없으면 `compute_bands` 가 업종 파라미터를 못 찾고, 자기자본이 없으면
+#: `compute_capacity` 가 여력을 못 내며, 자치구가 없으면 탐색 공간을 못 자른다.
+BLOCKING = (("industry", "업종"), ("district", "자치구"), ("equity_krw", "자기자본"))
 
-#: 있으면 필요자금·현금소진이 정확해지지만, 없어도 후보는 나온다.
-OPTIONAL_LOCATION = (("area_pyeong", "희망 평수"), ("operating_style", "운영형태"),
-                     ("deposit_krw", "희망 보증금"))
+#: 없으면 그 수치만 못 내는 항목. 되묻지 않고 진행하며 무엇을 못 냈는지만 밝힌다.
+#:
+#: 희망 월세는 손익분기와 권장 조달선만 막는다 — 입지 네 축은 월세를 읽지 않으므로 그대로 돈다.
+#: 평수·보증금은 필요자금(→현금소진)에만 관여한다. 예전에는 월세가 최소 조건에 있어서
+#: "이 자리에 손님이 있나" 까지 월세 입력을 기다렸다.
+DEFERRABLE = (("monthly_rent_krw", "희망 월세"), ("deposit_krw", "희망 보증금"),
+              ("area_pyeong", "희망 평수"), ("operating_style", "운영형태"))
 
 QUESTION_LIMIT = 3
 
@@ -93,16 +100,28 @@ class ConditionReport(TeamReport):
     settled: bool = False
     #: 발화에서 읽어 채운 값까지 반영된 조건. 후속 팀은 이것을 받는다.
     conditions: dict[str, Any] = field(default_factory=dict)
+    #: 없어서 그 수치만 못 내는 항목. 실행은 계속되고 화면이 무엇이 빠졌는지 말한다.
+    deferred: list[str] = field(default_factory=list)
+    #: 발화가 이미 확정된 값과 충돌한 것. 조용히 덮어쓰지 않고 제안으로만 올린다.
+    proposals: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def halted(self) -> bool:
-        """기본 규칙(`활성 0건`)을 쓰지 않는다. 두 에이전트 중 하나만 미충족이어도 후보를
-        만들면 안 되므로, 이 레이어의 중단 조건은 "전부 확정되었는가" 하나다."""
+        """기본 규칙(`활성 0건`)을 쓰지 않는다. 차단 항목이 하나라도 비면 계산이 성립하지
+        않으므로 멈추고, 유보 항목은 아무리 비어도 멈추지 않는다."""
         return not self.settled
 
 
 def _blank(value: Any) -> bool:
-    return value is None or (isinstance(value, str) and not value.strip())
+    """0 원을 확정된 답으로 읽지 않는다 — 자기자본 0 을 진짜 답으로 받으면 여력 커널이
+    0 을 산출하고, 사용자는 자기가 입력하지 않은 결론을 받게 된다."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value <= 0
+    return False
 
 
 def _missing(conditions: dict[str, Any], required) -> list[tuple[str, str]]:
@@ -128,35 +147,39 @@ class ConditionLayer:
                                                           schema=EXTRACT_SCHEMA.name)
         asked = asked or Decision.deterministic("condition.finance", schema="select_questions")
         extracted = self._extracted(conditions, extraction)
+        proposals: list[dict[str, Any]] = []
         merged = {**conditions, **extracted}
 
-        location_gaps = _missing(merged, REQUIRED_LOCATION)
-        finance_gaps = _missing(merged, REQUIRED_FINANCE)
+        blocking_gaps = _missing(merged, BLOCKING)
+        deferred_gaps = _missing(merged, DEFERRABLE)
 
         location = spec("condition.location")
         finance = spec("condition.finance")
         outcomes = [
             location.outcome(
-                AgentStatus.WITHHELD if location_gaps else AgentStatus.OK,
-                message="입지 최소 조건이 아직 확정되지 않았습니다." if location_gaps else None,
-                data={"settled": {key: merged.get(key) for key, _ in REQUIRED_LOCATION},
-                      "optional": {key: merged.get(key) for key, _ in OPTIONAL_LOCATION},
+                AgentStatus.WITHHELD if blocking_gaps else AgentStatus.OK,
+                message="입지 최소 조건이 아직 확정되지 않았습니다." if blocking_gaps else None,
+                data={"settled": {key: merged.get(key) for key, _ in BLOCKING},
+                      "deferred": {key: merged.get(key) for key, _ in DEFERRABLE},
                       "extracted": extracted, "decision": extraction.as_data(),
-                      "missing": [key for key, _ in location_gaps]}),
+                      "proposals": proposals,
+                      "missing": [key for key, _ in blocking_gaps]}),
             finance.outcome(
-                AgentStatus.WITHHELD if finance_gaps else AgentStatus.OK,
-                message="금융 프로필이 아직 확정되지 않았습니다." if finance_gaps else None,
+                AgentStatus.WITHHELD if blocking_gaps else AgentStatus.OK,
+                message="금융 프로필이 아직 확정되지 않았습니다." if blocking_gaps else None,
                 data={"source": "MYDATA" if self.mydata_enabled else "MANUAL",
                       "mydata_enabled": self.mydata_enabled, "decision": asked.as_data(),
-                      "settled": {key: merged.get(key) for key, _ in REQUIRED_FINANCE},
-                      "missing": [key for key, _ in finance_gaps]}),
+                      "settled": {"equity_krw": merged.get("equity_krw")},
+                      "missing": [key for key, _ in blocking_gaps if key == "equity_krw"]}),
         ]
 
-        questions = self._questions(location_gaps + finance_gaps, asked)
-        settled = not location_gaps and not finance_gaps
-        return ConditionReport(team=self.team, name=self.name, outcomes=outcomes, blocking=True,
-                               questions=questions, settled=settled, conditions=merged,
-                               message=None if settled else "확정되지 않은 조건이 있어 후보를 생성하지 않았습니다.")
+        questions = self._questions(blocking_gaps, asked)
+        settled = not blocking_gaps
+        return ConditionReport(
+            team=self.team, name=self.name, outcomes=outcomes, blocking=True,
+            questions=questions, settled=settled, conditions=merged,
+            deferred=[key for key, _ in deferred_gaps], proposals=proposals,
+            message=None if settled else "확정되지 않은 조건이 있어 후보를 생성하지 않았습니다.")
 
     async def interpret(self, conditions: dict[str, Any]) -> tuple[dict[str, Any], Decision]:
         """발화만 읽어 빈칸을 채운다. 조건 카드를 채우는 화면이 케이스를 만들기 전에 쓴다.
@@ -176,7 +199,7 @@ class ConditionLayer:
     # ── condition.location · 발화에서 읽기 ──────────────────────────────
     async def _extract(self, conditions: dict[str, Any]) -> Decision:
         utterance = str(conditions.get("utterance") or "").strip()
-        gaps = [key for key, _ in (REQUIRED_LOCATION + REQUIRED_FINANCE + OPTIONAL_LOCATION)
+        gaps = [key for key, _ in (BLOCKING + DEFERRABLE)
                 if _blank(conditions.get(key))]
         if self.llm is None or not utterance or not gaps:
             # 대조할 원문이 없거나 채울 칸이 없으면 부르지 않는다 — 검증할 수 없는 추출은 하지 않고,
@@ -188,7 +211,7 @@ class ConditionLayer:
                          "금액을 계산하지 말고 원문 조각을 그대로 적으세요."),
             context={"발화": utterance, "비어 있는 항목": gaps,
                      "이미 확정된 항목": {key: conditions.get(key)
-                                    for key, _ in REQUIRED_LOCATION + REQUIRED_FINANCE
+                                    for key, _ in BLOCKING + DEFERRABLE
                                     if not _blank(conditions.get(key))}})
 
     @staticmethod
@@ -206,7 +229,7 @@ class ConditionLayer:
 
     # ── condition.finance · 무엇을 되물을지 고르기 ───────────────────────
     async def _ask(self, merged: dict[str, Any]) -> Decision:
-        gaps = [key for key, _ in _missing(merged, REQUIRED_LOCATION + REQUIRED_FINANCE)]
+        gaps = [key for key, _ in _missing(merged, BLOCKING)]
         if self.llm is None or not gaps:
             return Decision.deterministic("condition.finance", schema="select_questions")
         schema = ChoiceSchema(

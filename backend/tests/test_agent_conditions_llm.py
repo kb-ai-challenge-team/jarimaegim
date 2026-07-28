@@ -123,10 +123,21 @@ async def test_without_an_llm_the_layer_behaves_exactly_as_before():
 # ── condition.finance ────────────────────────────────────────────────────
 
 async def test_the_model_chooses_which_gaps_to_ask_about():
-    responder = ScriptedResponder(mentions(), asks("monthly_rent_krw"))
+    responder = ScriptedResponder(mentions(), asks("equity_krw"))
     conditions = {"industry": "카페", "district": "강남구", "utterance": "강남구 카페"}
     report = await layer(responder).arun(conditions)
-    assert [question["field"] for question in report.questions] == ["monthly_rent_krw"]
+    assert [question["field"] for question in report.questions] == ["equity_krw"]
+
+
+async def test_the_model_cannot_ask_about_a_deferrable_gap():
+    """희망 월세는 비어 있어도 되묻기 목록에 오르지 않는다 — 모델이 골라도 마찬가지다.
+    유보 항목을 되물으면 되묻기가 다시 늘어나고 자동 진행이 그만큼 막힌다."""
+    responder = ScriptedResponder(mentions(), asks("monthly_rent_krw"))
+    conditions = {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+                  "utterance": "강남구 카페"}
+    report = await layer(responder).arun(conditions)
+    assert report.questions == []
+    assert "monthly_rent_krw" in report.deferred
 
 
 async def test_a_question_about_something_that_is_not_missing_is_discarded():
@@ -147,8 +158,8 @@ async def test_the_question_limit_survives_the_model():
 async def test_a_model_that_picks_nothing_falls_back_to_the_declared_order():
     responder = ScriptedResponder(mentions(), asks())
     report = await layer(responder).arun({"industry": "카페", "utterance": "카페 하려고요"})
-    assert [question["field"] for question in report.questions] == ["district", "equity_krw",
-                                                                    "monthly_rent_krw"]
+    # 선언 순서는 BLOCKING 의 순서다. 희망 월세는 유보 항목이라 여기 오지 않는다.
+    assert [question["field"] for question in report.questions] == ["district", "equity_krw"]
 
 
 async def test_the_finance_agent_records_what_the_model_chose():
