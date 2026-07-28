@@ -786,8 +786,6 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-band-row strong small{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#fdece8;color:#a8552f}
 .kb-band-row[data-band="RECOMMENDED"]{background:#fffdf5}
 .kb-band-row[data-pass="false"] span:last-child{color:#b23a2f}
-.kb-missing-params{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px}
-.kb-missing-params li{font-family:ui-monospace,monospace;font-size:10px;padding:2px 6px;border-radius:4px;background:#f1efeb;color:#4a4a4a}
 .kb-band-banner{display:grid;gap:6px;border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:10px;margin:10px 0}
 .kb-band-banner-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;font-variant-numeric:tabular-nums}
 .kb-band-banner-row strong{font-weight:700}
@@ -855,3 +853,46 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .retrieved-list .condition-tags.matched span{background:var(--positive-soft);color:var(--positive)}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:760px){.retrieved-list article{grid-template-columns:1fr}}
+
+/* 금융 프로필 선행 flow — 스텝 0 관문, 조건 칩, 접이식, 인라인 근거 */
+.kb-gate-rail{display:flex;align-items:center;gap:8px;margin:0;padding:0 16px 14px;font-size:12.5px;font-weight:600;color:var(--kb-sub)}
+.kb-gate-rail span{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--kb-blue);color:#fff;font-size:11px;font-weight:700;flex:none}
+.kb-gate{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;border:1px solid #b6e0c8;border-radius:10px;background:#f1faf5;font-size:12px;line-height:1.55;color:#136c42}
+.kb-gate>svg{width:15px;height:15px;flex:none;margin-top:1px}
+.kb-gate strong{font-weight:700}
+.kb-gate-edit{margin-left:auto;flex:none;padding:4px 10px;border:1px solid #b6e0c8;border-radius:7px;background:#fff;font-size:11.5px;font-weight:600;color:#136c42}
+.kb-mydata{display:grid;gap:9px;padding:14px;border:1px solid var(--kb-line);border-radius:12px;background:linear-gradient(180deg,var(--kb-blue-soft),#fff)}
+.kb-mydata h3{display:flex;align-items:center;gap:7px;margin:0;font-size:14px;letter-spacing:-.02em;color:var(--kb-ink)}
+.kb-mydata h3 svg{width:16px;height:16px;color:var(--kb-blue)}
+.kb-mydata p{margin:0;font-size:12.5px;color:var(--kb-sub);line-height:1.55}
+.kb-divider{display:flex;align-items:center;gap:10px;margin:2px 0;font-size:11.5px;font-weight:600;color:var(--kb-mute)}
+.kb-divider::before,.kb-divider::after{content:"";flex:1;height:1px;background:var(--kb-line)}
+.kb-reuse{display:grid;gap:6px;padding:11px 13px;border:1px dashed var(--kb-blue);border-radius:10px;background:var(--kb-blue-soft);font-size:12px;color:#154a9e;line-height:1.6}
+.kb-reuse strong{font-size:12.5px;font-weight:700}
+.kb-reuse ul{list-style:none;margin:0;padding:0;display:grid;gap:3px}
+.kb-reuse li{position:relative;padding-left:14px}
+.kb-reuse li::before{content:"↳";position:absolute;left:0}
+.kb-condcard{display:grid;gap:9px;padding:12px;border:1px solid var(--kb-line);border-radius:12px;background:var(--kb-fill)}
+.kb-condcard h3{display:flex;align-items:center;gap:6px;margin:0;font-size:12px;font-weight:600;color:var(--kb-sub)}
+.kb-condcard h3 svg{width:14px;height:14px;color:#18794e}
+.kb-chips{display:flex;flex-wrap:wrap;gap:6px}
+.kb-chip{display:inline-flex;align-items:baseline;gap:5px;padding:6px 11px;border:1px solid var(--kb-line-2);border-radius:50px;background:#fff;font-size:12px;color:var(--kb-sub)}
+.kb-chip strong{font-weight:700;color:var(--kb-ink)}
+.kb-chip small{font-size:10.5px;color:var(--kb-mute)}
+.kb-askbox{display:grid;gap:10px;padding:13px;border:1px solid var(--kb-blue);border-radius:12px;background:#fff}
+.kb-askbox>header{display:flex;align-items:baseline;justify-content:space-between;font-size:12px;font-weight:700;color:var(--kb-blue)}
+.kb-askbox>header small{font-weight:600;color:var(--kb-mute);font-variant-numeric:tabular-nums}
+.kb-disclosure{border:1px solid var(--kb-line);border-radius:12px;background:#fff;overflow:hidden}
+.kb-disclosure>button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:11px 13px;border:0;background:none;text-align:left;font-size:12.5px;font-weight:600;color:var(--kb-ink)}
+.kb-disclosure>button small{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:500;color:var(--kb-mute)}
+.kb-disclosure>button small svg{width:15px;height:15px;transition:transform .18s}
+.kb-disclosure[data-open=true]>button small svg{transform:rotate(90deg)}
+.kb-disclosure-body{display:grid;gap:11px;padding:0 13px 13px;border-top:1px solid var(--kb-line);padding-top:12px}
+.kb-tune{display:grid;gap:11px}
+.kb-band-banner-source{color:var(--kb-blue);border-top:1px dashed var(--kb-line);padding-top:6px}
+.kb-evidence{display:grid;gap:10px;padding:12px;border-top:1px solid var(--kb-line);background:var(--kb-fill);margin:0 -12px -12px;border-radius:0 0 11px 11px}
+.kb-field>span small{display:block;margin-top:2px;font-size:11px;font-weight:500;color:var(--kb-mute);line-height:1.45}
+.kb-profile-form{grid-template-columns:1fr}
+/* 보증금·월세는 "보 1,700만"처럼 한 줄로 읽혀야 한다. 후손 strong 이 블록이 되면 라벨과 금액이 갈라진다. */
+.listing-terms>span{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}
+.listing-terms strong{display:inline;font-size:inherit;letter-spacing:normal;color:var(--ink)}

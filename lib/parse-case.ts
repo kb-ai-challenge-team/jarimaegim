@@ -19,7 +19,10 @@ function toKrw(value: string, unit: string) { return Math.round(Number(value.rep
 /** Returns only the fields the sentence actually mentioned, so the caller can highlight what changed. */
 export function parseCaseText(text: string): Partial<CaseInput> {
   const patch: Partial<CaseInput> = {};
-  const district = SEOUL_DISTRICTS.find((item) => text.includes(item) || text.includes(item.replace(/구$/, "")));
+  // 전체 이름을 먼저 찾고, 없을 때만 "마포에서"처럼 구를 뗀 어간을 본다. 어간이 한 글자인 중구는
+  // "준비 중이에요"의 "중"에 걸려 자치구를 통째로 잘못 채우므로 어간 검색에서 제외한다.
+  const district = SEOUL_DISTRICTS.find((item) => text.includes(item))
+    ?? SEOUL_DISTRICTS.find((item) => { const stem = item.replace(/구$/, ""); return stem.length >= 2 && text.includes(stem); });
   if (district) patch.district = district;
 
   const industry = INDUSTRY_HINTS.find(([pattern]) => pattern.test(text));

@@ -16,15 +16,23 @@ export const DEFAULT_CASE: CaseInput = {
   priority: "STABILITY"
 };
 
+/** 금융 프로필. 후보의 성질이 아니라 사용자의 성질이므로 케이스 조건과 분리해 한 번만 확정한다.
+ *  마이데이터가 열리면 같은 스키마를 자동으로 채운다 — 게이트가 닫혀 있으면 수동 입력이 채운다. */
+export const DEFAULT_PROFILE = {
+  equity_krw: 0,
+  existing_debt_krw: 0,
+  other_monthly_fixed_krw: 0
+};
+
+/** 임대 조건. 월세만 밴드를 바꾸고, 나머지는 필요자금(→현금소진)에만 관여한다.
+ *  null 은 "아직 모른다"이고 0 과 다르다 — null 이면 계산하지 않고, 0 이면 0 으로 계산한다. */
 export const DEFAULT_BAND_FORM = {
-  area_pyeong: 0,
-  deposit_krw: 0,
+  area_pyeong: null as number | null,
+  deposit_krw: null as number | null,
   monthly_rent_krw: 0,
   monthly_maintenance_krw: 0,
   key_money_krw: 0,
-  fitout_krw: null as number | null,
-  existing_debt_krw: 0,
-  other_monthly_fixed_krw: 0
+  fitout_krw: null as number | null
 };
 
 export const STAGE_LABELS = {

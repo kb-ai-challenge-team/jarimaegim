@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { DEFAULT_BAND_FORM, DEFAULT_CASE, formatKrw } from "./constants";
+import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, formatKrw } from "./constants";
 import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
-// 순서는 조건 → 자금 → 입지 → 근거 → 처방. 금융이 입지보다 먼저 도는 것이 단계 순서에 드러난다.
-export type FlowStep = "ask" | "confirm" | "bands" | "recommend" | "evidence" | "prescribe";
+// 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 처방 세 단계로 간다. 프로필은 스텝이 아니라 진입 관문이고,
+// 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
+export type FlowStep = "profile" | "ask" | "confirm" | "recommend" | "prescribe";
 export type BandForm = typeof DEFAULT_BAND_FORM;
+export type Profile = typeof DEFAULT_PROFILE;
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
 export interface ChatMessage { role: "assistant" | "user"; text: string; citation?: string }
 
@@ -43,13 +45,11 @@ export function recommendedLine(result: FundingBandResult | null): BandLine | nu
   return result?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
 }
 
-/** 밴드 계산에 필요한 임대 조건이 채워졌는지. 비면 서버를 부르지 않고 대기 상태로 둔다. */
+/** 밴드를 아예 낼 수 없게 만드는 입력만 센다.
+ *  권장 조달선은 월 고정지출에서 나오므로 희망 월세 하나면 세 밴드와 손익분기선이 모두 계산된다.
+ *  평수·보증금은 필요자금(→현금소진)에만 관여하므로 서버가 partial 로 부분 산출한다. */
 function missingBandInputs(input: BandForm): string[] {
-  const gaps: string[] = [];
-  if (input.area_pyeong <= 0) gaps.push("희망 평수");
-  if (input.deposit_krw <= 0) gaps.push("희망 보증금");
-  if (input.monthly_rent_krw <= 0) gaps.push("희망 월세");
-  return gaps;
+  return input.monthly_rent_krw > 0 ? [] : ["희망 월세"];
 }
 
 function inputPending(gaps: string[]): FundingBandResult {
@@ -62,7 +62,9 @@ function inputPending(gaps: string[]): FundingBandResult {
 
 /** Owns the whole 자리매김 flow so the panel renders it and the map visualises it from one source. */
 export function useJarimaegim() {
-  const [step, setStep] = useState<FlowStep>("ask");
+  const [step, setStep] = useState<FlowStep>("profile");
+  const [profile, setProfile] = useState<Profile>(DEFAULT_PROFILE);
+  const [profileConfirmed, setProfileConfirmed] = useState(false);
   const [form, setForm] = useState<CaseInput>(DEFAULT_CASE);
   const [parsedKeys, setParsedKeys] = useState<Set<keyof CaseInput>>(new Set());
   const [caseData, setCaseData] = useState<CaseRecord | null>(null);
@@ -132,6 +134,13 @@ export function useJarimaegim() {
     setBandForm((prev) => ({ ...prev, [key]: value } as BandForm));
   }, []);
 
+  const setProfileField = useCallback((key: keyof Profile, value: number) => {
+    setProfile((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  /** 프로필 확정. 이 값은 세션이 사는 동안 케이스·밴드·재검색이 계속 다시 읽으므로 여기서 한 번만 묻는다. */
+  const confirmProfile = useCallback(() => { setProfileConfirmed(true); setStep("ask"); }, []);
+
   const beginTrace = useCallback((steps: TraceStep[]) => {
     const now = performance.now();
     traceOrigin.current = now; traceMark.current = { [steps[0].id]: now };
@@ -200,8 +209,9 @@ export function useJarimaegim() {
     setOverviewDistrict(null); setCandidates([]); setFocused(null); setLocationState("idle");
   }, []);
 
-  /** 조달 밴드 산출. 후보와 무관하게 사용자 조건만으로 계산되므로 입지 조회보다 먼저 실행한다. */
-  const runBands = useCallback(async (record: CaseRecord, input: BandForm) => {
+  /** 조달 밴드 산출. 후보와 무관하게 사용자 조건만으로 계산되므로 입지 조회보다 먼저 실행한다.
+   *  자기자본·기존부채·월 고정지출은 케이스가 아니라 금융 프로필에서 온다. */
+  const runBands = useCallback(async (record: CaseRecord, input: BandForm, financial: Profile) => {
     const gaps = missingBandInputs(input);
     if (gaps.length > 0) {
       const pending = inputPending(gaps);
@@ -209,37 +219,43 @@ export function useJarimaegim() {
       return pending;
     }
     setBandState("loading");
-    const result = await api.fundingBands(record.id, {
-      industry: record.inputs.industry, equity_krw: record.inputs.equity_krw, ...input
-    });
+    const result = await api.fundingBands(record.id, { industry: record.inputs.industry, ...input, ...financial });
     setBands(result);
-    setBandState(result.status === "computed" ? "success" : "integration_pending");
+    // partial 은 밴드를 낸 상태다. 대기로 취급하면 낼 수 있는 값까지 화면에서 사라진다.
+    setBandState(result.status === "integration_pending" ? "integration_pending" : "success");
     return result;
   }, []);
 
   const start = useCallback(async () => {
-    setError(""); setBusy("case"); setStep("bands");
-    beginTrace(planTrace(form, "full"));
+    setError(""); setBusy("case"); setStep("recommend");
+    const inputs: CaseInput = { ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw };
+    beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
       settleStep("session", "done", "익명 세션 확인됨");
-      const title = `${form.district} ${form.industry}`.trim() || "새 케이스";
-      const record = await api.createCase(form, title);
-      setCaseData(record);
-      settleStep("case", "done", `케이스 저장됨 · 버전 ${record.version}`);
-      const band = await runBands(record, bandForm);
+      const title = `${inputs.district} ${inputs.industry}`.trim() || "새 케이스";
+      const created = await api.createCase(inputs, title);
+      setCaseData(created);
+      settleStep("case", "done", `케이스 저장됨 · 버전 ${created.version}`);
+      const band = await runBands(created, bandForm, profile);
       const line = recommendedLine(band);
-      settleStep("bands", band.status === "computed" ? "done" : "skipped",
+      settleStep("bands", band.status === "integration_pending" ? "skipped" : "done",
         line
           ? `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`
           : band.message || "제도 파라미터 등록 대기");
+      // 후보를 거르는 상한은 사용자가 스스로 좁힌 예산이 아니라 산출된 권장 조달선이다.
+      // 밴드를 못 냈으면 자기자본선으로 남겨 둔다 — 넓히기 위해 추정하지 않는다.
+      const record = line && line.ceiling_krw > created.inputs.budget_krw
+        ? await api.updateCase(created.id, created.version, { budget_krw: line.ceiling_krw })
+        : created;
+      if (record !== created) setCaseData(record);
       await runSearch(record);
       await handoff();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, runBands, runSearch, settleStep]);
+  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -251,8 +267,9 @@ export function useJarimaegim() {
     }
   }, [beginTrace, caseData, failTrace, handoff, runSearch, trace.state]);
 
+  /** 근거는 후보 목록 안에서 펼쳐진다. 스텝을 옮기지 않으므로 목록 맥락을 잃지 않는다. */
   const runAnalysis = useCallback(async (candidateId: string) => {
-    setFocused(candidateId); setStep("evidence");
+    setFocused(candidateId);
     if (analysis[candidateId] || !caseData) return;
     setBusy(`analysis:${candidateId}`);
     try {
@@ -263,16 +280,16 @@ export function useJarimaegim() {
     } finally { setBusy(""); }
   }, [analysis, caseData]);
 
-  /** 비용 단계에서 필요자금 내역을 고친 뒤 다시 계산한다. */
+  /** 입지 화면의 "정밀하게 맞추기"에서 필요자금 내역을 고친 뒤 그 자리에서 다시 계산한다. */
   const recomputeBands = useCallback(async () => {
     if (!caseData) return;
     setBusy("bands"); setError("");
-    try { await runBands(caseData, bandForm); }
+    try { await runBands(caseData, bandForm, profile); }
     catch (err) {
       setBandState("error");
       setError(err instanceof ApiError ? err.message : "조달 밴드를 계산하지 못했습니다.");
     } finally { setBusy(""); }
-  }, [bandForm, caseData, runBands]);
+  }, [bandForm, caseData, profile, runBands]);
 
   /** 계획 기준 후보. 처방 단계가 이 값을 소비한다. */
   const commitCandidate = useCallback((candidateId: string | null) => {
@@ -366,7 +383,9 @@ export function useJarimaegim() {
     } finally { setChatBusy(false); }
   }, [caseData, chatBusy, ensureSession]);
 
-  const reset = useCallback(() => {
+  /** 조건만 다시 받는다. 금융 프로필은 사용자의 성질이므로 조건을 바꾼다고 다시 묻지 않는다.
+   *  프로필을 고치는 경로는 어느 화면에서나 상단 배지의 "수정" 하나뿐이다. */
+  const restart = useCallback(() => {
     setStep("ask"); setForm(DEFAULT_CASE); setParsedKeys(new Set()); setCaseData(null);
     setCandidates([]); setLocationState("idle"); setFocused(null); setOverviewDistrict(null); setAnalysis({});
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
@@ -377,10 +396,11 @@ export function useJarimaegim() {
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
     summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
+    profile, setProfileField, profileConfirmed, confirmProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
-    start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, reset, dismissTrace
+    start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
   };
 }
 

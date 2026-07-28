@@ -56,7 +56,8 @@ export function AgentRunOverlay({ trace, inputs, onRetry, onDismiss, onEditCondi
       </header>
 
       <ul className="kb-run-terms">
-        {[inputs.district, inputs.industry.trim() || "업종 미입력", `총예산 ${formatKrw(inputs.budget_krw)}`].map((term, index) =>
+        {/* 예산이 아니라 자기자본이다. 조달 상한은 이 실행 안에서 산출된다. */}
+        {[inputs.district, inputs.industry.trim() || "업종 미입력", `자기자본 ${formatKrw(inputs.equity_krw)}`].map((term, index) =>
           <li key={term} style={{ "--i": index } as CSSProperties}>{term}</li>)}
       </ul>
 

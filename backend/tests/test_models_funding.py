@@ -58,6 +58,47 @@ def test_computed_result_is_valid():
     assert result.break_even.contribution_margin_ratio == 0.45
 
 
+PARTIAL_LINE = {**LINE, "runway_months": None}
+
+
+def test_partial_result_is_valid_without_required_capital():
+    result = FundingBandResult(status="partial", required_capital_krw=None, required_capital_band=None,
+                               bands=[BandLine(**PARTIAL_LINE)], break_even=BreakEven(**BREAK_EVEN),
+                               missing_params=["희망 평수"], message="희망 평수를 입력하면 현금소진까지 계산합니다.")
+    assert result.bands[0].ceiling_krw == 100_000_000
+    assert result.bands[0].runway_months is None
+
+
+def test_partial_result_requires_missing_params():
+    with pytest.raises(ValidationError, match="partial"):
+        FundingBandResult(status="partial", required_capital_krw=None, required_capital_band=None,
+                          bands=[BandLine(**PARTIAL_LINE)], break_even=BreakEven(**BREAK_EVEN),
+                          missing_params=[], message=None)
+
+
+def test_partial_result_must_not_carry_required_capital():
+    """필요자금을 냈다면 partial 이 아니다. 부분 산출이 완전 산출로 새는 것을 막는다."""
+    with pytest.raises(ValidationError, match="partial"):
+        FundingBandResult(status="partial", required_capital_krw=148_900_000,
+                          required_capital_band="RECOMMENDED",
+                          bands=[BandLine(**PARTIAL_LINE)], break_even=BreakEven(**BREAK_EVEN),
+                          missing_params=["희망 평수"], message=None)
+
+
+def test_partial_result_must_not_carry_a_runway():
+    """현금소진은 필요자금에서만 나온다. 필요자금 없이 소진 개월이 붙으면 추정값이라는 뜻이다."""
+    with pytest.raises(ValidationError, match="partial"):
+        FundingBandResult(status="partial", required_capital_krw=None, required_capital_band=None,
+                          bands=[BandLine(**LINE)], break_even=BreakEven(**BREAK_EVEN),
+                          missing_params=["희망 평수"], message=None)
+
+
+def test_partial_result_requires_bands():
+    with pytest.raises(ValidationError, match="partial"):
+        FundingBandResult(status="partial", required_capital_krw=None, required_capital_band=None,
+                          bands=[], break_even=None, missing_params=["희망 평수"], message=None)
+
+
 def test_break_even_rejects_non_positive_margin():
     with pytest.raises(ValidationError):
         BreakEven(**{**BREAK_EVEN, "contribution_margin_ratio": 0.0})

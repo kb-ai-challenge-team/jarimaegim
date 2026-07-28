@@ -274,18 +274,28 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
     except ValueError as error:
         raise HTTPException(422, {"code": "VALIDATION_FAILED", "message": f"업종 파라미터로는 손익분기를 계산할 수 없습니다: {error}"})
     first = computed["bands"][0]
+    partial = computed["required_capital_krw"] is None
+    missing_capital = [name for name, value in (("희망 평수", payload.area_pyeong), ("희망 보증금", payload.deposit_krw))
+                       if value is None]
     assumptions = [f"원가율·인건비율·평당 인테리어 단가는 등록된 업종 파라미터를 사용했습니다 (출처: {', '.join(policy_params.sources(payload.industry)) or '미기재'})",
-                   f"운전자금 {int(policy_params.value('working_capital.months'))}개월분을 필요자금에 포함했습니다",
-                   "인테리어비는 평수 기준 추정값입니다" if computed["fitout_is_estimate"] else "인테리어비는 사용자 입력값입니다",
+                   f"운전자금 {int(policy_params.value('working_capital.months'))}개월분을 필요자금에 포함했습니다"
+                   if not partial else f"{' · '.join(missing_capital)}을 입력하지 않아 필요자금과 현금소진은 계산하지 않았습니다",
+                   ("인테리어비는 평수 기준 추정값입니다" if computed["fitout_is_estimate"] else "인테리어비는 사용자 입력값입니다")
+                   if computed["fitout_krw"] is not None else "인테리어비는 평수를 입력해야 추정합니다",
                    "최대 조달선은 신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다"]
+    limitations = ["상권별 임대 수준 데이터가 없어 밴드별 진입 가능 상권 수는 제공하지 않습니다",
+                   "지원사업·창업자금 상품 반영분은 연동 대기 상태입니다",
+                   "제도 파라미터는 실측 검증 전 등록값입니다"]
+    if partial:
+        limitations.insert(0, f"{' · '.join(missing_capital)}을 입력해야 필요자금과 현금소진을 계산합니다. 추정하지 않습니다")
     provenance = Provenance(source_name="자리매김 조달 밴드 계산", industry_scope=payload.industry,
                             spatial_unit="사용자 입력 조건", source_as_of=policy_params.updated_at,
-                            confidence="LOW",
-                            limitations=["상권별 임대 수준 데이터가 없어 밴드별 진입 가능 상권 수는 제공하지 않습니다",
-                                         "지원사업·창업자금 상품 반영분은 연동 대기 상태입니다",
-                                         "제도 파라미터는 실측 검증 전 등록값입니다"])
-    return FundingBandResult(status="computed", required_capital_krw=computed["required_capital_krw"],
+                            confidence="LOW", limitations=limitations)
+    return FundingBandResult(status="partial" if partial else "computed",
+                             required_capital_krw=computed["required_capital_krw"],
                              required_capital_band=computed["required_capital_band"],
+                             missing_params=missing_capital if partial else [],
+                             message=f"{' · '.join(missing_capital)}을 입력하면 현금소진까지 계산합니다." if partial else None,
                              bands=[BandLine(**band) for band in computed["bands"]],
                              break_even=BreakEven(monthly_fixed_cost_krw=first["monthly_fixed_cost_krw"],
                                                   target_monthly_revenue_krw=first["target_monthly_revenue_krw"],

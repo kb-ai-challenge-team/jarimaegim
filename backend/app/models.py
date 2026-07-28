@@ -218,10 +218,12 @@ class FundingBand(StrEnum):
 
 
 class FundingBandInput(BaseModel):
+    """평수·보증금은 필요자금(→현금소진)에만 쓰이므로 없어도 밴드 상한과 손익분기는 계산된다."""
+
     case_id: UUID
     industry: str = Field(min_length=1, max_length=120)
-    area_pyeong: float = Field(gt=0, le=500)
-    deposit_krw: int = Field(ge=0, le=100_000_000_000)
+    area_pyeong: float | None = Field(default=None, gt=0, le=500)
+    deposit_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
     monthly_rent_krw: int = Field(ge=0, le=1_000_000_000)
     monthly_maintenance_krw: int = Field(default=0, ge=0, le=1_000_000_000)
     key_money_krw: int = Field(default=0, ge=0, le=100_000_000_000)
@@ -266,7 +268,10 @@ class BreakEven(BaseModel):
 
 
 class FundingBandResult(BaseModel):
-    status: Literal["computed", "integration_pending"]
+    """partial 은 밴드 상한과 손익분기는 냈으나 필요자금·현금소진을 낼 입력이 없는 상태다.
+    빠진 입력을 추정으로 메우지 않고, 낼 수 있는 값까지만 내고 나머지는 None 으로 둔다."""
+
+    status: Literal["computed", "partial", "integration_pending"]
     required_capital_krw: int | None = None
     required_capital_band: FundingBand | None = None
     bands: list[BandLine] = Field(default_factory=list)
@@ -282,6 +287,15 @@ class FundingBandResult(BaseModel):
                 raise ValueError("computed result requires bands, break_even and required capital")
             if self.missing_params:
                 raise ValueError("computed result must not report missing params")
+        elif self.status == "partial":
+            if not self.bands or self.break_even is None:
+                raise ValueError("partial result requires bands and break_even")
+            if self.required_capital_krw is not None or self.required_capital_band is not None:
+                raise ValueError("partial result must not carry required capital")
+            if not self.missing_params:
+                raise ValueError("partial result requires missing_params")
+            if any(band.runway_months is not None for band in self.bands):
+                raise ValueError("partial result must not carry a runway")
         else:
             if not self.missing_params:
                 raise ValueError("integration_pending result requires missing_params")

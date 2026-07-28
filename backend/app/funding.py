@@ -27,7 +27,7 @@ def breakeven_monthly_revenue_krw(fixed_cost_krw: int, cogs_ratio: float, labor_
 BAND_ORDER = ("EQUITY_ONLY", "RECOMMENDED", "MAXIMUM")
 
 
-def _band_line(band: str, ceiling_krw: int, *, equity_krw: int, required_capital_krw: int,
+def _band_line(band: str, ceiling_krw: int, *, equity_krw: int, required_capital_krw: int | None,
                base_monthly_fixed_krw: int, rate: float, term: int, cogs: float, labor: float,
                drop: float, burden_cap: float, operating_days: int) -> dict:
     loan = max(0, ceiling_krw - equity_krw)
@@ -36,9 +36,13 @@ def _band_line(band: str, ceiling_krw: int, *, equity_krw: int, required_capital
     target_monthly = breakeven_monthly_revenue_krw(monthly_fixed_total, cogs, labor)
     stressed_monthly = target_monthly * (1.0 - drop)
     burden = (repayment / stressed_monthly) if stressed_monthly > 0 else 0.0
-    surplus_cash = equity_krw + loan - required_capital_krw
+    # 필요자금을 모르면 잔여 현금을 알 수 없다. 0 으로 가정하면 낙관 방향으로 틀리므로 None 을 둔다.
     monthly_deficit = drop * monthly_fixed_total
-    runway = int(surplus_cash // monthly_deficit) if surplus_cash >= 0 and monthly_deficit > 0 else None
+    if required_capital_krw is None:
+        runway = None
+    else:
+        surplus_cash = equity_krw + loan - required_capital_krw
+        runway = int(surplus_cash // monthly_deficit) if surplus_cash >= 0 and monthly_deficit > 0 else None
     return {
         "band": band, "ceiling_krw": int(ceiling_krw), "loan_krw": int(loan),
         "monthly_repayment_krw": int(repayment),
@@ -51,10 +55,14 @@ def _band_line(band: str, ceiling_krw: int, *, equity_krw: int, required_capital
     }
 
 
-def compute_bands(params, *, industry: str, area_pyeong: float, deposit_krw: int, monthly_rent_krw: int,
-                  monthly_maintenance_krw: int, key_money_krw: int, fitout_krw: int | None,
-                  equity_krw: int, existing_debt_krw: int, other_monthly_fixed_krw: int) -> dict:
-    """조달 밴드 3종과 밴드별 손익분기선을 산출한다. 파라미터가 없으면 호출 전에 걸러야 한다."""
+def compute_bands(params, *, industry: str, area_pyeong: float | None, deposit_krw: int | None,
+                  monthly_rent_krw: int, monthly_maintenance_krw: int, key_money_krw: int,
+                  fitout_krw: int | None, equity_krw: int, existing_debt_krw: int,
+                  other_monthly_fixed_krw: int) -> dict:
+    """조달 밴드 3종과 밴드별 손익분기선을 산출한다. 제도 파라미터가 없으면 호출 전에 걸러야 한다.
+
+    평수·보증금은 필요자금을 통해 현금소진에만 영향을 준다. 둘 중 하나라도 없으면
+    required_capital_krw 와 runway_months 를 None 으로 두고 나머지는 그대로 계산한다."""
     profile = params.industry(industry)
     cogs, labor = float(profile["cogs_ratio"]), float(profile["labor_ratio"])
     if 1.0 - cogs - labor <= 0:
@@ -65,10 +73,13 @@ def compute_bands(params, *, industry: str, area_pyeong: float, deposit_krw: int
     burden_cap = params.value("stress.repayment_burden_cap_ratio")
 
     fitout_is_estimate = fitout_krw is None
-    fitout = int(area_pyeong * float(profile["fitout_krw_per_pyeong"])) if fitout_is_estimate else int(fitout_krw)
+    if fitout_is_estimate:
+        fitout = int(area_pyeong * float(profile["fitout_krw_per_pyeong"])) if area_pyeong is not None else None
+    else:
+        fitout = int(fitout_krw)
     base_monthly_fixed = int(monthly_rent_krw + monthly_maintenance_krw + other_monthly_fixed_krw)
     working_capital = int(base_monthly_fixed * params.value("working_capital.months"))
-    required_capital = int(deposit_krw + key_money_krw + fitout + working_capital)
+    required_capital = None if (fitout is None or deposit_krw is None) else int(deposit_krw + key_money_krw + fitout + working_capital)
 
     borrow_ceiling = max(0, int(params.value("loan.guarantee_ceiling_krw")
                                 + params.value("loan.policy_fund_ceiling_krw") - existing_debt_krw))
@@ -97,7 +108,9 @@ def compute_bands(params, *, industry: str, area_pyeong: float, deposit_krw: int
              _band_line("RECOMMENDED", recommended_ceiling, **common),
              _band_line("MAXIMUM", maximum_ceiling, **common)]
 
-    if required_capital > maximum_ceiling:
+    if required_capital is None:
+        required_capital_band = None
+    elif required_capital > maximum_ceiling:
         required_capital_band = "OUT_OF_RANGE"
     else:
         required_capital_band = next(item["band"] for item in bands if required_capital <= item["ceiling_krw"])

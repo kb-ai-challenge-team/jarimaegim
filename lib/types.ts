@@ -312,10 +312,11 @@ export interface ChatStreamHandlers {
 
 export type FundingBandKey = "EQUITY_ONLY" | "RECOMMENDED" | "MAXIMUM" | "OUT_OF_RANGE";
 
+/** 평수·보증금은 필요자금(→현금소진)에만 쓰이므로 없어도 밴드 상한과 손익분기는 계산된다. */
 export interface FundingBandInput {
   industry: string;
-  area_pyeong: number;
-  deposit_krw: number;
+  area_pyeong: number | null;
+  deposit_krw: number | null;
   monthly_rent_krw: number;
   monthly_maintenance_krw: number;
   key_money_krw: number;
@@ -349,8 +350,9 @@ export interface BreakEven {
   assumptions: string[];
 }
 
+/** partial 은 밴드 상한과 손익분기는 냈으나 필요자금·현금소진을 낼 입력이 없는 상태다. */
 export interface FundingBandResult {
-  status: "computed" | "integration_pending";
+  status: "computed" | "partial" | "integration_pending";
   required_capital_krw: number | null;
   required_capital_band: FundingBandKey | null;
   bands: BandLine[];

@@ -11,6 +11,14 @@ page.on("console", message => {
 });
 page.on("response", response => { if (response.status() >= 400 && response.url().includes("/api/v1/")) errors.push(`http:${response.status()}:${response.url()}`); });
 
+// 금융이 입지보다 먼저 도는지는 화면이 아니라 호출 순서로 판정한다. 화면 배치는 바뀔 수 있어도 이 순서는 계약이다.
+const callOrder = [];
+page.on("request", request => {
+  if (request.method() !== "POST") return;
+  if (request.url().includes("/api/v1/funding-bands")) callOrder.push("bands");
+  if (request.url().includes("/api/v1/locations/search")) callOrder.push("search");
+});
+
 const statusBody = await (await page.request.get(`${base}/api/v1/status`)).json();
 const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis => axis.enabled || Boolean(axis.disabled_reason)) };
 const subsidyConfigured = Boolean(statusBody.integrations.bizinfo || statusBody.integrations.kstartup);
@@ -18,7 +26,6 @@ const subsidyConfigured = Boolean(statusBody.integrations.bizinfo || statusBody.
 await page.goto(`${base}/kb`, { waitUntil: "networkidle" });
 await page.waitForSelector(".kb-ai-panel");
 const panel = page.locator(".kb-ai-panel");
-const stepper = { labels: await panel.locator(".kb-stepper li").allTextContents() };
 
 // 첫 진입 — 조건을 넣기 전에는 자치구 요약 핀만 떠 있어야 한다.
 await page.waitForSelector(".kb-district-pin", { timeout: 30000 });
@@ -42,62 +49,97 @@ await page.getByRole("button", { name: "전체 자치구 보기" }).click();
 await page.waitForSelector(".kb-district-pin", { timeout: 30000 });
 const returned = { pins: await page.locator(".kb-district-pin").count() };
 
-// 상황 — 예시 문장으로 조건을 채우고 확인 단계로
+// 스텝 0 — 금융 프로필. 마이데이터 게이트는 기본이 off 이고, 잠긴 사실을 숨기지 않아야 한다 (부록 A 불변조건 5).
+const mydataOn = Boolean(statusBody.feature_flags.mydata);
+const profile = {
+  gateVisible: await panel.locator(".kb-gate-rail").isVisible(),
+  mydataGated: mydataOn || await panel.getByRole("button", { name: "마이데이터 연결하고 자동 입력" }).isDisabled(),
+  lockExplained: mydataOn || await panel.getByText("마이데이터 연동은 아직 열려 있지 않습니다").isVisible(),
+  // 게이트가 닫혀 있어도 수동 어댑터가 같은 항목을 채워야 이후 흐름이 동일하다.
+  manualAdapterFields: await panel.locator(".kb-profile-form .kb-field").count()
+};
+
+await panel.locator(".kb-profile-form input").nth(0).fill("100000000");
+await panel.getByRole("button", { name: /확정하고 조건 입력으로/ }).click();
+
+// 조건 — 예시 문장으로 채우고 확인 화면으로
 await panel.locator(".kb-examples button").first().click();
 await panel.getByRole("button", { name: "조건으로 정리하기" }).click();
-await panel.locator(".kb-form").waitFor();
-const confirmLabels = await panel.locator(".kb-form .kb-field > span").allInnerTexts();
-const lease = { fieldsPresent: ["희망 평수", "희망 보증금", "희망 월세"].every(label => confirmLabels.some(text => text.includes(label))) };
+await panel.locator(".kb-condcard").waitFor();
 
-const fields = panel.locator('.kb-form .kb-field input[type="number"]');
-await fields.nth(2).fill("15");         // 희망 평수
-await fields.nth(3).fill("100000000");  // 희망 보증금
-await fields.nth(4).fill("2500000");    // 희망 월세
+const chipTexts = await panel.locator(".kb-chip").allInnerTexts();
+const condition = {
+  // 자기자본은 프로필이 들고 있으므로 조건 화면이 다시 묻지 않는다.
+  equityCarried: chipTexts.some(text => text.includes("자기자본") && text.includes("금융 프로필")),
+  profileBadgeShown: await panel.locator(".kb-gate").count() > 0,
+  // 답이 후보를 바꾸는 항목만, 최대 3개까지만 묻는다.
+  askCount: await panel.locator(".kb-askbox .kb-field").count()
+};
+if (condition.askCount > 0) await panel.locator(".kb-askbox input").first().fill("2500000");
 
 const bandsResponsePromise = page.waitForResponse(r => r.url().includes("/api/v1/funding-bands") && r.request().method() === "POST");
 await panel.getByRole("button", { name: "이 조건으로 입지 찾기" }).click();
 const bandsResponse = await bandsResponsePromise;
 const bandsBody = await bandsResponse.json();
-const paramsRegistered = bandsBody.status === "computed";
+const paramsRegistered = bandsBody.status !== "integration_pending";
 const bands = {
   autoComputed: bandsResponse.ok(),
   paramsRegistered,
-  // 파라미터가 없으면 추정하지 않고 누락 목록을 돌려줘야 한다. 있으면 3중선이 나와야 한다.
+  // 파라미터가 없으면 추정하지 않고 사유를 돌려줘야 한다. 있으면 3중선이 나와야 한다.
   safeState: paramsRegistered
     ? bandsBody.bands.length === 3 && bandsBody.break_even !== null
-    : bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0 && Boolean(bandsBody.message),
+    : bandsBody.bands.length === 0 && Boolean(bandsBody.message),
   // DS-09 미확보 — 밴드별 상권 수를 지어내지 않는다
-  noInventedTradeAreaCount: bandsBody.bands.every(line => line.trade_area_count === null)
+  noInventedTradeAreaCount: bandsBody.bands.every(line => line.trade_area_count === null),
+  // 필요자금 입력이 없으면 partial 이고, 그때 현금소진을 지어내면 안 된다.
+  noInventedRunway: bandsBody.status !== "partial" || bandsBody.bands.every(line => line.runway_months === null)
 };
 
-// 조건 확정 직후 착지하는 단계는 자금(밴드)이다. 금융이 입지보다 먼저 온다.
-await panel.locator(".kb-band-form").waitFor({ timeout: 30000 });
-const landedOnBands = (await panel.locator('.kb-stepper li[data-state="current"]').innerText()).includes("자금");
-const cost = {
-  landsFirst: landedOnBands,
-  bandScreen: true,
-  // 파라미터 미등록이면 누락 키가 화면에 보여야 한다 (부록 A 불변조건 1)
-  pendingShown: paramsRegistered ? true : await panel.locator(".kb-missing-params li").count() > 0,
-  bandTableShown: paramsRegistered ? await panel.locator(".kb-band-table").isVisible() : true
-};
-
-// 입지 — 자금 다음 단계. 후보가 있으면 계획 기준으로 확정한다.
-await panel.locator(".kb-stepnav .kb-primary-sm").click();
 await panel.locator(".kb-candidates, .kb-empty").first().waitFor({ timeout: 30000 });
-const candidateCount = await panel.locator(".kb-candidates li").count();
-if (candidateCount > 0) await panel.locator(".kb-candidates li").first().getByRole("button", { name: "계획 기준으로 확정" }).click();
-const demoBadges = await panel.locator(".kb-candidates .demo-badge").count();
-const location = { rendered: true, candidateCount, demoBadges, committable: candidateCount === 0 || (await panel.locator(".kb-candidates li").first().innerText()).includes("계획 기준") };
+const stepper = { labels: await panel.locator(".kb-stepper li").allInnerTexts() };
 
-// 처방 — 근거를 지나 마지막 단계. 공고 조회 응답을 기다린다.
-const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
-for (let hop = 0; hop < 3; hop += 1) {
-  if (await panel.locator(".kb-callout").first().isVisible().catch(() => false)) break;
-  const next = panel.locator(".kb-stepnav .kb-primary-sm");
-  if (await next.count() === 0) throw new Error("StepNav 다음 버튼을 찾지 못했습니다.");
-  await next.click();
-  await page.waitForTimeout(600);
+// 밴드는 후보를 보기 전에 이미 산출돼 있어야 한다 — 사용자를 금융 화면 앞에 세우지 않는다.
+const flowOrder = {
+  bandsBeforeSearch: callOrder.indexOf("bands") !== -1 && callOrder.indexOf("bands") < callOrder.indexOf("search"),
+  // 조건 확정 직후 착지하는 단계는 입지다. 자금이 별도 스텝으로 돌아오면 재설계가 되돌아간 것이다.
+  landsOnLocation: (await panel.locator('.kb-stepper li[data-state="current"]').innerText()).includes("입지"),
+  bandSummaryInPlace: await panel.locator(".kb-band-banner").count() > 0
+    || await panel.locator(".kb-step > .kb-note").filter({ hasText: "파라미터가 아직 등록되지" }).count() > 0
+};
+
+// 정밀하게 맞추기 — 임대 조건은 입지 화면을 떠나지 않고 그 자리에서 고친다.
+await panel.getByRole("button", { name: /정밀하게 맞추기/ }).click();
+await panel.locator(".kb-band-form").waitFor({ timeout: 15000 });
+const tuneLabels = await panel.locator(".kb-band-form .kb-field > span").allInnerTexts();
+const lease = {
+  fieldsPresent: ["희망 평수", "임차보증금", "월세"].every(label => tuneLabels.some(text => text.includes(label))),
+  // 프로필이 확정한 값은 여기서 다시 묻지 않는다.
+  profileNotReasked: !tuneLabels.some(text => text.includes("기존 대출 잔액")),
+  stillOnLocation: (await panel.locator('.kb-stepper li[data-state="current"]').innerText()).includes("입지"),
+  // 내부 파라미터 키는 화면에 노출하지 않는다.
+  noRawParamKeys: !(await panel.innerText()).includes("loan.")
+};
+const cost = { bandTableShown: paramsRegistered ? await panel.locator(".kb-band-table").isVisible() : true };
+await panel.getByRole("button", { name: /정밀하게 맞추기/ }).click();
+
+// 입지 — 근거는 목록을 벗어나지 않고 그 자리에서 펼쳐진다.
+const candidateCount = await panel.locator(".kb-candidates li").count();
+let evidenceInline = true;
+if (candidateCount > 0) {
+  await panel.getByRole("button", { name: /근거 펼치기/ }).first().click();
+  await panel.locator(".kb-evidence .kb-verdict").first().waitFor({ timeout: 30000 });
+  evidenceInline = await panel.locator(".kb-candidates li").count() >= candidateCount;
+  await panel.locator(".kb-candidates li").first().getByRole("button", { name: "계획 기준으로 확정" }).click();
 }
+const demoBadges = await panel.locator(".kb-candidates .demo-badge").count();
+const location = {
+  rendered: true, candidateCount, demoBadges, evidenceInline,
+  committable: candidateCount === 0 || (await panel.locator(".kb-candidates li").first().innerText()).includes("계획 기준")
+};
+
+// 처방 — 입지 다음 단계. 공고 조회 응답을 기다린다.
+const programsResponse = page.waitForResponse(r => r.url().includes("/api/v1/programs?"), { timeout: 30000 }).catch(() => null);
+await panel.locator(".kb-stepnav .kb-primary-sm").click();
 await programsResponse;
 await page.waitForFunction(() => {
   const root = window.document.querySelector(".kb-ai-panel");
@@ -129,6 +171,8 @@ const prescription = {
   blocks: blocks.length,
   committedShown: candidateCount === 0 || await panel.locator(".kb-committed").count() > 0,
   documentCreated: Boolean(documentResponse && documentResponse.status() === 201),
+  // 밴드 표는 입지 화면에서 이미 봤다. 처방에서 반복하지 않는다.
+  noDuplicateBandTable: await panel.locator(".kb-band-table").count() === 0,
   // 상담 자동 연결은 게이트가 꺼져 있으므로 그 사실을 고지해야 한다 (부록 A 불변조건 5)
   consultationDisclosed: (await panel.locator(".kb-callout-lock").allInnerTexts()).some((t) => t.includes("상담 자동 연결은 제공하지 않습니다")),
   // 초안 설명은 render_case_pdf 가 실제로 담는 것만 말해야 한다. 문서에 없는 것을 약속하면 안 된다.
@@ -160,16 +204,21 @@ const productTab = {
   noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
 };
 
-const result = { stepper, overview, drilldown, returned, lease, bands, location, cost, funding, prescription, policyTab, productTab, axes, errors };
+const result = { stepper, overview, drilldown, returned, profile, condition, flowOrder, lease, bands, location, cost, funding, prescription, policyTab, productTab, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-const expected = ["조건", "자금", "입지", "근거", "처방"];
-const stepperOk = expected.every((label, index) => (stepper.labels[index] || "").includes(label));
-if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed || !bands.safeState
-  || !bands.noInventedTradeAreaCount || !location.rendered || !cost.landsFirst || !cost.bandScreen || !cost.pendingShown
-  || !cost.bandTableShown || !funding.safeState || !funding.subsidyGapDisclosed
+const expected = ["조건", "입지", "처방"];
+const stepperOk = stepper.labels.length === 3 && expected.every((label, index) => (stepper.labels[index] || "").includes(label));
+if (errors.length || !stepperOk
+  || !profile.gateVisible || !profile.mydataGated || !profile.lockExplained || profile.manualAdapterFields !== 3
+  || !condition.equityCarried || !condition.profileBadgeShown || condition.askCount > 3
+  || !flowOrder.bandsBeforeSearch || !flowOrder.landsOnLocation || !flowOrder.bandSummaryInPlace
+  || !lease.fieldsPresent || !lease.profileNotReasked || !lease.stillOnLocation || !lease.noRawParamKeys
+  || !bands.autoComputed || !bands.safeState || !bands.noInventedTradeAreaCount || !bands.noInventedRunway
+  || !location.rendered || !location.evidenceInline || !cost.bandTableShown
+  || !funding.safeState || !funding.subsidyGapDisclosed
   || !location.committable || (location.candidateCount > 0 && location.demoBadges === 0)
-  || prescription.blocks !== 3 || !prescription.committedShown
+  || prescription.blocks !== 3 || !prescription.committedShown || !prescription.noDuplicateBandTable
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest
   || !policyTab.noOutboundLinks || !productTab.noOutboundLinks

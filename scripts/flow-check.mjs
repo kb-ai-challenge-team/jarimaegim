@@ -159,7 +159,66 @@ const copilot = {
   streamEndpointUsed: Boolean(streamResponse) && streamResponse.ok() && /event-stream/.test(streamResponse.headers()["content-type"] || "")
 };
 
-const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, errors };
+// KB 셸의 새 흐름 — 금융 프로필(스텝 0) → 조건 → 입지. 세션을 섞지 않도록 새 컨텍스트에서 돈다.
+const kbContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const kb = await kbContext.newPage();
+kb.on("pageerror", error => errors.push(`kb-page:${error.message}`));
+await kb.goto(`${base}/kb`, { waitUntil: "networkidle" });
+
+const gateVisible = await kb.locator(".kb-gate-rail").isVisible();
+// 마이데이터는 게이트 off 가 기본이다. 잠긴 사실을 숨기지 않고 수동 입력이 같은 항목을 채워야 한다.
+const mydataGate = {
+  buttonDisabled: await kb.getByRole("button", { name: "마이데이터 연결하고 자동 입력" }).isDisabled(),
+  lockExplained: await kb.getByText("마이데이터 연동은 아직 열려 있지 않습니다").isVisible(),
+  manualAdapter: await kb.locator(".kb-profile-form input").count() === 3
+};
+
+await kb.locator(".kb-profile-form input").nth(0).fill("100000000");
+await kb.getByRole("button", { name: /확정하고 조건 입력으로/ }).click();
+await kb.locator(".kb-field-block textarea").fill("강남구에서 카페를 준비 중이에요");
+await kb.getByRole("button", { name: /조건으로 정리하기/ }).click();
+await kb.waitForSelector(".kb-condcard");
+
+// 자기자본은 프로필이 이미 들고 있으므로 조건 화면이 다시 묻지 않는다. 남는 질문은 희망 월세 하나다.
+const chips = await kb.locator(".kb-chip").allTextContents();
+const conditionStep = {
+  askCount: await kb.locator(".kb-askbox .kb-field").count(),
+  equityCarried: chips.some(chip => chip.includes("자기자본") && chip.includes("금융 프로필")),
+  // "준비 중이에요"의 "중"이 중구로 새지 않아야 한다.
+  districtParsed: chips.some(chip => chip.includes("자치구") && chip.includes("강남구"))
+};
+
+await kb.locator(".kb-askbox input").first().fill("2500000");
+await kb.getByRole("button", { name: "이 조건으로 입지 찾기" }).click();
+await kb.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 30000 });
+
+const stepperLabels = await kb.locator(".kb-stepper li").allTextContents();
+const bandBannerShown = await kb.locator(".kb-band-banner").count() > 0;
+const kbFlow = {
+  gateVisible,
+  stepCount: stepperLabels.length,
+  // 자금·근거가 별도 스텝으로 남아 있으면 재설계가 되돌아간 것이다.
+  stepsAreThree: stepperLabels.length === 3 && !stepperLabels.some(label => label.includes("자금") || label.includes("근거")),
+  candidates: await kb.locator(".kb-candidates li").count(),
+  tuningInPlace: await kb.getByRole("button", { name: /정밀하게 맞추기/ }).count() > 0,
+  // 제도 파라미터가 미등록이면 밴드를 지어내지 않고 사유를 밝혀야 한다.
+  // 진행 오버레이에도 같은 문구가 남으므로 패널 본문 쪽 고지만 센다.
+  bandSafeState: bandBannerShown || await kb.locator(".kb-step > .kb-note", { hasText: "파라미터가 아직 등록되지" }).count() > 0
+};
+
+// 근거는 목록을 벗어나지 않고 그 자리에서 펼쳐져야 한다.
+if (kbFlow.candidates > 0) {
+  await kb.getByRole("button", { name: /근거 펼치기/ }).first().click();
+  await kb.waitForSelector(".kb-evidence .kb-verdict", { timeout: 20000 });
+  kbFlow.evidenceInline = await kb.locator(".kb-evidence").count() > 0 && await kb.locator(".kb-candidates li").count() > 0;
+} else {
+  kbFlow.evidenceInline = true;
+}
+
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, mydataGate, conditionStep, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
+if (!kbFlow.gateVisible || !kbFlow.stepsAreThree || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.evidenceInline) process.exitCode = 1;
+if (!mydataGate.buttonDisabled || !mydataGate.lockExplained || !mydataGate.manualAdapter) process.exitCode = 1;
+if (conditionStep.askCount !== 1 || !conditionStep.equityCarried || !conditionStep.districtParsed) process.exitCode = 1;

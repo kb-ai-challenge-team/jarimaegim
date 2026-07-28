@@ -6,23 +6,34 @@ import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
 import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
 import { ProvenanceBar } from "../ProvenanceBar";
-import type { BandForm, LocationState } from "@/lib/use-jarimaegim";
+import type { BandForm, LocationState, Profile } from "@/lib/use-jarimaegim";
 
 const BAND_LABELS: Record<string, string> = { EQUITY_ONLY: "자기자본선", RECOMMENDED: "권장 조달선", MAXIMUM: "최대 조달선", OUT_OF_RANGE: "조달 불가" };
 const BAND_MARKS: Record<string, string> = { EQUITY_ONLY: "●", RECOMMENDED: "◐", MAXIMUM: "◑", OUT_OF_RANGE: "○" };
 
-const CAPITAL_FIELDS: { key: keyof BandForm; label: string; step: number; note?: string }[] = [
-  { key: "deposit_krw", label: "임차보증금", step: 1000000 },
-  { key: "key_money_krw", label: "권리금", step: 1000000, note: "계약 전 직접 확인" },
-  { key: "fitout_krw", label: "인테리어·설비", step: 1000000, note: "비우면 평수 기준 추정값을 씁니다" }
+type TuneField = { key: keyof BandForm; label: string; step: number; unit: string; note?: string };
+
+// 필요자금 축. 여기 값이 비면 현금소진과 필요자금 밴드 판정만 못 낸다 — 상한과 목표매출은 그대로 나온다.
+const CAPITAL_FIELDS: TuneField[] = [
+  { key: "area_pyeong", label: "희망 평수", step: 1, unit: "평", note: "비우면 인테리어비를 추정하지 않습니다" },
+  { key: "deposit_krw", label: "임차보증금", step: 1000000, unit: "원" },
+  { key: "key_money_krw", label: "권리금", step: 1000000, unit: "원", note: "계약 전 직접 확인" },
+  { key: "fitout_krw", label: "인테리어·설비", step: 1000000, unit: "원", note: "비우면 평수 기준 추정값을 씁니다" }
 ];
-const MONTHLY_FIELDS: { key: keyof BandForm; label: string; step: number }[] = [
-  { key: "monthly_rent_krw", label: "월세", step: 100000 },
-  { key: "monthly_maintenance_krw", label: "관리비", step: 100000 },
-  { key: "other_monthly_fixed_krw", label: "기타 월 고정비", step: 100000 }
+// 월 고정지출 축. 월세는 권장 조달선과 목표매출을 직접 움직인다.
+const MONTHLY_FIELDS: TuneField[] = [
+  { key: "monthly_rent_krw", label: "월세", step: 100000, unit: "원" },
+  { key: "monthly_maintenance_krw", label: "관리비", step: 100000, unit: "원" }
 ];
 
-export function BandTable({ lines }: { lines: BandLine[] }) {
+/** 현금소진이 비는 이유는 둘이다 — 조달이 필요자금에 못 미쳤거나, 계산할 입력이 없거나.
+ *  둘을 같은 문구로 묶으면 "돈이 모자란다"는 잘못된 신호를 준다. */
+export function runwayLabel(line: BandLine, partial: boolean) {
+  if (line.runway_months !== null) return `${line.runway_months}개월`;
+  return partial ? "확인 필요" : "조달 부족";
+}
+
+export function BandTable({ lines, partial }: { lines: BandLine[]; partial: boolean }) {
   return <div className="kb-band-table">
     <div className="kb-band-head"><span>밴드</span><span>상한</span><span>월 상환</span><span>목표 일매출</span><span>현금소진</span></div>
     {lines.map((line) => <div key={line.band} className="kb-band-row" data-band={line.band} data-pass={line.stress_pass ? "true" : "false"}>
@@ -30,62 +41,66 @@ export function BandTable({ lines }: { lines: BandLine[] }) {
       <span>{formatKrw(line.ceiling_krw)}</span>
       <span>{line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"}</span>
       <span>{formatKrw(line.target_daily_revenue_krw)}</span>
-      <span>{line.runway_months === null ? "조달 부족" : `${line.runway_months}개월`}</span>
+      <span>{runwayLabel(line, partial)}</span>
     </div>)}
   </div>;
 }
 
-/** 비용 단계. 필요자금 내역을 조정하고 조달 밴드 3중선과 손익분기선을 본다. */
-export function PlanBands({ caseData, form, bands, state, busy, onField, onRecompute }: {
-  caseData: CaseRecord; form: BandForm; bands: FundingBandResult | null; state: LocationState;
-  busy: boolean; onField: (key: keyof BandForm, value: number | null) => void; onRecompute: () => void;
+/** 입지 화면의 "정밀하게 맞추기" 본문. 여기서 고쳐도 화면을 떠나지 않고 배너와 후보가 그 자리에서 갱신된다.
+ *  자기자본·기존부채·월 고정지출은 금융 프로필이 이미 확정했으므로 다시 묻지 않는다. */
+export function PlanTuning({ profile, form, bands, state, busy, onField, onRecompute, onEditProfile }: {
+  profile: Profile; form: BandForm; bands: FundingBandResult | null; state: LocationState;
+  busy: boolean; onField: (key: keyof BandForm, value: number | null) => void;
+  onRecompute: () => void; onEditProfile: () => void;
 }) {
   const numeric = (key: keyof BandForm) => {
     const value = form[key];
     return value === null ? "" : String(value || "");
   };
-  return <div className="kb-step">
-    <p className="kb-step-lead">자기자본과 임대 조건으로 조달 가능 범위를 계산합니다. 임대료는 공개 원천이 없어 입력값을 그대로 사용하며, AI는 금액을 만들거나 바꾸지 않습니다.</p>
+  const partial = bands?.status === "partial";
+  const field = (item: TuneField) => <label key={item.key} className="kb-field">
+    <span>{item.label}{item.note && <small>{item.note}</small>}</span>
+    <input type="number" min="0" step={item.step} inputMode="numeric" value={numeric(item.key)}
+      onChange={(event) => onField(item.key, event.target.value === "" ? null : Math.max(0, Number(event.target.value)))}
+      placeholder={item.unit === "평" ? "미입력" : "0"} />
+  </label>;
+
+  return <div className="kb-tune">
+    <p className="kb-step-lead">임대료는 공개 원천이 없어 입력값을 그대로 사용합니다. 비워 두면 그 항목에 딸린 값만 계산하지 않을 뿐, 나머지는 그대로 나옵니다. AI는 금액을 만들거나 바꾸지 않습니다.</p>
 
     <div className="kb-band-form">
       <span className="kb-band-form-title">필요자금 항목</span>
-      {CAPITAL_FIELDS.map((field) => <label key={field.key} className="kb-field">
-        <span>{field.label}{field.note && <small>{field.note}</small>}</span>
-        <input type="number" min="0" step={field.step} inputMode="numeric" value={numeric(field.key)}
-          onChange={(event) => onField(field.key, event.target.value === "" ? null : Math.max(0, Number(event.target.value)))} placeholder="0" />
-      </label>)}
+      {CAPITAL_FIELDS.map(field)}
       <span className="kb-band-form-title">월 고정지출</span>
-      {MONTHLY_FIELDS.map((field) => <label key={field.key} className="kb-field">
-        <span>{field.label}</span>
-        <input type="number" min="0" step={field.step} inputMode="numeric" value={numeric(field.key)}
-          onChange={(event) => onField(field.key, Math.max(0, Number(event.target.value)))} placeholder="0" />
-      </label>)}
-      <span className="kb-band-form-title">기존 부채</span>
-      <label className="kb-field"><span>기존 대출 잔액</span>
-        <input type="number" min="0" step={1000000} inputMode="numeric" value={numeric("existing_debt_krw")}
-          onChange={(event) => onField("existing_debt_krw", Math.max(0, Number(event.target.value)))} placeholder="0" />
-      </label>
+      {MONTHLY_FIELDS.map(field)}
     </div>
+
+    <div className="kb-gate">
+      <ShieldCheck aria-hidden="true" />
+      <span>자기자본 <strong>{formatKrw(profile.equity_krw)}</strong> · 기존부채 <strong>{formatKrw(profile.existing_debt_krw)}</strong> · 월 고정지출 <strong>{formatKrw(profile.other_monthly_fixed_krw)}</strong> — 금융 프로필에서 확정했습니다.</span>
+      <button className="kb-gate-edit" onClick={onEditProfile}>수정</button>
+    </div>
+
     <button className="kb-primary" onClick={onRecompute} disabled={busy}>{busy ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}입력값으로 다시 계산</button>
 
     {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />조달 밴드를 계산하고 있습니다.</div>}
 
+    {/* 무엇이 비었는지는 message 가 우리말로 말한다. missing_params 는 내부 파라미터 키라 화면에 내보내지 않는다. */}
     {bands?.status === "integration_pending" && <div className="kb-empty">
       <Coins aria-hidden="true" />
       <strong>조달 밴드 계산에 필요한 값이 아직 없습니다</strong>
       <p>{bands.message}</p>
-      <ul className="kb-missing-params">{bands.missing_params.map((key) => <li key={key}>{key}</li>)}</ul>
     </div>}
 
-    {bands?.status === "computed" && bands.break_even && <>
+    {bands && bands.break_even && <>
       <dl className="kb-summary">
-        <div><dt>자기자본</dt><dd>{formatKrw(caseData.inputs.equity_krw)}</dd></div>
-        <div><dt>필요자금</dt><dd>{bands.required_capital_krw === null ? "—" : formatKrw(bands.required_capital_krw)}</dd></div>
+        <div><dt>자기자본</dt><dd>{formatKrw(profile.equity_krw)}</dd></div>
+        <div><dt>필요자금</dt><dd>{bands.required_capital_krw === null ? "확인 필요" : formatKrw(bands.required_capital_krw)}</dd></div>
         <div><dt>월 고정지출<small>상환 전</small></dt><dd>{formatKrw(bands.break_even.monthly_fixed_cost_krw)}</dd></div>
         <div className="kb-summary-gap"><dt>공헌이익률</dt><dd>{Math.round(bands.break_even.contribution_margin_ratio * 100)}%</dd></div>
       </dl>
       <p className="kb-note"><Info aria-hidden="true" />목표 일매출은 밴드마다 다릅니다. 차입이 늘면 월 상환이 고정지출에 더해져 넘어야 하는 매출도 함께 올라갑니다.</p>
-      <BandTable lines={bands.bands} />
+      <BandTable lines={bands.bands} partial={partial} />
       {bands.required_capital_band === "OUT_OF_RANGE" && <p className="kb-inline-error" role="alert"><Info aria-hidden="true" />필요자금이 최대 조달선을 넘습니다. 임대 조건을 낮추거나 자기자본을 늘려야 합니다.</p>}
       <ul className="kb-limitations">{bands.break_even.assumptions.map((item) => <li key={item}>{item}</li>)}</ul>
       {bands.provenance && <ul className="kb-limitations">{bands.provenance.limitations.map((item) => <li key={item}>{item}</li>)}</ul>}
@@ -162,18 +177,17 @@ export function PlanPrescription({ caseData, committed, programs, state, applica
 
     <section className="kb-prescription-block">
       <h3><span className="kb-prescription-no" aria-hidden="true">2</span>자금조달 레포트</h3>
+      {/* 밴드 표는 입지 화면 배너에서 이미 봤다. 여기서 반복하지 않고 확정값만 요약한다. */}
       {recommended && bands?.break_even
-        ? <>
-            <dl className="kb-summary">
-              <div><dt>권장 조달선</dt><dd>{formatKrw(recommended.ceiling_krw)}</dd></div>
-              <div><dt>차입 필요액</dt><dd>{formatKrw(recommended.loan_krw)}</dd></div>
-              <div><dt>월 상환</dt><dd>{recommended.monthly_repayment_krw > 0 ? formatKrw(recommended.monthly_repayment_krw) : "0원"}</dd></div>
-              <div className="kb-summary-gap"><dt>넘어야 하는 일매출</dt><dd>{formatKrw(recommended.target_daily_revenue_krw)}</dd></div>
-            </dl>
-            <BandTable lines={bands.bands} />
-          </>
+        ? <dl className="kb-summary">
+            <div><dt>권장 조달선</dt><dd>{formatKrw(recommended.ceiling_krw)}</dd></div>
+            <div><dt>차입 필요액</dt><dd>{formatKrw(recommended.loan_krw)}</dd></div>
+            <div><dt>월 상환</dt><dd>{recommended.monthly_repayment_krw > 0 ? formatKrw(recommended.monthly_repayment_krw) : "0원"}</dd></div>
+            <div className="kb-summary-gap"><dt>넘어야 하는 일매출</dt><dd>{formatKrw(recommended.target_daily_revenue_krw)}</dd></div>
+          </dl>
         : <div className="kb-empty compact"><Coins aria-hidden="true" /><strong>조달 밴드가 아직 계산되지 않았습니다</strong>
-            <p>{bands?.message || "자금 단계에서 필요한 값을 확인할 수 있습니다."}</p></div>}
+            <p>{bands?.message || "입지 화면의 '정밀하게 맞추기'에서 필요한 값을 확인할 수 있습니다."}</p></div>}
+      {bands?.status === "partial" && <p className="kb-note"><Info aria-hidden="true" />{bands.message}</p>}
       {/* 지원사업 연동 여부는 밴드가 계산됐는지와 무관하게 알려야 한다. 조건 안에 두면 고지가 사라진다. */}
       <p className="kb-note"><Info aria-hidden="true" />지원사업 endpoint 연동 후 조달선에 반영됩니다. 현재 밴드에는 지원금이 포함되지 않았습니다.</p>
       {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청과 상담 자동 연결은 제공하지 않습니다. 공식 원문으로 이동해 직접 확인해 주세요.</span></div>}

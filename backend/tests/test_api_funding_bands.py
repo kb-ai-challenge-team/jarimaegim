@@ -108,6 +108,49 @@ def test_unregistered_industry_is_reported_as_missing(client, case_id, filled_pa
     assert "industries.치킨집" in payload["missing_params"]
 
 
+def test_bands_are_computed_without_area_and_deposit(client, case_id, filled_params):
+    """평수·보증금은 필요자금(→현금소진)에만 쓰인다. 없다고 밴드 전체를 막지 않는다."""
+    body = {k: v for k, v in BODY.items() if k not in ("area_pyeong", "deposit_krw")}
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **body}).json()
+    assert payload["status"] == "partial"
+    assert [band["band"] for band in payload["bands"]] == ["EQUITY_ONLY", "RECOMMENDED", "MAXIMUM"]
+    assert payload["break_even"]["target_daily_revenue_krw"] > 0
+    assert payload["missing_params"] == ["희망 평수", "희망 보증금"]
+
+
+def test_partial_bands_report_no_runway_and_no_required_capital(client, case_id, filled_params):
+    body = {k: v for k, v in BODY.items() if k not in ("area_pyeong", "deposit_krw")}
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **body}).json()
+    assert payload["required_capital_krw"] is None
+    assert payload["required_capital_band"] is None
+    assert all(band["runway_months"] is None for band in payload["bands"])
+
+
+def test_partial_bands_match_the_full_run_on_every_rent_driven_figure(client, case_id, filled_params):
+    """평수·보증금은 상한·상환·목표매출에 관여하지 않는다. 두 응답이 그 축에서 같아야 한다."""
+    body = {k: v for k, v in BODY.items() if k not in ("area_pyeong", "deposit_krw")}
+    partial = client.post("/api/v1/funding-bands", json={"case_id": case_id, **body}).json()
+    full = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY}).json()
+    keys = ("ceiling_krw", "loan_krw", "monthly_repayment_krw", "target_daily_revenue_krw", "stress_pass")
+    assert [{k: band[k] for k in keys} for band in partial["bands"]] == \
+           [{k: band[k] for k in keys} for band in full["bands"]]
+
+
+def test_only_the_deposit_missing_still_yields_partial(client, case_id, filled_params):
+    body = {k: v for k, v in BODY.items() if k != "deposit_krw"}
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **body}).json()
+    assert payload["status"] == "partial"
+    assert payload["missing_params"] == ["희망 보증금"]
+
+
+def test_partial_result_states_what_it_did_not_calculate(client, case_id, filled_params):
+    """추정으로 메우지 않았다는 사실이 화면에 붙을 수 있어야 한다."""
+    body = {k: v for k, v in BODY.items() if k not in ("area_pyeong", "deposit_krw")}
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **body}).json()
+    assert any("추정하지 않습니다" in item for item in payload["provenance"]["limitations"])
+    assert any("계산하지 않았습니다" in item for item in payload["break_even"]["assumptions"])
+
+
 def test_rejects_a_non_positive_area(client, case_id):
     """이 앱은 요청 검증 오류를 400 VALIDATION_ERROR로 정규화한다 (main.py:54 validation_handler)."""
     response = client.post("/api/v1/funding-bands", json={"case_id": case_id, **{**BODY, "area_pyeong": 0}})
