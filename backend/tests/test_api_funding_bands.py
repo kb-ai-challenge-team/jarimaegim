@@ -63,12 +63,17 @@ def test_rejects_a_case_owned_by_another_session(client):
     assert response.status_code == 404
 
 
-def test_returns_integration_pending_while_parameters_are_unregistered(client, case_id):
-    """미등록 파라미터가 남아 있는 동안은 추정하지 않고 누락 목록을 돌려준다.
+def test_returns_integration_pending_while_parameters_are_unregistered(client, case_id, monkeypatch):
+    """미등록 파라미터가 남아 있으면 추정하지 않고 누락 목록을 돌려준다.
 
-    특정 키를 단정하지 않는다 — 등록이 진행되면 목록이 줄어드는 것이 정상이고,
-    지켜야 하는 규칙은 "누락이 있으면 계산하지 않고 무엇이 빈지 알려준다"는 것이다.
+    지켜야 하는 규칙은 "누락이 있으면 계산하지 않고 무엇이 빈지 알려준다"이지
+    "지금 파라미터가 비어 있다"가 아니다. 그래서 등록 상태에 기대지 않고 빈 파라미터를
+    직접 주입해 규칙만 확인한다 — 실제 config 가 채워져도 이 규칙은 살아 있어야 한다.
     """
+    import app.main as main
+    from app.policy_params import PolicyParams
+
+    monkeypatch.setattr(main, "policy_params", PolicyParams({}))
     response = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY})
     assert response.status_code == 200
     payload = response.json()
@@ -77,6 +82,20 @@ def test_returns_integration_pending_while_parameters_are_unregistered(client, c
     assert payload["break_even"] is None
     assert len(payload["missing_params"]) > 0
     assert payload["message"]
+
+
+def test_the_shipped_config_computes_and_says_its_values_are_assumed(client, case_id):
+    """등록이 끝나면 밴드가 나와야 하고, 그 값이 시연용 가정이라는 사실도 함께 나가야 한다."""
+    from app.main import policy_params
+
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY}).json()
+    if policy_params.missing(BODY["industry"]):
+        return  # 아직 등록 전인 환경. 위 테스트가 그 경로를 지킨다.
+    assert payload["status"] in {"computed", "partial"}
+    assert payload["bands"]
+    if policy_params.assumed(BODY["industry"]):
+        assert payload["provenance"]["confidence"] == "INSUFFICIENT"
+        assert any("시연용 가정값" in item for item in payload["provenance"]["limitations"])
 
 
 def test_computes_three_bands_when_params_are_registered(client, case_id, filled_params):

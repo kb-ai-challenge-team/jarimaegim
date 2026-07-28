@@ -137,7 +137,10 @@ def analysis_axes() -> dict[str, dict[str, Any]]:
     trade_area_note = f"{trade_areas.quarter} 기준 행정동 {trade_areas.dong_count}개" if trade_area else None
     return {
         "finance.band": {"enabled": True, "disabled_reason": None,
-                         "note": "제도 파라미터 미등록 시 integration_pending을 반환합니다"},
+                         # 축이 켜져 있다는 것과 근거가 실측이라는 것은 다르다. 지금 등록된
+                         # 제도 파라미터에는 시연용 가정값이 섞여 있고, 그 사실을 여기서도 밝힌다.
+                         "note": ("대출 만기·보증한도·정책자금 한도와 업종 원가 구조가 시연용 가정값입니다 — 실제 심사 결과와 다릅니다"
+                                  if policy_params.assumed("카페") else "제도 파라미터 미등록 시 integration_pending을 반환합니다")},
         "finance.stress": {"enabled": True, "disabled_reason": None, "note": None},
         "finance.kb_products": {"enabled": finlife,
                                 "disabled_reason": None if finlife else "금융상품 공시 endpoint 미검증",
@@ -297,6 +300,10 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
     partial = computed["required_capital_krw"] is None
     missing_capital = [name for name, value in (("희망 평수", payload.area_pyeong), ("희망 보증금", payload.deposit_krw))
                        if value is None]
+    # 값이 등록돼 있다는 것과 근거가 있다는 것은 다르다. 시연용 가정값이 하나라도 계산에
+    # 들어갔으면 그 사실이 화면까지 따라가야 한다 — 조달선과 목표 일매출은 사용자가 가장
+    # 구체적인 숫자로 받아들이는 값이라, 근거의 성격을 감추면 가장 크게 오해된다.
+    assumed = policy_params.assumed(payload.industry)
     assumptions = [f"원가율·인건비율·평당 인테리어 단가는 등록된 업종 파라미터를 사용했습니다 (출처: {', '.join(policy_params.sources(payload.industry)) or '미기재'})",
                    f"운전자금 {int(policy_params.value('working_capital.months'))}개월분을 필요자금에 포함했습니다"
                    if not partial else f"{' · '.join(missing_capital)}을 입력하지 않아 필요자금과 현금소진은 계산하지 않았습니다",
@@ -304,13 +311,22 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
                    if computed["fitout_krw"] is not None else "인테리어비는 평수를 입력해야 추정합니다",
                    "최대 조달선은 신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다"]
     limitations = ["상권별 임대 수준 데이터가 없어 밴드별 진입 가능 상권 수는 제공하지 않습니다",
-                   "지원사업·창업자금 상품 반영분은 연동 대기 상태입니다",
-                   "제도 파라미터는 실측 검증 전 등록값입니다"]
+                   "지원사업·창업자금 상품 반영분은 연동 대기 상태입니다"]
+    if assumed:
+        warning = (f"대출 만기·보증한도·정책자금 한도와 업종 원가 구조는 시연용 가정값입니다({len(assumed)}개 항목). "
+                   "공고 원문으로 확인한 값이 아니므로 아래 조달선·목표매출은 실제 심사 결과와 다릅니다.")
+        assumptions.insert(0, warning)
+        limitations.insert(0, warning)
+    else:
+        limitations.append("제도 파라미터는 실측 검증 전 등록값입니다")
     if partial:
         limitations.insert(0, f"{' · '.join(missing_capital)}을 입력해야 필요자금과 현금소진을 계산합니다. 추정하지 않습니다")
-    provenance = Provenance(source_name="자리매김 조달 밴드 계산", industry_scope=payload.industry,
+    provenance = Provenance(source_name="자리매김 조달 밴드 계산",
+                            industry_scope=policy_params.industry_label(payload.industry),
                             spatial_unit="사용자 입력 조건", source_as_of=policy_params.updated_at,
-                            confidence="LOW", limitations=limitations)
+                            # 가정값이 섞이면 LOW 로도 부족하다. 값이 있다는 이유로 신뢰도가
+                            # 올라가 보이면 안 되므로 근거 없음에 해당하는 등급으로 내린다.
+                            confidence="INSUFFICIENT" if assumed else "LOW", limitations=limitations)
     return FundingBandResult(status="partial" if partial else "computed",
                              required_capital_krw=computed["required_capital_krw"],
                              required_capital_band=computed["required_capital_band"],

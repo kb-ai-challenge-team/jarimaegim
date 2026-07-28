@@ -1,50 +1,505 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-27",
-  "note": "값은 출처와 기준일을 확인한 뒤 등록한다. null 인 항목은 계산에 사용되지 않고 integration_pending 을 유발한다.\n남은 항목과 필요한 것:\n  loan.term_months — 2026년 융자사업 공고 원문(hwpx/pdf) 확인 필요. 2차 출처는 5년(거치 2년 포함)이라 하나 원문 미확인.\n  loan.guarantee_ceiling_krw — 지역신용보증재단·상품별로 한도가 달라 단일 값이 성립하지 않는다. 대상 재단과 보증상품을 먼저 정해야 한다.\n  loan.policy_fund_ceiling_krw — 2차 출처는 7,000만원이라 하나 공고 원문 미확인.\n  industries.<업종> — 원가율·인건비율·평당 인테리어 단가·월 영업일수. 공적 통계에서 단일 값으로 뽑히지 않아 출처 결정이 필요하다.\n이 값들을 추정으로 채우면 손익분기와 조달 상한이 바로 틀어지므로 비워 둔다(부록 A 불변조건 1).",
+  "updated_at": "2026-07-28",
+  "note": "각 항목의 basis 가 값의 성격을 밝힌다.\n  PUBLISHED — 공시 원문에서 확인한 값.\n  DESIGN_DECISION — 자리매김이 정한 판정 기준. 외부 제도값이 아니다.\n  DEMO_ASSUMPTION — 시연용 가정값. **실측·공시 출처가 없다.**\nDEMO_ASSUMPTION 이 하나라도 계산에 쓰이면 조달 밴드 응답이 그 사실을 assumptions·limitations 에\n싣고 confidence 를 INSUFFICIENT 로 낮춘다. 실제 서비스 전에는 공고 원문으로 대체해야 한다.\n업종 키는 서울시 상권분석서비스 서비스업종 코드(SVC_INDUTY_CD)다. backend/app/industry.py 가\n사용자 입력 문자열을 이 코드로 옮긴다.",
   "entries": {
     "loan.annual_rate_percent": {
       "value": 4.45,
       "unit": "PERCENT",
       "source": "소상공인시장진흥공단 정책자금 안내 — 2026년 3/4분기 일반경영안정자금 대리대출 금리(정책자금 기준금리 3.85% + 0.6%p). https://www.semas.or.kr/web/SUP01/SUP0103/SUP010301.kmdc — KB 상품 제시 금리가 아니라 정책자금 공시 금리다.",
-      "as_of": "2026-07-01"
+      "as_of": "2026-07-01",
+      "basis": "PUBLISHED",
+      "label": "소상공인시장진흥공단 정책자금 공시 금리"
     },
     "loan.term_months": {
-      "value": null,
+      "value": 60,
       "unit": "MONTHS",
-      "source": null,
-      "as_of": null
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측·공시 출처 없음. 공모전 시연을 위해 자리매김이 정한 값이며 실제 제도 한도가 아니다. 대출 만기 5년(60개월)으로 가정. 2차 출처가 말하는 5년(거치 2년 포함)과 같은 자릿수지만 공고 원문으로 확인한 값이 아니다.",
+      "as_of": "2026-07-28",
+      "label": "시연용 가정 — 대출 만기"
     },
     "loan.guarantee_ceiling_krw": {
-      "value": null,
+      "value": 100000000,
       "unit": "KRW",
-      "source": null,
-      "as_of": null
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측·공시 출처 없음. 공모전 시연을 위해 자리매김이 정한 값이며 실제 제도 한도가 아니다. 지역신용보증재단 보증한도를 1억원으로 가정. 재단·상품별로 한도가 달라 단일 값이 성립하지 않는다.",
+      "as_of": "2026-07-28",
+      "label": "시연용 가정 — 보증한도"
     },
     "loan.policy_fund_ceiling_krw": {
-      "value": null,
+      "value": 70000000,
       "unit": "KRW",
-      "source": null,
-      "as_of": null
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측·공시 출처 없음. 공모전 시연을 위해 자리매김이 정한 값이며 실제 제도 한도가 아니다. 정책자금 한도를 7,000만원으로 가정. 2차 출처와 같은 자릿수지만 공고 원문 미확인.",
+      "as_of": "2026-07-28",
+      "label": "시연용 가정 — 정책자금 한도"
     },
     "stress.revenue_drop_ratio": {
       "value": 0.2,
       "unit": "RATIO",
       "source": "자리매김 설계 결정 — 스펙 §6 하드 탈락 규칙의 스트레스 시나리오(매출 −20%)",
-      "as_of": "2026-07-27"
+      "as_of": "2026-07-27",
+      "basis": "DESIGN_DECISION",
+      "label": "자리매김 설계 결정 — 스트레스 시나리오"
     },
     "stress.repayment_burden_cap_ratio": {
       "value": 0.1,
       "unit": "RATIO",
       "source": "자리매김 설계 결정 — 권장 조달선 판정 기준(스트레스 매출 대비 월 상환 비율 상한)",
-      "as_of": "2026-07-27"
+      "as_of": "2026-07-27",
+      "basis": "DESIGN_DECISION",
+      "label": "자리매김 설계 결정 — 상환부담 상한"
     },
     "working_capital.months": {
       "value": 3,
       "unit": "MONTHS",
       "source": "자리매김 설계 결정 — 필요자금에 포함하는 초기 운전자금 개월수",
-      "as_of": "2026-07-27"
+      "as_of": "2026-07-27",
+      "basis": "DESIGN_DECISION",
+      "label": "자리매김 설계 결정 — 운전자금 개월수"
     }
   },
-  "industries": {}
+  "industries": {
+    "CS100001": {
+      "display_name": "한식음식점",
+      "cogs_ratio": 0.38,
+      "labor_ratio": 0.25,
+      "fitout_krw_per_pyeong": 2200000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100002": {
+      "display_name": "중식음식점",
+      "cogs_ratio": 0.36,
+      "labor_ratio": 0.24,
+      "fitout_krw_per_pyeong": 2200000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100003": {
+      "display_name": "일식음식점",
+      "cogs_ratio": 0.4,
+      "labor_ratio": 0.26,
+      "fitout_krw_per_pyeong": 2800000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100004": {
+      "display_name": "양식음식점",
+      "cogs_ratio": 0.38,
+      "labor_ratio": 0.27,
+      "fitout_krw_per_pyeong": 2800000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100005": {
+      "display_name": "제과점",
+      "cogs_ratio": 0.42,
+      "labor_ratio": 0.22,
+      "fitout_krw_per_pyeong": 2600000,
+      "operating_days_per_month": 28,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100006": {
+      "display_name": "패스트푸드점",
+      "cogs_ratio": 0.4,
+      "labor_ratio": 0.24,
+      "fitout_krw_per_pyeong": 2400000,
+      "operating_days_per_month": 29,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100007": {
+      "display_name": "치킨전문점",
+      "cogs_ratio": 0.42,
+      "labor_ratio": 0.2,
+      "fitout_krw_per_pyeong": 1900000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100008": {
+      "display_name": "분식전문점",
+      "cogs_ratio": 0.38,
+      "labor_ratio": 0.21,
+      "fitout_krw_per_pyeong": 1700000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100009": {
+      "display_name": "호프-간이주점",
+      "cogs_ratio": 0.35,
+      "labor_ratio": 0.2,
+      "fitout_krw_per_pyeong": 2000000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS100010": {
+      "display_name": "커피-음료",
+      "cogs_ratio": 0.32,
+      "labor_ratio": 0.24,
+      "fitout_krw_per_pyeong": 2400000,
+      "operating_days_per_month": 29,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200001": {
+      "display_name": "일반교습학원",
+      "cogs_ratio": 0.1,
+      "labor_ratio": 0.45,
+      "fitout_krw_per_pyeong": 1300000,
+      "operating_days_per_month": 24,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200002": {
+      "display_name": "외국어학원",
+      "cogs_ratio": 0.1,
+      "labor_ratio": 0.45,
+      "fitout_krw_per_pyeong": 1300000,
+      "operating_days_per_month": 24,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200005": {
+      "display_name": "스포츠 강습",
+      "cogs_ratio": 0.1,
+      "labor_ratio": 0.38,
+      "fitout_krw_per_pyeong": 1800000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200016": {
+      "display_name": "당구장",
+      "cogs_ratio": 0.08,
+      "labor_ratio": 0.22,
+      "fitout_krw_per_pyeong": 1500000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200017": {
+      "display_name": "골프연습장",
+      "cogs_ratio": 0.1,
+      "labor_ratio": 0.28,
+      "fitout_krw_per_pyeong": 3200000,
+      "operating_days_per_month": 29,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200019": {
+      "display_name": "PC방",
+      "cogs_ratio": 0.12,
+      "labor_ratio": 0.25,
+      "fitout_krw_per_pyeong": 2600000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200028": {
+      "display_name": "미용실",
+      "cogs_ratio": 0.15,
+      "labor_ratio": 0.42,
+      "fitout_krw_per_pyeong": 2200000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200029": {
+      "display_name": "네일숍",
+      "cogs_ratio": 0.18,
+      "labor_ratio": 0.4,
+      "fitout_krw_per_pyeong": 1700000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200030": {
+      "display_name": "피부관리실",
+      "cogs_ratio": 0.18,
+      "labor_ratio": 0.42,
+      "fitout_krw_per_pyeong": 2300000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200031": {
+      "display_name": "세탁소",
+      "cogs_ratio": 0.18,
+      "labor_ratio": 0.28,
+      "fitout_krw_per_pyeong": 1600000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200033": {
+      "display_name": "부동산중개업",
+      "cogs_ratio": 0.05,
+      "labor_ratio": 0.3,
+      "fitout_krw_per_pyeong": 1200000,
+      "operating_days_per_month": 25,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200036": {
+      "display_name": "고시원",
+      "cogs_ratio": 0.08,
+      "labor_ratio": 0.18,
+      "fitout_krw_per_pyeong": 2000000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200037": {
+      "display_name": "노래방",
+      "cogs_ratio": 0.1,
+      "labor_ratio": 0.2,
+      "fitout_krw_per_pyeong": 2400000,
+      "operating_days_per_month": 29,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200038": {
+      "display_name": "독서실",
+      "cogs_ratio": 0.07,
+      "labor_ratio": 0.18,
+      "fitout_krw_per_pyeong": 1600000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS200041": {
+      "display_name": "사진관",
+      "cogs_ratio": 0.2,
+      "labor_ratio": 0.3,
+      "fitout_krw_per_pyeong": 2000000,
+      "operating_days_per_month": 25,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300001": {
+      "display_name": "슈퍼마켓",
+      "cogs_ratio": 0.72,
+      "labor_ratio": 0.13,
+      "fitout_krw_per_pyeong": 1400000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300002": {
+      "display_name": "편의점",
+      "cogs_ratio": 0.74,
+      "labor_ratio": 0.12,
+      "fitout_krw_per_pyeong": 1500000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300010": {
+      "display_name": "반찬가게",
+      "cogs_ratio": 0.55,
+      "labor_ratio": 0.18,
+      "fitout_krw_per_pyeong": 1400000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300011": {
+      "display_name": "일반의류",
+      "cogs_ratio": 0.48,
+      "labor_ratio": 0.18,
+      "fitout_krw_per_pyeong": 1800000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300014": {
+      "display_name": "신발",
+      "cogs_ratio": 0.52,
+      "labor_ratio": 0.17,
+      "fitout_krw_per_pyeong": 1700000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300016": {
+      "display_name": "안경",
+      "cogs_ratio": 0.4,
+      "labor_ratio": 0.22,
+      "fitout_krw_per_pyeong": 2100000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300018": {
+      "display_name": "의약품",
+      "cogs_ratio": 0.68,
+      "labor_ratio": 0.15,
+      "fitout_krw_per_pyeong": 1900000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300020": {
+      "display_name": "서적",
+      "cogs_ratio": 0.65,
+      "labor_ratio": 0.16,
+      "fitout_krw_per_pyeong": 1500000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300021": {
+      "display_name": "문구",
+      "cogs_ratio": 0.62,
+      "labor_ratio": 0.16,
+      "fitout_krw_per_pyeong": 1400000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300022": {
+      "display_name": "화장품",
+      "cogs_ratio": 0.55,
+      "labor_ratio": 0.18,
+      "fitout_krw_per_pyeong": 2000000,
+      "operating_days_per_month": 28,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300026": {
+      "display_name": "완구",
+      "cogs_ratio": 0.58,
+      "labor_ratio": 0.16,
+      "fitout_krw_per_pyeong": 1500000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300029": {
+      "display_name": "애완동물",
+      "cogs_ratio": 0.5,
+      "labor_ratio": 0.2,
+      "fitout_krw_per_pyeong": 1800000,
+      "operating_days_per_month": 27,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300031": {
+      "display_name": "가구",
+      "cogs_ratio": 0.55,
+      "labor_ratio": 0.17,
+      "fitout_krw_per_pyeong": 1600000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300035": {
+      "display_name": "인테리어",
+      "cogs_ratio": 0.55,
+      "labor_ratio": 0.22,
+      "fitout_krw_per_pyeong": 1500000,
+      "operating_days_per_month": 25,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    },
+    "CS300041": {
+      "display_name": "예술품",
+      "cogs_ratio": 0.5,
+      "labor_ratio": 0.18,
+      "fitout_krw_per_pyeong": 1800000,
+      "operating_days_per_month": 24,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
+      "label": "시연용 가정 — 업종 원가 구조",
+      "as_of": "2026-07-28"
+    }
+  }
 }
