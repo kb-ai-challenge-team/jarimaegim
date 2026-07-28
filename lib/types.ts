@@ -359,6 +359,11 @@ export interface ChatStreamHandlers {
   onDone(result: { message: string; citations: Citation[]; integration_status: string }): void;
 }
 
+/** 화면이 축을 묶어 보여주는 세 갈래. **실행 단위가 아니다** — 실행 그래프의 단위는 축
+ *  하나이고, 이 값은 그 축들을 화면에서 어떻게 모아 보여줄지만 정한다. 둘을 겹쳐 놓으면
+ *  "같이 보여주는 것"이 "같이 실행되는 것"이 된다. */
+export type DisplayGroup = "어디" | "얼마" | "언제";
+
 /** 제안서 03장의 12개 에이전트 선언. `GET /api/v1/agents` 가 주는 모양. */
 export interface AgentSpec {
   key: string;
@@ -367,6 +372,8 @@ export interface AgentSpec {
   source_name: string;
   produces: string;
   evidence_grade: EvidenceGrade | null;
+  /** 판단 축만 갖는다. 메인(종합)과 조건(수립)은 판단 축이 아니므로 null 이다. */
+  display_group: DisplayGroup | null;
 }
 
 /** 백엔드 `AgentStatus` 와 짝을 이룬다. 유니온을 열어 두는 이유는, 백엔드가 어휘를 넓혔을 때

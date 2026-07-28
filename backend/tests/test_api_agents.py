@@ -120,6 +120,22 @@ def test_status_reports_the_same_twelve(client):
     assert payload["agents"]["total"] == 12
 
 
+def test_the_roster_exposes_the_display_group(client):
+    """화면이 축을 어디/얼마/언제로 묶으려면 그 묶음을 선언에서 읽을 수 있어야 한다.
+    프론트가 키 이름으로 짐작해 묶으면 축이 늘 때마다 두 곳을 고쳐야 한다."""
+    agents = {item["key"]: item for item in client.get("/api/v1/agents").json()["agents"]}
+    assert agents["location.demand"]["display_group"] == "어디"
+    assert agents["finance.kb_products"]["display_group"] == "얼마"
+    assert agents["timing.policy"]["display_group"] == "언제"
+    # 메인과 조건은 판단 축이 아니므로 묶음이 없다.
+    assert agents["main.integrate"]["display_group"] is None
+
+
+def test_status_carries_the_display_group_too(client):
+    agents = {item["key"]: item for item in client.get("/api/v1/status").json()["agents"]["agents"]}
+    assert agents["location.survival"]["display_group"] == "어디"
+
+
 # ── POST /api/v1/cases/{id}/prescribe ─────────────────────────────
 
 def test_prescribe_requires_a_session(case_id):

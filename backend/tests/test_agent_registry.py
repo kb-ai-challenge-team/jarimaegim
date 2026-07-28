@@ -56,3 +56,44 @@ def test_spec_looks_up_by_key():
 def test_spec_rejects_an_unknown_key():
     with pytest.raises(KeyError):
         spec("finance.nope")
+
+
+# ── 화면 표시 그룹 ────────────────────────────────────────────────────────
+#
+# `display_group` 은 **표시용 묶음일 뿐 실행 단위가 아니다.** 실행 그래프는 축 하나가 단위이고,
+# 어디/얼마/언제는 그 축들을 화면에서 어떻게 묶어 보여줄지만 정한다. 팀(`team`)이 실행 경계를
+# 겸하던 구조를 걷어내는 것이 이후 단계이고, 그때 사라지는 것은 `team` 이지 이 필드가 아니다.
+
+def test_every_judging_axis_declares_a_display_group():
+    """판단 축은 전부 화면 어딘가에 놓인다. 놓일 자리가 없는 축은 화면에서 사라진다."""
+    for item in AGENT_SPECS:
+        if item.team in ("finance", "location", "timing"):
+            assert item.display_group, f"{item.key} 에 표시 그룹이 없습니다"
+
+
+def test_the_display_groups_are_exactly_the_three_the_product_promises():
+    groups = {item.display_group for item in AGENT_SPECS if item.display_group}
+    assert groups == {"어디", "얼마", "언제"}
+
+
+def test_location_axes_are_shown_under_where():
+    for item in AGENT_SPECS:
+        if item.team == "location":
+            assert item.display_group == "어디"
+
+
+def test_finance_axes_are_shown_under_how_much():
+    for item in AGENT_SPECS:
+        if item.team == "finance":
+            assert item.display_group == "얼마"
+
+
+def test_timing_is_shown_under_when():
+    assert spec("timing.policy").display_group == "언제"
+
+
+def test_the_main_agent_and_the_condition_layer_are_not_display_axes():
+    """메인은 종합이고 조건은 수립이다. 둘 다 판단 축이 아니므로 축 묶음에 끼지 않는다 —
+    끼면 화면의 축 개수가 실제 판단 개수보다 많아진다."""
+    for key in ("main.integrate", "condition.location", "condition.finance"):
+        assert spec(key).display_group is None

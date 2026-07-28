@@ -414,9 +414,12 @@ def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
 
 def agent_roster() -> dict[str, Any]:
     return {"total": len(AGENT_SPECS),
+            # `display_group` 은 화면 묶음이지 실행 단위가 아니다. 프론트가 키 이름으로
+            # 짐작해 묶으면 축이 늘 때마다 두 곳을 고쳐야 하므로 선언에서 그대로 내보낸다.
             "agents": [{"key": item.key, "team": item.team, "name": item.name,
                         "source_name": item.source_name, "produces": item.produces,
-                        "evidence_grade": item.evidence_grade} for item in AGENT_SPECS]}
+                        "evidence_grade": item.evidence_grade,
+                        "display_group": item.display_group} for item in AGENT_SPECS]}
 
 
 @app.get("/api/v1/agents")

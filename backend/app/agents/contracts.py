@@ -18,9 +18,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from ..models import Provenance
+
+#: 화면이 축을 묶어 보여주는 세 갈래. **실행 단위가 아니다.**
+#:
+#: 실행 그래프의 단위는 축 하나이고, 이 값은 그 축들을 화면에서 어떻게 모아 보여줄지만 정한다.
+#: 둘을 겹쳐 놓으면 "같이 보여주는 것"이 "같이 실행되는 것"이 되고, 한 축이 죽을 때 함께 죽는
+#: 이유가 데이터 원천이 아니라 화면 배치가 된다 — 팀 계층이 정확히 그렇게 굳었다.
+DisplayGroup = Literal["어디", "얼마", "언제"]
 
 
 class AgentStatus(StrEnum):
@@ -58,6 +65,9 @@ class AgentSpec:
     produces: str
     #: 입지 주장을 하는 에이전트만 A/B/C/U 를 선언한다. 나머지는 None.
     evidence_grade: str | None = None
+    #: 화면이 이 축을 어느 묶음에 놓는가. 판단 축만 갖는다 — 메인(종합)과 조건(수립)은
+    #: 판단 축이 아니므로 None 이고, 묶음에 끼면 화면의 축 개수가 실제 판단 개수보다 많아진다.
+    display_group: DisplayGroup | None = None
 
     def outcome(self, status: AgentStatus, *, message: str | None = None,
                 data: dict[str, Any] | None = None,
