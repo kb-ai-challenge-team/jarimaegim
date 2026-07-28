@@ -133,6 +133,43 @@ class AIService:
         except Exception:
             return {"message": "AI 설명 연결이 지연되고 있습니다. 저장된 분석과 공식 원문은 계속 사용할 수 있습니다.", "citations": [], "integration_status": "unavailable"}
 
+    # 모델에게 값을 채우게 하지 않고 "어느 구간이 그 말을 하는가"를 지목하게 한다.
+    # 금액 환산조차 시키지 않는다 — monthly_rent_krw 의 value 는 서버가 evidence 에서 다시 계산한다.
+    def build_interpret_prompt(self, user_text: str) -> str:
+        """조건 추출기의 지시문. explain 과 마찬가지로 키 없이도 단정할 수 있게 분리해 둔다."""
+        return (
+            "당신은 자리매김의 조건 추출기입니다. 사용자 문장이 명시적으로 말한 것만 뽑습니다.\n"
+            "industry·district·monthly_rent_krw·business_stage·startup_type·priority 여섯 필드를 "
+            "각각 {\"value\": ..., \"evidence\": ...} 형태로 담은 JSON 객체 하나만 출력하세요.\n"
+            "1. 문장에 없는 값은 반드시 null 로 두세요. 추론·보완·평균값 채우기를 금지합니다.\n"
+            "2. 값을 채운 필드는 evidence 에 근거가 된 사용자 문장의 일부를 원문 그대로 복사하세요. "
+            "요약·번역·재작성은 금지이며, 원문에 없는 문구를 넣으면 그 필드는 버려집니다.\n"
+            "3. 어떤 계산도 하지 마세요. 합계·단위 환산·비율·기간 환산 전부 금지입니다.\n"
+            "4. district 는 서울 25개 자치구 이름만 허용합니다. 그 밖의 지역은 null 입니다.\n"
+            "5. monthly_rent_krw 는 value 를 null 로 두고 evidence 에 월세를 말한 구간만 넣으세요. "
+            "금액 환산은 서버가 합니다.\n"
+            "6. business_stage 는 PRE_OPEN·RELOCATING·SECOND_STORE, "
+            "startup_type 은 INDEPENDENT·FRANCHISE·UNDECIDED, "
+            "priority 는 STABILITY·DEMAND·COST·GROWTH 중 하나입니다.\n"
+            f"사용자 문장: {user_text}"
+        )
+
+    async def interpret_conditions(self, user_text: str) -> dict[str, Any] | None:
+        """모델이 제안한 필드 맵. 키가 없거나 호출이 실패하면 None 을 돌려주고 호출부가 규칙 경로로 간다.
+
+        여기서 나온 값은 아직 신뢰 대상이 아니다 — condition_interpret.sanitize 를 반드시 통과해야 한다."""
+        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+            return None
+        try:
+            response = await self._respond(self.build_interpret_prompt(user_text))
+            text = (response.output_text or "").strip()
+            if not text:
+                return None
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
     async def _respond(self, prompt: str):
         """Reasoning models need headroom beyond the reasoning pass; non-reasoning models reject `reasoning`."""
         common = {"model": self.settings.ai_chat_model, "input": prompt, "store": False, "max_output_tokens": 2000}
