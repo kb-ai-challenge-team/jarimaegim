@@ -218,7 +218,10 @@ export const api = {
   // answers.
   chat: (caseId: string, content: string) => request<{ message: string; citations: Citation[]; integration_status: string }>(`/cases/${caseId}/messages`, { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ client_message_id: requestId(), content, base_case_version: 1, confirmed_case_patch: [], locale: "ko-KR" }) }),
   chatStream: (caseId: string, content: string, handlers: ChatStreamHandlers, signal?: AbortSignal) => chatStream(caseId, content, handlers, signal),
-  createDocument: (caseId: string, template: string) => request<DocumentRecord>("/documents", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, template, confirmed: true }) }),
+  // 선택은 id 로만 보낸다. 이름·금리·URL 을 실어 보내면 서버가 그것을 그대로 인쇄하게 되고,
+  // 조작된 문자열이 KB 문서 모양으로 찍히는 길이 열린다.
+  createDocument: (caseId: string, template: string, plan: { confirmed: boolean; selected_product_ids: string[]; selected_program_ids: string[]; funding_input: FundingBandInput | null }) =>
+    request<DocumentRecord>("/documents", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, template, ...plan }) }),
   getDocument: (documentId: string) => request<DocumentRecord>(`/documents/${documentId}`),
   downloadDocument: async (documentId: string) => { const response = await fetch(`${API_BASE}/documents/${documentId}/download`, { credentials: "include", headers: requestHeaders() }); if (!response.ok) throw await responseError(response); return response.blob(); },
   createPrivacyRequest: (requestType: string) => request<{ request_id: string; status: string }>("/privacy/requests", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ request_type: requestType, verification_method: "ANON_COOKIE" }) })

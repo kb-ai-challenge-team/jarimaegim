@@ -6,9 +6,11 @@ import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, PRIORITY_LABELS, PYEO
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
 import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
-// 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 처방 세 단계로 간다. 프로필은 스텝이 아니라 진입 관문이고,
+// 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 조달 → 서류로 간다. 프로필은 스텝이 아니라 진입 관문이고,
 // 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
-export type FlowStep = "profile" | "ask" | "confirm" | "recommend" | "prescribe";
+// 조달과 서류가 갈라져 있는 이유는 데이터에 있다 — 부족분은 후보를 확정해야 확정되고, 조달에서 고른
+// 수단은 서류가 만드는 문서의 내용을 바꾼다.
+export type FlowStep = "profile" | "ask" | "confirm" | "recommend" | "funding" | "paperwork";
 export type BandForm = typeof DEFAULT_BAND_FORM;
 export type { Profile } from "./profile-storage";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
@@ -87,6 +89,9 @@ export function useJarimaegim() {
   const [documents, setDocuments] = useState<Record<string, string>>({});
   const [docBusy, setDocBusy] = useState("");
   const [docNotice, setDocNotice] = useState("");
+  // 화면에 보인 순서를 그대로 들고 있는다. 문서의 나열 순서가 화면과 같아야 대조가 된다.
+  const [selected, setSelected] = useState<{ products: string[]; programs: string[] }>({ products: [], programs: [] });
+  const [docConfirmed, setDocConfirmed] = useState(false);
   const [bandForm, setBandForm] = useState<BandForm>(DEFAULT_BAND_FORM);
   const [bands, setBands] = useState<FundingBandResult | null>(null);
   const [bandState, setBandState] = useState<LocationState>("idle");
@@ -148,6 +153,13 @@ export function useJarimaegim() {
 
   const setProfileField = useCallback((key: keyof Profile, value: number) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const toggleFunding = useCallback((kind: "products" | "programs", id: string) => {
+    setSelected((prev) => {
+      const list = prev[kind];
+      return { ...prev, [kind]: list.includes(id) ? list.filter((item) => item !== id) : [...list, id] };
+    });
   }, []);
 
   /** 프로필 확정. 케이스·밴드·재검색이 계속 다시 읽고, 세션이 만료돼도 다시 묻지 않도록 브라우저에 남긴다. */
@@ -327,10 +339,16 @@ export function useJarimaegim() {
    *  고칠 수 있다. 채운 뒤 밴드를 다시 계산해야 처방 단계가 확정 후보 기준 금액을 본다. */
   const commitCandidate = useCallback((candidateId: string | null) => {
     setCommitted(candidateId);
-    setDocuments({}); setDocNotice("");
+    // 후보가 바뀌면 부족분이 바뀐다. 그 부족분으로 고른 수단은 근거를 잃으므로 함께 비운다.
+    setDocuments({}); setDocNotice(""); setSelected({ products: [], programs: [] }); setDocConfirmed(false);
+    if (!caseData) return;
+    // 케이스에 남겨야 PDF 의 매물 섹션과 대화의 상권 맥락이 산다. 저장이 실패해도 방금 한
+    // 확정을 되돌리지 않는다 — 사용자가 누른 것을 서버 사정으로 취소해서는 안 된다.
+    void api.updateCase(caseData.id, caseData.version, { committed_listing_id: candidateId })
+      .then(setCaseData).catch(() => undefined);
     if (!candidateId) return;
     const listing = candidates.find((candidate) => candidate.id === candidateId)?.listing;
-    if (!listing || !caseData) return;
+    if (!listing) return;
     const next: BandForm = {
       ...bandForm,
       area_pyeong: Number((listing.area_m2 / PYEONG_IN_M2).toFixed(1)),
@@ -343,18 +361,27 @@ export function useJarimaegim() {
     void runBands(caseData, next, profile).catch(() => setBandState("error"));
   }, [bandForm, candidates, caseData, profile, runBands]);
 
-  /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다. */
+  /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다.
+   *  선택은 id 로만 보내고 표시 문자열은 서버가 카탈로그에서 되찾는다. 금액은 서버가
+   *  같은 산식으로 다시 계산하므로 여기서 계산한 값을 보내지 않는다. */
   const prepareDocument = useCallback(async (template: string) => {
-    if (!caseData) return;
+    if (!caseData || !docConfirmed) return;
     setDocBusy(template); setDocNotice("");
     try {
-      const record = await api.createDocument(caseData.id, template);
+      const record = await api.createDocument(caseData.id, template, {
+        confirmed: docConfirmed,
+        selected_product_ids: selected.products,
+        selected_program_ids: selected.programs,
+        funding_input: bandForm.monthly_rent_krw > 0
+          ? { industry: caseData.inputs.industry, ...bandForm, ...profile }
+          : null
+      });
       setDocuments((prev) => ({ ...prev, [template]: record.document_id }));
       setDocNotice(record.message);
     } catch (err) {
       setDocNotice(err instanceof ApiError ? err.message : "문서를 준비하지 못했습니다.");
     } finally { setDocBusy(""); }
-  }, [caseData]);
+  }, [bandForm, caseData, docConfirmed, profile, selected]);
 
   const downloadDocument = useCallback(async (template: string) => {
     const id = documents[template];
@@ -398,8 +425,8 @@ export function useJarimaegim() {
     }
   }, [ensureSession]);
 
-  useEffect(() => { if (step === "prescribe" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
-  useEffect(() => { if (step === "prescribe" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
+  useEffect(() => { if (step === "funding" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
+  useEffect(() => { if (step === "funding" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
 
   /** The 정책 tab reads the same official notices without needing a case. */
   const loadCatalog = useCallback(async () => {
@@ -437,6 +464,7 @@ export function useJarimaegim() {
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
     setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle");
     setCommitted(null); setDocuments({}); setDocBusy(""); setDocNotice(""); setTraceOpen(false);
+    setSelected({ products: [], programs: [] }); setDocConfirmed(false);
   }, []);
 
   return {
@@ -445,6 +473,7 @@ export function useJarimaegim() {
     profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
+    selected, toggleFunding, docConfirmed, setDocConfirmed,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
     start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
   };
