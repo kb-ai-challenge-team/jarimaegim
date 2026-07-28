@@ -282,8 +282,10 @@ function BandBanner({ bands }: { bands: FundingBandResult }) {
   const maximum = bands.bands.find((line) => line.band === "MAXIMUM");
   if (!equity || !recommended || !maximum) return null;
   const partial = bands.status === "partial";
+  const demo = bands.parameter_status === "DEMO";
   const describe = (line: typeof equity) => `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)} · 소진 ${runwayLabel(line, partial)}`;
   return <div className="kb-band-banner">
+    {demo && <p className="kb-capacity-demo"><span className="demo-badge">시연용</span>미검증 시연용 제도 파라미터로 계산한 값입니다. 실제 심사 결과가 아닙니다.</p>}
     <div className="kb-band-banner-row"><span><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</span><span>{describe(recommended)}</span></div>
     <div className="kb-band-banner-row kb-band-banner-source"><span>자기자본 {formatKrw(equity.ceiling_krw)} + 차입 {formatKrw(recommended.loan_krw)}</span><span>금융 프로필에서 자동 반영</span></div>
     <div className="kb-band-banner-row"><span>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</span><span>{describe(equity)}</span></div>
