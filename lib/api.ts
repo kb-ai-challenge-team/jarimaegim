@@ -1,4 +1,4 @@
-import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, PrescribeResult, PrescribeStreamHandlers, Program, RetrievalResponse, StatusResponse } from "./types";
+import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, PrescribeStreamHandlers, Program, RetrievalResponse, StatusResponse } from "./types";
 import { createSseParser, type SseEvent } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
