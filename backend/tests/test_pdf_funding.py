@@ -127,3 +127,25 @@ def test_the_pdf_renders_with_funding_and_a_selection():
     payload = render_case_pdf(CASE, DESCRIPTOR, funding=computed(),
                               products=[PRODUCT], programs=[PROGRAM], dropped=1)
     assert payload.startswith(b"%PDF")
+
+
+def test_the_two_new_sections_actually_reach_the_story(monkeypatch):
+    """%PDF 로만 단언하면 루프가 아무것도 붙이지 않아도 통과한다. 실제로 실린 문단을 확인한다."""
+    from reportlab.platypus import SimpleDocTemplate
+    captured: list[str] = []
+    original = SimpleDocTemplate.build
+
+    def capture(self, story, *args, **kwargs):
+        captured.extend(getattr(item, "text", "") for item in story)
+        return original(self, story, *args, **kwargs)
+
+    monkeypatch.setattr(SimpleDocTemplate, "build", capture)
+    render_case_pdf(CASE, DESCRIPTOR, funding=computed(), products=[PRODUCT], programs=[PROGRAM], dropped=1)
+    assert any("자금조달 요약" in text for text in captured)
+    assert any("120,000,000원" in text for text in captured)
+    assert any("고른 조달 수단" in text for text in captured)
+    assert any("KB 소호모바일대출" in text for text in captured)
+    assert any("1건" in text and "제외" in text for text in captured)
+    selection_index = next(i for i, text in enumerate(captured) if "고른 조달 수단" in text)
+    notice_index = next(i for i, text in enumerate(captured) if "AI가 작성한 초안이며" in text)
+    assert selection_index < notice_index
