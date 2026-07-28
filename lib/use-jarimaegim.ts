@@ -174,33 +174,6 @@ export function useJarimaegim() {
     return sessionReady.current;
   }, []);
 
-  /** 발화를 서버 제안으로 바꾼다. 케이스는 아직 만들지 않는다 — 확인 화면의 승인이 그 일을 한다. */
-  const interpret = useCallback(async (text: string) => {
-    setBusy("interpret"); setError(""); setInterpretText(text);
-    // 발화 원문을 남긴다. 처방 실행의 condition.location 이 아직 비어 있는 항목을
-    // 이 원문에서 읽고, 그때도 원문에 그대로 있는 조각만 통과한다.
-    setUtterance(text);
-    try {
-      await ensureSession();
-      const result = await api.interpretConditions(text);
-      setProposal(result); setEdited(new Set());
-      const patch: Partial<CaseInput> = {};
-      const field = result.fields;
-      if (typeof field.industry.value === "string") patch.industry = field.industry.value;
-      if (typeof field.district.value === "string") patch.district = field.district.value;
-      if (typeof field.business_stage.value === "string") patch.business_stage = field.business_stage.value as CaseInput["business_stage"];
-      if (typeof field.startup_type.value === "string") patch.startup_type = field.startup_type.value as CaseInput["startup_type"];
-      if (typeof field.priority.value === "string") patch.priority = field.priority.value as CaseInput["priority"];
-      setForm((prev) => ({ ...prev, ...patch }));
-      const rent = field.monthly_rent_krw.value;
-      if (typeof rent === "number" && rent > 0) setBandForm((prev) => ({ ...prev, monthly_rent_krw: rent }));
-      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: result.message }]);
-      setStep("confirm");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "조건을 정리하지 못했습니다. 아래에서 직접 골라 주세요.");
-      setProposal(null); setStep("confirm");
-    } finally { setBusy(""); }
-  }, [ensureSession]);
 
   /** 직접 입력으로 시작. 서버를 거치지 않고 빈 제안으로 확인 화면에 들어간다. */
   const startManual = useCallback(() => {
@@ -350,9 +323,17 @@ export function useJarimaegim() {
     () => ({ ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw }),
     [form, profile.equity_krw]);
 
-  const start = useCallback(async () => {
+  /** 실행. `patch` 는 방금 읽어 아직 `form` 에 반영되지 않은 값이다.
+   *
+   *  `form` 은 `setForm` 직후에도 이전 값이다. 자동 진행은 발화에서 방금 읽은 업종으로 곧바로
+   *  시작해야 하므로 상태 반영을 기다리지 않고 패치를 직접 받는다 — 기다리면 업종이 빈 채로
+   *  케이스가 만들어진다. */
+  const startWith = useCallback(async (patch: Partial<CaseInput>, bandPatch: Partial<BandForm> = {}) => {
     setError(""); setBusy("case"); setStep("recommend");
-    const inputs = runInputs;
+    const inputs: CaseInput = { ...form, ...patch, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw };
+    // 임대 조건도 같은 이유로 패치를 직접 받는다. 발화에서 읽은 월세를 `setBandForm` 으로만
+    // 넘기면 이 실행은 반영 전 값(0원)을 보내고, 손익분기가 유보로 빠진다.
+    const terms: BandForm = { ...bandForm, ...bandPatch };
     beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
@@ -367,9 +348,9 @@ export function useJarimaegim() {
       let outcome: PrescribeResult | null = null;
       let mainOutcome: AgentProgress | null = null;
       await api.prescribeStream(created.id, {
-        monthly_rent_krw: bandForm.monthly_rent_krw, monthly_maintenance_krw: bandForm.monthly_maintenance_krw,
-        key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
-        deposit_krw: bandForm.deposit_krw || null, fitout_krw: bandForm.fitout_krw || null,
+        monthly_rent_krw: terms.monthly_rent_krw, monthly_maintenance_krw: terms.monthly_maintenance_krw,
+        key_money_krw: terms.key_money_krw, area_pyeong: terms.area_pyeong || null,
+        deposit_krw: terms.deposit_krw || null, fitout_krw: terms.fitout_krw || null,
         existing_debt_krw: profile.existing_debt_krw, other_monthly_fixed_krw: profile.other_monthly_fixed_krw,
         // 운영형태는 화면이 묻지 않는다. 발화에 있으면 처방 때 condition.location 이 읽는다.
         utterance,
@@ -405,10 +386,11 @@ export function useJarimaegim() {
 
       // 밴드 산출물은 처방 화면이 통째로 쓰므로 기존 경로를 그대로 유지한다. 같은 compute_bands 를
       // 부르므로 두 경로가 다른 답을 낼 수는 없다. 페이로드 통합은 별도 변경으로 다룬다.
-      const band = await runBands(created, bandForm, profile);
+      const band = await runBands(created, terms, profile);
       const line = recommendedLine(band);
       const ceiling = (outcome as PrescribeResult | null)?.summary?.recommended_ceiling_krw ?? line?.ceiling_krw ?? null;
       // 후보를 거르는 상한은 사용자가 스스로 좁힌 예산이 아니라 산출된 권장 조달선이다.
+      // 희망 월세가 없으면 권장 조달선도 없다 — 그때는 케이스 예산을 그대로 둔다.
       const record = ceiling && ceiling > created.inputs.budget_krw
         ? await api.updateCase(created.id, created.version, { budget_krw: ceiling })
         : created;
@@ -419,7 +401,53 @@ export function useJarimaegim() {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [bandForm, beginTrace, ensureSession, failTrace, handoff, profile, runBands, runInputs, runSearch, settleStep, utterance]);
+  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep, utterance]);
+
+  const start = useCallback(() => startWith({}), [startWith]);
+
+  /** 조건을 고치면 영향받는 분석을 다시 돌린다. 부분 무효화는 M5 의 몫이고, 그전까지는
+   *  전체를 다시 돈다 — 낡은 판정을 새 조건 옆에 남겨 두는 것보다 낫다.
+   *
+   *  케이스가 없으면(조건 화면에서 고치는 중) 아무것도 하지 않는다. 아직 돌린 것이 없으므로
+   *  다시 돌릴 것도 없다. */
+  const rerun = useCallback(() => {
+    if (!caseData || trace.state === "running") return;
+    void startWith({});
+  }, [caseData, startWith, trace.state]);
+
+  /** 발화를 서버 제안으로 바꾼다. 케이스는 아직 만들지 않는다 — 확인 화면의 승인이 그 일을 한다. */
+  const interpret = useCallback(async (text: string) => {
+    setBusy("interpret"); setError(""); setInterpretText(text);
+    // 발화 원문을 남긴다. 처방 실행의 condition.location 이 아직 비어 있는 항목을
+    // 이 원문에서 읽고, 그때도 원문에 그대로 있는 조각만 통과한다.
+    setUtterance(text);
+    try {
+      await ensureSession();
+      const result = await api.interpretConditions(text);
+      setProposal(result); setEdited(new Set());
+      const patch: Partial<CaseInput> = {};
+      const field = result.fields;
+      if (typeof field.industry.value === "string") patch.industry = field.industry.value;
+      if (typeof field.district.value === "string") patch.district = field.district.value;
+      if (typeof field.business_stage.value === "string") patch.business_stage = field.business_stage.value as CaseInput["business_stage"];
+      if (typeof field.startup_type.value === "string") patch.startup_type = field.startup_type.value as CaseInput["startup_type"];
+      if (typeof field.priority.value === "string") patch.priority = field.priority.value as CaseInput["priority"];
+      setForm((prev) => ({ ...prev, ...patch }));
+      const rent = field.monthly_rent_krw.value;
+      const bandPatch: Partial<BandForm> = {};
+      if (typeof rent === "number" && rent > 0) { bandPatch.monthly_rent_krw = rent; setBandForm((prev) => ({ ...prev, monthly_rent_krw: rent })); }
+      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: result.message }]);
+      // 차단 항목(업종)이 발화에서 채워졌으면 확인을 기다리지 않고 그대로 진행한다. 자치구는
+      // 기본값이 있고 자기자본은 프로필 단계가 이미 확정했으므로 여기서 볼 것은 업종뿐이다.
+      // 확인을 없앤 대신 조건 스트립이 실행 화면에 상주하며 무엇을 어떻게 읽었는지 계속 보여준다.
+      const industry = typeof field.industry.value === "string" ? field.industry.value.trim() : "";
+      if (industry) { void startWith({ ...patch, industry }, bandPatch); return; }
+      setStep("confirm");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "조건을 정리하지 못했습니다. 아래에서 직접 골라 주세요.");
+      setProposal(null); setStep("confirm");
+    } finally { setBusy(""); }
+  }, [ensureSession, startWith]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -583,7 +611,7 @@ export function useJarimaegim() {
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
-    start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
+    start, startWith, rerun, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
   };
 }
 

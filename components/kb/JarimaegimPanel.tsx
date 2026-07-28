@@ -188,7 +188,7 @@ function GateStep({ flow }: { flow: Jarimaegim }) {
     <ProfileBadge flow={flow} />
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>
       업종만 알려주시면 바로 찾아드릴게요. 나머지는 말씀하신 대로 읽었고, 아래에서 언제든 고칠 수 있습니다.</p></div>
-    <ConditionStrip flow={flow} editable />
+    <ConditionStrip flow={flow} editable onEdited={flow.rerun} />
     {!ready && <section className="kb-askbox">
       <header><span>더 필요한 것</span><small>1 / 최대 3</small></header>
       <label className="kb-field"><span>업종<small>검색 질의어와 업종 파라미터를 정합니다</small></span>
@@ -283,7 +283,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
 
     {/* 확인 클릭을 없앤 대신 조건이 여기 남는다. 무엇을 어떤 발화 조각에서 읽었는지가
         결과 옆에 계속 보여야 사용자가 자기가 말하지 않은 값을 알아본다. */}
-    <ConditionStrip flow={flow} editable />
+    <ConditionStrip flow={flow} editable onEdited={flow.rerun} />
 
     {bands && bands.status !== "integration_pending" && <BandBanner bands={bands} />}
     {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />{bands.message}</p>}
