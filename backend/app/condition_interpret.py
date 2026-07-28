@@ -13,9 +13,12 @@ from .districts import SEOUL_DISTRICTS
 # 금액은 모델이 준 value 를 믿지 않고 evidence 구간에서 코드가 다시 계산한다. 모델이 하는 일은
 # "어느 구간이 월세를 말하는가"를 지목하는 것뿐이다.
 
-STAGES = frozenset({"PRE_OPEN", "RELOCATING", "SECOND_STORE"})
-TYPES = frozenset({"INDEPENDENT", "FRANCHISE", "UNDECIDED"})
-PRIORITIES = frozenset({"STABILITY", "DEMAND", "COST", "GROWTH"})
+# 열거값은 tuple 로 둔다. frozenset 은 in 검사에서 값을 해시하므로 모델이 리스트나 dict 를
+# 넣으면 TypeError 로 터진다 — SEOUL_DISTRICTS 가 tuple 인 것과 같은 이유다. tuple 의 in 은
+# 동등 비교라 어떤 타입이 와도 조용히 False 가 된다.
+STAGES = ("PRE_OPEN", "RELOCATING", "SECOND_STORE")
+TYPES = ("INDEPENDENT", "FRANCHISE", "UNDECIDED")
+PRIORITIES = ("STABILITY", "DEMAND", "COST", "GROWTH")
 ENUMS = {"business_stage": STAGES, "startup_type": TYPES, "priority": PRIORITIES}
 
 # 케이스 모델(models.py CaseInput.industry)의 상한. 넘으면 422 대신 여기서 떨어뜨린다.
@@ -31,6 +34,11 @@ def sanitize(text: str, proposed: dict[str, Any]) -> dict[str, Any]:
 
     응답 전체를 버리지 않는 것이 의도다 — 여섯 필드 중 하나가 어긋났다고 나머지 다섯을
     사용자에게 다시 입력받게 만들 이유가 없다."""
+    # 이 함수는 모델 응답의 격리 경계다. 어떤 모양이 와도 예외를 던지지 않고 빈 제안으로 떨어진다.
+    if not isinstance(text, str):
+        text = ""
+    if not isinstance(proposed, dict):
+        proposed = {}
     notes: list[str] = []
     fields = {name: _keep(text, name, proposed.get(name), notes) for name in FIELDS}
     unresolved = [name for name, field in fields.items() if field["value"] is None]

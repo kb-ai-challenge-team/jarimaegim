@@ -97,3 +97,30 @@ def test_an_overlong_industry_is_dropped():
     text = "가" * 200
     result = sanitize(text, {"industry": {"value": "가" * 200, "evidence": "가" * 200}})
     assert result["fields"]["industry"]["value"] is None
+
+
+def test_an_unhashable_enum_value_does_not_raise():
+    """모델이 열거값 자리에 리스트를 넣어도 500 이 아니라 미해결로 떨어져야 한다.
+    frozenset 은 in 검사에서 값을 해시해 TypeError 로 터졌다."""
+    text = "처음 창업이에요"
+    result = sanitize(text, {"business_stage": {"value": ["PRE_OPEN"], "evidence": "처음 창업"}})
+    assert result["fields"]["business_stage"]["value"] is None
+
+
+def test_an_unhashable_district_value_does_not_raise():
+    text = "마포구에서 카페"
+    result = sanitize(text, {"district": {"value": {"name": "마포구"}, "evidence": "마포구"}})
+    assert result["fields"]["district"]["value"] is None
+
+
+def test_a_non_dict_proposal_yields_a_blank_result():
+    """AI 응답이 dict 가 아니어도 격리 경계가 죽으면 안 된다."""
+    for bad in (None, [1, 2], 42, "카페", True):
+        result = sanitize("마포구에서 카페", bad)
+        assert len(result["unresolved"]) == 6
+        assert all(field["value"] is None for field in result["fields"].values())
+
+
+def test_a_non_string_text_yields_a_blank_result():
+    result = sanitize(None, {"industry": {"value": "카페", "evidence": "카페"}})
+    assert result["fields"]["industry"]["value"] is None
