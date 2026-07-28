@@ -48,7 +48,7 @@ function markerNode(candidate: Candidate, rank: number, isFocused: boolean, onFo
     name.append(chip);
     const line = document.createElement("span");
     line.className = "kb-marker-terms";
-    line.textContent = `${listing.area_m2}㎡ · 보 ${manwon(listing.deposit_krw)} / 월 ${manwon(listing.monthly_rent_krw)}`;
+    line.textContent = `${listing.area_m2}㎡ · 보증금 ${manwon(listing.deposit_krw)} / 월세 ${manwon(listing.monthly_rent_krw)}`;
     node.append(line);
   }
   node.addEventListener("click", (event) => { event.stopPropagation(); onFocus(candidate.id); });

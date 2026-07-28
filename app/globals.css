@@ -445,8 +445,9 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-candidate-main{display:flex;gap:11px;border:0;background:none;padding:0;text-align:left;width:100%}
 .kb-rank{width:24px;height:24px;flex:none;display:grid;place-items:center;border-radius:7px;background:var(--kb-navy);color:#fff;font-size:12px;font-weight:700}
 .kb-candidate-body{flex:1;min-width:0;display:block}
-.kb-candidate-body strong{display:block;font-size:14.5px;color:var(--kb-ink);letter-spacing:-.02em}
-.kb-candidate-body small{display:block;margin-top:2px;font-size:12px;color:var(--kb-mute)}
+.kb-candidate-body > strong{display:block;font-size:14.5px;color:var(--kb-ink);letter-spacing:-.02em}
+.kb-candidate-body > small{display:block;margin-top:2px;font-size:12px;color:var(--kb-mute)}
+.kb-candidate-body .listing-terms strong{display:inline;font-size:12px;color:var(--kb-ink);font-weight:700}
 .kb-grade{display:inline-block;margin-top:7px;padding:3px 9px;border-radius:50px;font-size:11.5px;font-weight:600;background:var(--kb-fill);color:var(--kb-sub)}
 .kb-grade[data-grade=A]{background:#e8f0fe;color:#1b4fbf}
 .kb-grade[data-grade=B]{background:#eef3ff;color:#3d70d8}

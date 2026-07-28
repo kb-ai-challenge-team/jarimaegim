@@ -132,6 +132,37 @@ def _first_result(payload: dict[str, Any]) -> dict[str, Any] | None:
     return results[0] if results else None
 
 
+def _provider_failure(payload: dict[str, Any]) -> str | None:
+    """presale-mcp reports an upstream API failure as a SUCCESSFUL tool result with an empty row
+    list and the failure buried in metadata -- confirmed live: a 401 from ApplyHome came back as
+    `announcements: []` plus `provider_query_failed_count: 1` and a warning. Reading only the row
+    list would make us tell the user "no announcements here" when we never managed to look, which
+    is the fabrication this project's first rule forbids. Returns the upstream's own message when
+    a query genuinely failed, None when the empty result is real."""
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    failed = metadata.get("provider_query_failed_count") or 0
+    timed_out = metadata.get("provider_query_timeout_count") or 0
+    if not (isinstance(failed, int) and failed > 0) and not (isinstance(timed_out, int) and timed_out > 0):
+        return None
+    warnings = metadata.get("warnings")
+    if isinstance(warnings, list):
+        for item in warnings:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+    return "원천 조회에 실패했습니다."
+
+
+def _advisories(payload: dict[str, Any]) -> list[str]:
+    """Non-fatal warnings the upstream attached (result truncation, a keyword too short to be
+    reliable). The rows are real, but presenting them as the complete answer would overstate what
+    we know, so they ride along for the model to relay."""
+    metadata = payload.get("metadata")
+    warnings = metadata.get("warnings") if isinstance(metadata, dict) else None
+    return [item.strip() for item in warnings if isinstance(item, str) and item.strip()] if isinstance(warnings, list) else []
+
+
 def _clamp_int(value: Any, *, default: int, low: int, high: int) -> int:
     try:
         parsed = int(value) if value is not None else default
@@ -287,6 +318,12 @@ class ChatToolset:
         # own source, src/tools/presale-announcements.ts's geocodeAndFilterByRadius), unlike an
         # earlier version of this tool whose radius_m parameter was removed because it claimed to
         # filter and did not.
+        failure = _provider_failure(payload)
+        if failure:
+            return {"status": "error",
+                    "message": f"청약홈 분양공고를 조회하지 못했습니다: {failure} 공고가 없다는 뜻이 아니라 확인하지 못했다는 뜻입니다.",
+                    "citations": [citation(f"청약홈 분양공고 — {place.name}", "https://www.applyhome.co.kr/",
+                                           "청약홈", "lookup_seoul_presale")]}
         announcements = _list_field(payload, "announcements")
         summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
         unlocated = summary.get("unlocated") or 0
@@ -361,6 +398,12 @@ class ChatToolset:
             if "NOT_FOUND" in str(exc):
                 return empty_result
             raise
+        failure = _provider_failure(payload)
+        if failure:
+            return {"status": "error",
+                    "message": f"국토교통부 실거래를 조회하지 못했습니다: {failure} 거래가 없다는 뜻이 아니라 확인하지 못했다는 뜻입니다.",
+                    "citations": [citation("국토교통부 실거래가", "https://rt.molit.go.kr/",
+                                           "국토교통부 실거래가", "lookup_complex_trades")]}
         items = _list_field(payload, "items")
         if not items:
             return empty_result
@@ -393,6 +436,7 @@ class ChatToolset:
         by_keyword: dict[str, list[dict[str, Any]]] = {}
         failures: list[str] = []
         unresolved_categories: list[str] = []
+        advisories: list[str] = []
         for (kind, label, _), payload in zip(calls, results):
             if kind == "category":
                 if isinstance(payload, Exception):
@@ -408,6 +452,11 @@ class ChatToolset:
                 unresolved_categories.extend(
                     warning.removeprefix("Unknown category: ") for warning in (metadata.get("warnings") or [])
                     if warning.startswith("Unknown category: "))
+                # Truncation and low-confidence warnings: the rows are real, but Kakao caps a
+                # query at 45 results, so presenting them as the complete set overstates what we
+                # checked. Confirmed live -- a "카페" search hit the cap and said so here.
+                advisories.extend(item for item in _advisories(payload)
+                                  if not item.startswith("Unknown category: "))
             else:
                 if isinstance(payload, Exception):
                     failures.append(label)
@@ -415,6 +464,7 @@ class ChatToolset:
                     continue
                 rows = payload.get("results")
                 by_keyword[label] = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+                advisories.extend(_advisories(payload))
 
         found = sum(len(rows) for rows in list(by_category.values()) + list(by_keyword.values()))
         total_targets = len(categories) + len(keywords)
@@ -443,6 +493,11 @@ class ChatToolset:
         if unresolved_categories:
             result["unresolved_categories_note"] = (
                 f"다음 카테고리는 알려진 별칭이 아니어서 조회되지 않았습니다: {', '.join(unresolved_categories)}")
+        if advisories:
+            # Kakao caps a query at 45 rows and says so here. Rows we did get are real, but they
+            # are not necessarily all of them -- the model must not present a capped list as the
+            # complete picture.
+            result["completeness_note"] = " / ".join(dict.fromkeys(advisories))
         return result
 
     def _map_image_arguments(self, place: Place, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -524,7 +579,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                      "park(공원). keywords 는 자유 검색어를 받는다. 둘 중 하나는 반드시 지정해야 한다. "
                      "알 수 없는 카테고리는 unresolved_categories_note 에, 조회 자체가 실패한 대상은 "
                      "failed_targets/failure_note 에 담기며 -- 이때는 그 대상에 아무것도 없다고 말하지 말고 "
-                     "조회 자체가 실패했다고 전하라."),
+                     "조회 자체가 실패했다고 전하라. completeness_note 가 있으면 결과가 잘렸을 수 있다는 "
+                     "뜻이므로, 목록이 전부인 것처럼 말하지 말고 그 사실을 함께 전하라."),
      "parameters": {"type": "object", "additionalProperties": False,
                     "properties": {"place_ref": {"type": "string", "description": "resolve_seoul_place 가 발급한 값"},
                                    "categories": {"type": "array", "items": {"type": "string"},

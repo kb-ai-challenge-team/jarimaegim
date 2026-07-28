@@ -173,7 +173,7 @@ export const api = {
   createCase: (inputs: CaseInput, title: string) => request<CaseRecord>("/cases", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ title, inputs }) }),
   getCase: (id: string) => request<CaseRecord>(`/cases/${id}`),
   updateCase: (id: string, version: number, inputs: Partial<CaseInput>) => request<CaseRecord>(`/cases/${id}`, { method: "PATCH", headers: { "If-Match": String(version), "Idempotency-Key": requestId() }, body: JSON.stringify({ inputs }) }),
-  searchLocations: (caseId: string, inputs: CaseInput) => request<{ candidates: Candidate[]; status: "success" | "empty" | "integration_pending"; message?: string }>("/locations/search", { method: "POST", body: JSON.stringify({ case_id: caseId, industry: inputs.industry, district: inputs.district, limit: 12 }) }),
+  searchLocations: (caseId: string, inputs: CaseInput) => request<{ candidates: Candidate[]; status: "success" | "empty" | "integration_pending"; message?: string }>("/locations/search", { method: "POST", body: JSON.stringify({ case_id: caseId, industry: inputs.industry, district: inputs.district, limit: 4 }) }),
   // Landing map. Public on purpose — browsing must not mint an anonymous session cookie.
   getListingSummary: () => request<{ districts: DistrictSummary[] }>("/listings/summary"),
   getListings: (district: string, limit = 15) => request<{ candidates: Candidate[]; status: "success" | "empty"; message?: string }>(`/listings?district=${encodeURIComponent(district)}&limit=${limit}`),
