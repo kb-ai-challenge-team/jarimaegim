@@ -32,9 +32,14 @@ INDUSTRY_HINTS: list[tuple[re.Pattern[str], str]] = [
 NAMED_INDUSTRY = re.compile(r"([가-힣A-Za-z]{2,10}?)\s*(?:을|를|)\s*(?:창업|개업|오픈|차리|열려|열고|준비)")
 
 UNITS = {"억": 100_000_000, "천만": 10_000_000, "백만": 1_000_000, "만": 10_000}
-AMOUNT = re.compile(r"(\d+(?:[.,]\d+)?)\s*(억|천만|백만|만)?\s*원?")
+# 쉼표로 자릿수를 묶은 숫자(1,200)를 우선 매칭하고, 아니면 일반 숫자(소수 포함)로 떨어진다.
+# 쉼표를 소수점과 한 문자 클래스로 묶던 예전 [.,] 는 "3,000,000" 의 뒷자리를 잘라 먹었다 —
+# 한국어 금액 표기의 쉼표는 천단위 구분자이지 소수점이 아니므로 두 역할을 더는 섞지 않는다.
+NUMBER = r"(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)"
+AMOUNT = re.compile(r"(" + NUMBER + r")\s*(억|천만|백만|만)?\s*원?")
 # 월세 힌트 뒤 18자 안에서 금액을 찾는다. 힌트가 없으면 금액을 월세로 읽지 않는다.
-RENT = re.compile(r"(월세|임대료|월\s*임대)[^\d]{0,18}(\d+(?:[.,]\d+)?\s*(?:억|천만|백만|만)?\s*원?)")
+# amount_from 이 이 그룹(2)을 그대로 받아 파싱하므로 숫자 패턴은 AMOUNT 와 반드시 일치해야 한다.
+RENT = re.compile(r"(월세|임대료|월\s*임대)[^\d]{0,18}(" + NUMBER + r"\s*(?:억|천만|백만|만)?\s*원?)")
 
 STAGES = [(re.compile(r"이전|옮기|이사"), "RELOCATING"),
           (re.compile(r"2호점|두\s*번째|분점|추가\s*매장"), "SECOND_STORE"),
@@ -50,7 +55,12 @@ MAX_KRW = 100_000_000_000
 
 
 def amount_from(text: str) -> int | None:
-    """'300만원'·'1억'·'300'을 원 단위 정수로. 단위 없는 수는 만원 관행을 따른다.
+    """'300만원'·'1억'·'300'·'3,000,000원'을 원 단위 정수로. 세 갈래 규칙을 따른다:
+    (1) 억/천만/백만/만 단위어가 있으면 그 단위를 곱한다.
+    (2) 단위어가 없고 숫자가 1만 미만이면 만원 관행을 적용한다 — "월세 300" 은 300만원이다.
+    (3) 단위어가 없고 숫자가 1만 이상이면 그대로 원 단위로 읽는다 — "3,000,000" 을 쓴 사람은
+        정확히 그 금액을 뜻한 것이지, 300억을 뜻한 게 아니다.
+    쉼표는 천단위 구분자로만 벗겨내고 자릿수 판단에는 관여하지 않는다.
 
     AI 경로도 이 함수를 쓴다 — 모델은 근거 구간만 지목하고 산술은 코드가 한다
     (부록 A 불변조건 4)."""
@@ -62,7 +72,12 @@ def amount_from(text: str) -> int | None:
     except ValueError:
         return None
     unit = match.group(2)
-    value = round(raw * UNITS[unit]) if unit else round(raw * 10_000)
+    if unit:
+        value = round(raw * UNITS[unit])
+    elif raw < 10_000:
+        value = round(raw * 10_000)
+    else:
+        value = round(raw)
     if value <= 0 or value > MAX_KRW:
         return None
     return value

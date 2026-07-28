@@ -79,3 +79,28 @@ def test_amount_from_handles_units():
     assert amount_from("300만원") == 3_000_000
     assert amount_from("300") == 3_000_000
     assert amount_from("근거 없음") is None
+
+
+def test_two_districts_resolve_to_the_first_one_every_time():
+    """자치구 목록이 순서 없는 집합이면 같은 문장이 프로세스마다 다른 구를 냈다."""
+    text = "강남구에서 하다가 마포구로 이전하려고요"
+    assert parse_conditions(text)["district"]["value"] == "마포구"
+    assert parse_conditions(text)["district"]["value"] == "마포구"
+
+
+def test_amount_from_reads_a_comma_grouped_number_literally():
+    """3,000,000원은 3백만원이다. 만원 관행을 덧씌우면 10배가 된다."""
+    assert amount_from("3,000,000원") == 3_000_000
+    assert amount_from("3000000") == 3_000_000
+
+
+def test_amount_from_keeps_the_manwon_convention_for_small_bare_numbers():
+    assert amount_from("300") == 3_000_000
+    assert amount_from("1,200") == 12_000_000
+
+
+def test_rent_evidence_quotes_the_whole_number():
+    """인용이 잘리면 사용자가 확인 화면에서 오차를 잡을 수 없다."""
+    result = parse_conditions("월세 3,000,000원 정도로 생각 중이에요")
+    assert result["monthly_rent_krw"]["value"] == 3_000_000
+    assert "3,000,000" in result["monthly_rent_krw"]["evidence"]
