@@ -229,3 +229,100 @@ def test_the_synchronous_path_is_unchanged():
     report = LocationTeam(trade_area=FakeTradeArea()).run(CANDIDATES, CONDITIONS)
     assert outcome(report, "location.demand").data["by_candidate"]["l1"]["value"] == 1.4
     assert [item["id"] for item in report.surviving] == ["l1", "l2"]
+
+
+# ── 상권 원천이 이미 내린 판정을 그대로 쓰는 경로 ────────────────────────────
+# 실제 어댑터(trade_area_adapter)는 원시 비율이 아니라 판정을 넘긴다. 입지팀이 그것을 다시
+# 등급으로 바꾸면 표본 보정이 사라지므로, 넘어온 판정을 인용만 해야 한다.
+
+JUDGED = {"quarter": "20261", "sample_n": 42, "admin_dong": "역삼1동",
+          "signals": {"demand": {"score_band": "FAVORABLE", "direction": "POSITIVE",
+                                 "label": "점포당 유동인구", "explanation": "중앙값의 140% 수준입니다."},
+                      "competition": {"score_band": "CAUTION", "direction": "RISK",
+                                      "label": "동종 점포 밀집도", "explanation": "중앙값의 180%입니다."}}}
+
+
+class JudgedTradeArea:
+    """판정을 그대로 넘기는 어댑터. viability 는 판정할 수 없다고 선언한다."""
+
+    available = True
+    judgeable = ("demand", "competition")
+
+    def __init__(self, rows=None):
+        self.rows = rows if rows is not None else {("역삼1동", "카페"): JUDGED,
+                                                   ("삼성2동", "카페"): JUDGED}
+
+    def profile(self, admin_dong, industry):
+        return self.rows.get((admin_dong, industry))
+
+    @staticmethod
+    def reason_for(axis):
+        return "백분위 정의가 정해지지 않아 판정하지 않았습니다." if axis == "viability" else None
+
+
+async def test_a_pre_judged_signal_is_quoted_rather_than_graded_again():
+    report = await team(JudgedTradeArea()).arun(CANDIDATES, CONDITIONS)
+    demand = outcome(report, "location.demand")
+    assert demand.status is AgentStatus.OK
+    assert demand.data["by_candidate"]["l1"]["score_band"] == "FAVORABLE"
+    assert demand.data["by_candidate"]["l1"]["explanation"] == "중앙값의 140% 수준입니다."
+    # 원천이 등급을 매겼으므로 이쪽의 비율 기준(band)은 붙지 않는다.
+    assert "band" not in demand.data["by_candidate"]["l1"]
+
+
+async def test_the_competition_verdict_is_not_re_inverted():
+    # 원천이 이미 "조밀할수록 불리"를 반영해 CAUTION 을 냈다. 여기서 또 뒤집으면 유리해진다.
+    report = await team(JudgedTradeArea()).arun(CANDIDATES, CONDITIONS)
+    competition = outcome(report, "location.competition")
+    assert competition.data["by_candidate"]["l1"]["score_band"] == "CAUTION"
+    assert competition.data["by_candidate"]["l1"]["direction"] == "RISK"
+
+
+async def test_an_axis_the_source_cannot_judge_stays_pending_with_its_reason():
+    report = await team(JudgedTradeArea()).arun(CANDIDATES, CONDITIONS)
+    viability = outcome(report, "location.viability")
+    assert viability.status is AgentStatus.INTEGRATION_PENDING
+    assert "백분위" in (viability.message or "")
+
+
+async def test_an_unjudgeable_axis_still_drops_nobody():
+    # 달성 가능성은 유일하게 후보를 떨어뜨릴 수 있는 축이다. 꺼져 있으면 아무도 떨어지지 않는다.
+    report = await team(JudgedTradeArea()).arun(CANDIDATES, CONDITIONS)
+    assert [item["id"] for item in report.surviving] == ["l1", "l2"]
+    assert report.dropped == []
+
+
+async def test_a_candidate_without_an_aggregate_is_simply_not_judged():
+    report = await team(JudgedTradeArea(rows={("역삼1동", "카페"): JUDGED})).arun(CANDIDATES, CONDITIONS)
+    demand = outcome(report, "location.demand")
+    assert list(demand.data["by_candidate"]) == ["l1"]
+    assert [item["id"] for item in report.surviving] == ["l1", "l2"]
+
+
+class RecordingTradeArea(JudgedTradeArea):
+    """어떤 키로 조회했는지 기록한다. 상권 결합은 이름이 아니라 코드로 해야 한다."""
+
+    keyed_by = "admin_dong_code"
+
+    def __init__(self):
+        super().__init__(rows={})
+        self.asked = []
+
+    def profile(self, key, industry):
+        self.asked.append(key)
+        return None
+
+
+async def test_the_profile_is_looked_up_by_dong_code_when_the_candidate_carries_one():
+    # 행정동 이름은 표시용이다. 코드로 결합해야 '역삼1동'이 여러 상권에 걸쳐도 정확히 붙는다.
+    coded = [{**CANDIDATES[0], "admin_dong_code": "1168051000"}]
+    trade_area = RecordingTradeArea()
+    await team(trade_area).arun(coded, CONDITIONS)
+    assert trade_area.asked == ["1168051000"]
+
+
+async def test_a_candidate_without_a_dong_code_is_not_looked_up_by_name_instead():
+    # 이름으로 대신 맞추면 코드 결합의 정확성이 조용히 사라진다. 못 붙이면 판정하지 않는다.
+    trade_area = RecordingTradeArea()
+    await team(trade_area).arun([{"id": "l9", "name": "코드 없는 후보", "admin_dong": "역삼1동"}], CONDITIONS)
+    assert trade_area.asked == []

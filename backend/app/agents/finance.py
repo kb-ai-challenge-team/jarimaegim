@@ -105,6 +105,15 @@ ANOMALY_PREDICATES = {
     "RENT_WITHOUT_DEPOSIT": _rent_without_deposit,
 }
 
+#: 이 중에서만 판정을 멈출 수 있다.
+#:
+#: 나머지는 **화면이 그리도록 설계된 상태**다. 최대 조달선이 스트레스를 통과하지 못하는 것은
+#: 정상이고 밴드 표가 '스트레스 실패'를 그 줄에 붙여 보여 주며, 필요자금이 최대 조달선을 넘는
+#: 것도 `OUT_OF_RANGE` 로 표시하기로 한 상태다(제안서 12장). 그런 상태를 유보로 바꾸면 제품이
+#: 보여 주기로 한 것을 모델의 그날 판단이 덮어쓰게 되고, 사용자는 아무 표도 못 본 채 멈춘다.
+#: 그래서 모델이 유보를 골라도 여기 없는 이상치는 표시까지만 하고 판정을 계속한다.
+WITHHOLDABLE = frozenset({"DEPOSIT_EXCEEDS_EQUITY", "RENT_WITHOUT_DEPOSIT"})
+
 ANOMALY_MESSAGES = {
     "DEPOSIT_EXCEEDS_EQUITY": "희망 보증금이 자기자본을 넘어 조달 구조를 판정하지 않았습니다. 보증금이나 자기자본을 확인해 주세요.",
     "REQUIRED_CAPITAL_OUT_OF_RANGE": "필요자금이 최대 조달선을 넘어 조달 구조를 판정하지 않았습니다. 조건을 줄이거나 자기자본을 확인해 주세요.",
@@ -201,13 +210,16 @@ class FinanceTeam:
         confirmed, rejected = self._confirm_anomalies(review, conditions, computed)
         audit = {**review.as_data(),
                  "rejected": review.rejected + rejected}
-        if confirmed and review.chosen.get("verdict") == "withhold":
+        # 유보는 확인된 이상치 중 **유보 가능한 것**이 있을 때만 성립한다. 화면이 그리기로 한
+        # 상태는 표시만 하고 지나간다 — 그렇지 않으면 모델의 판단 하나가 밴드 표 전체를 지운다.
+        blocking = [code for code in confirmed if code in WITHHOLDABLE]
+        if blocking and review.chosen.get("verdict") == "withhold":
             # 유보해도 수치를 내지 않을 뿐, 이 판단이 후보를 떨어뜨리는 근거가 되지는 않는다 —
             # 밴드가 없으면 실행 전체가 조건 확인으로 되돌아간다(팀 계약).
             return declaration.outcome(
-                AgentStatus.WITHHELD, message=ANOMALY_MESSAGES[confirmed[0]],
+                AgentStatus.WITHHELD, message=ANOMALY_MESSAGES[blocking[0]],
                 data={"anomalies": confirmed, "decision": audit},
-                required_actions=[ANOMALY_MESSAGES[code] for code in confirmed],
+                required_actions=[ANOMALY_MESSAGES[code] for code in blocking],
             ), None
         return declaration.outcome(
             AgentStatus.OK, data={**computed, "anomalies": confirmed, "decision": audit},

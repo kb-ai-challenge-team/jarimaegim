@@ -215,3 +215,40 @@ def test_the_synchronous_path_needs_no_model():
     report = team(kb_products=PRODUCTS, programs=NOTICES).run(CONDITIONS)
     assert outcome(report, "finance.band").status is AgentStatus.OK
     assert [item["id"] for item in outcome(report, "finance.kb_products").data["disclosed"]] == ["kb1", "kb2"]
+
+
+# ── 유보할 수 있는 이상치와, 보여 주기만 하는 이상치 ─────────────────────────
+# 화면이 그리도록 설계된 상태(최대 조달선의 스트레스 실패, 필요자금 초과)는 이상치로 표시는
+# 하되 판정을 멈출 근거가 되지 못한다. 그것을 멈춤으로 바꾸면 제품이 보여 주기로 한 것을
+# 모델의 그날 판단이 덮어쓰게 된다.
+
+async def test_a_displayed_state_is_reported_but_can_never_halt_the_run():
+    # 최대 조달선이 스트레스를 통과하지 못하는 것은 정상이고, 밴드 표가 그대로 보여 주는 값이다.
+    conditions = {**CONDITIONS, "equity_krw": 20_000_000, "monthly_rent_krw": 6_000_000}
+    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
+                                                      "anomalies": ["MAXIMUM_FAILS_STRESS"]})
+    report = await team(responder=responder).arun(conditions)
+    band = outcome(report, "finance.band")
+    assert band.status is AgentStatus.OK
+    assert band.data["anomalies"] == ["MAXIMUM_FAILS_STRESS"]
+    assert report.halted is False
+
+
+async def test_an_input_contradiction_can_still_halt_the_run():
+    # 보증금이 자기자본을 넘는 것은 화면이 그리기로 한 상태가 아니라 입력이 어긋난 것이다.
+    conditions = {**CONDITIONS, "deposit_krw": 300_000_000}
+    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
+                                                      "anomalies": ["DEPOSIT_EXCEEDS_EQUITY"]})
+    report = await team(responder=responder).arun(conditions)
+    assert outcome(report, "finance.band").status is AgentStatus.WITHHELD
+
+
+async def test_a_withholdable_anomaly_mixed_with_a_displayed_one_still_withholds():
+    conditions = {**CONDITIONS, "deposit_krw": 300_000_000, "equity_krw": 20_000_000}
+    responder = ScriptedResponder(review_band_inputs={
+        "verdict": "withhold", "anomalies": ["MAXIMUM_FAILS_STRESS", "DEPOSIT_EXCEEDS_EQUITY"]})
+    report = await team(responder=responder).arun(conditions)
+    band = outcome(report, "finance.band")
+    assert band.status is AgentStatus.WITHHELD
+    # 유보 사유는 유보 가능한 이상치에서 나와야 한다. 보여 주기용 상태를 사유로 적으면 안 된다.
+    assert band.message == ANOMALY_MESSAGES["DEPOSIT_EXCEEDS_EQUITY"]

@@ -21,6 +21,7 @@ from .agents.llm import AgentLLM, RunBudget
 from .agents.orchestrator import MainAgent
 from .agents.registry import AGENT_SPECS
 from .agents.timing import TimingTeam
+from .agents.trade_area_adapter import TradeAreaProfiles
 from .chat_stream import ChatStreamer, StreamLimits
 from .chat_tools import ChatToolset, PlaceRegistry
 from .config import get_settings
@@ -395,10 +396,10 @@ def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
             conditions=ConditionLayer(mydata_enabled=settings.mydata_enabled, llm=reasoner),
             finance=FinanceTeam(policy_params, kb_products=kb_products, programs=programs,
                                 llm=reasoner),
-            # 상권 프로파일 모듈이 붙으면 여기에 주입된다. 없는 동안 세 축은 스스로
-            # integration_pending 을 선언하고, 판정하지 못한 축은 후보를 떨어뜨리지 않는다.
-            # 원천이 없으면 이 세 축은 모델도 부르지 않는다(가드 3).
-            location=LocationTeam(trade_area=None, llm=reasoner),
+            # 상권 프로파일은 어댑터를 거쳐 들어온다. 어댑터가 옮기는 것은 원천이 이미 내린
+            # 판정이고, 옮길 수 없는 축(달성 가능성)은 사유와 함께 꺼진 채로 남는다.
+            # 프로파일이 없으면 세 축 모두 integration_pending 이고 모델도 부르지 않는다(가드 3).
+            location=LocationTeam(trade_area=TradeAreaProfiles(trade_areas), llm=reasoner),
             # 일정 문서 원천이 아직 없다. 문서가 붙기 전에는 관련성 판단도 하지 않는다.
             timing=TimingTeam(llm=reasoner),
             llm=integrator, budget=budget)
@@ -446,8 +447,11 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
                   "industry": case.inputs.industry, "district": case.inputs.district,
                   "equity_krw": case.inputs.equity_krw}
     listings, _, _ = listings_service.search(case.inputs.district, case.inputs.budget_krw, 8)
+    # 상권 결합은 이름이 아니라 코드로 한다. 행정동 이름은 화면 표시용이고, 코드가 없으면
+    # 그 후보는 상권 축에서 판정되지 않는다 — 이름으로 맞추려 들면 유사 매칭이 되살아난다.
     candidates = [{"id": item.id, "name": item.name, "address": item.address,
                    "admin_dong": getattr(item, "admin_dong", None),
+                   "admin_dong_code": getattr(item, "admin_dong_code", None),
                    "monthly_rent_krw": item.listing.monthly_rent_krw if item.listing else None}
                   for item in listings]
 

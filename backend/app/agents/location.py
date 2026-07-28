@@ -13,11 +13,20 @@
 
 ── 상권 어댑터 계약 ───────────────────────────────────────────────────────
 
-필수:  `available: bool` · `profile(admin_dong, industry) -> dict | None`
-선택:  `industry_options(industry) -> [{code, name}]`  — 동종 범위 후보. 없으면 범위 판단을
+필수:  `available: bool` · `profile(joiner, industry) -> dict | None`
+선택:  `keyed_by: str` — 후보의 어느 필드로 결합하는가. 기본은 `admin_dong` 이고, 실제 상권
+         원천은 `admin_dong_code` 를 선언한다. 선언한 필드가 비어 있는 후보는 조회하지 않는다.
+       `reason_for(axis) -> str | None` — "이 축은 판정할 수 없다"는 선언과 그 사유.
+         사유가 있으면 그 축은 `integration_pending` 이 되고 모델도 부르지 않는다.
+       `industry_options(industry) -> [{code, name}]`  — 동종 범위 후보. 없으면 범위 판단을
          하지 않고 정확 일치로만 본다(유사 매칭을 이 팀이 만들어 내지 않는다).
-       `profile_for_scope(admin_dong, codes) -> dict | None` — 고른 범위로 다시 집계.
+       `profile_for_scope(joiner, codes) -> dict | None` — 고른 범위로 다시 집계.
          없으면 범위는 고르되 적용되지 않았음을 `scope_applied: False` 로 밝힌다.
+
+프로파일이 `signals: {축: {score_band, direction, label, explanation}}` 을 담고 있으면 그것이
+결론이다. 이 팀은 **다시 등급을 매기지 않는다** — 원천은 중앙값 대비 비교와 표본 보정을 이미
+끝내고 판정을 주므로, 원시 비율을 받아 여기서 재판정하면 그 보정이 사라진다. `signals` 가 없는
+어댑터에 한해 숫자 지수(`demand_index` 등)를 이 파일의 기준으로 등급화한다.
 
 선택 계약이 없을 때 **추정으로 메우지 않는다**는 것이 이 설계의 요점이다. 원천이 못 주는
 것을 팀이 만들어 내면 그 값은 출처가 없다.
@@ -150,6 +159,20 @@ class LocationTeam:
                 "location.viability": await self._select_revenue_industry(industry, options),
                 "location.survival": await self._propose_mapping(industry, options)}
 
+    def _judged(self, profile: dict[str, Any], axis: str) -> dict[str, Any] | None:
+        """원천이 이미 내린 판정. 있으면 그것이 결론이고, 이 팀은 다시 등급을 매기지 않는다.
+
+        원천은 서울 동종 중앙값 대비 비교와 표본 보정을 이미 끝내고 판정을 준다. 여기서 원시
+        비율을 받아 다시 등급을 매기면 그 보정이 사라진다 — 점포 6곳짜리 행정동이 '중앙값의
+        617%'로 1순위를 차지하던 문제가 정확히 그것이다(제안서 06장 JUDGEMENT 02)."""
+        signals = profile.get("signals")
+        return signals.get(axis) if isinstance(signals, dict) else None
+
+    def _pending_reason(self, axis: str) -> str | None:
+        """원천이 "이 축은 판정할 수 없다"고 선언했는가. 선언하지 않았으면 None."""
+        declare = getattr(self.trade_area, "reason_for", None)
+        return declare(axis) if callable(declare) else None
+
     def _industry_options(self, industry: str) -> list[dict[str, Any]]:
         reader = _optional(self.trade_area, "industry_options")
         if reader is None:
@@ -164,9 +187,16 @@ class LocationTeam:
         """판정할 수 있는 후보만 담는다. 프로파일이 없는 후보는 여기 들어오지 않는다."""
         if not self.profiles_available:
             return {}
+        # 어댑터가 어떤 키로 결합하는지는 어댑터가 선언한다. 실제 상권 원천은 행정동 **코드**로
+        # 결합하고, 코드가 없는 후보는 조회하지 않는다 — 이름으로 대신 맞추면 코드 결합의
+        # 정확성이 조용히 사라지고, 같은 이름의 다른 행정동 통계가 붙을 수 있다.
+        key = getattr(self.trade_area, "keyed_by", "admin_dong")
         found: dict[str, dict[str, Any]] = {}
         for candidate in candidates:
-            profile = self.trade_area.profile(candidate.get("admin_dong", ""), industry)
+            joiner = candidate.get(key)
+            if not joiner:
+                continue
+            profile = self.trade_area.profile(joiner, industry)
             if profile:
                 found[candidate["id"]] = profile
         return found
@@ -176,10 +206,19 @@ class LocationTeam:
         declaration = spec("location.demand")
         if not self.profiles_available:
             return declaration.outcome(AgentStatus.INTEGRATION_PENDING, message=_TRADE_AREA_PENDING)
+        reason = self._pending_reason("demand")
+        if reason:
+            return declaration.outcome(AgentStatus.INTEGRATION_PENDING, message=reason)
         basis = decision.chosen.get("basis")
         by_candidate: dict[str, Any] = {}
         applied = "COMPOSITE"
         for candidate_id, profile in profiles.items():
+            judged = self._judged(profile, "demand")
+            if judged is not None:
+                by_candidate[candidate_id] = {**judged, "sample_n": profile.get("sample_n"),
+                                              "evidence_grade": declaration.evidence_grade,
+                                              "quarter": profile.get("quarter")}
+                continue
             value = self._demand_value(profile, basis)
             if value is None:
                 continue
@@ -214,12 +253,23 @@ class LocationTeam:
         declaration = spec(key)
         if not self.profiles_available:
             return declaration.outcome(AgentStatus.INTEGRATION_PENDING, message=_TRADE_AREA_PENDING)
+        axis = key.split(".", 1)[1]
+        reason = self._pending_reason(axis)
+        if reason:
+            return declaration.outcome(AgentStatus.INTEGRATION_PENDING, message=reason)
         scope = decision.chosen.get(choice_field) or []
         scope = [scope] if isinstance(scope, str) else list(scope)
         scoped, applied = self._scoped_profiles(candidates, scope)
         readings = scoped if applied else profiles
         by_candidate = {}
         for candidate_id, profile in readings.items():
+            judged = self._judged(profile, axis)
+            if judged is not None:
+                # 원천이 이미 방향까지 반영해 판정했다. 여기서 또 뒤집으면 불리한 상권이 유리해진다.
+                by_candidate[candidate_id] = {**judged, "sample_n": profile.get("sample_n"),
+                                              "evidence_grade": declaration.evidence_grade,
+                                              "quarter": profile.get("quarter")}
+                continue
             value = profile.get(field_name)
             if not isinstance(value, (int, float)):
                 continue
@@ -253,6 +303,11 @@ class LocationTeam:
         declaration = spec("location.viability")
         if not self.profiles_available:
             return declaration.outcome(AgentStatus.INTEGRATION_PENDING, message=_TRADE_AREA_PENDING)
+        # 후보를 떨어뜨릴 수 있는 유일한 축이다. 원천이 판정 기준을 줄 수 없다고 선언하면
+        # 여기서 대신 만들어 내지 않는다 — 정의되지 않은 기준으로 후보가 사라지면 안 된다.
+        reason = self._pending_reason("viability")
+        if reason:
+            return declaration.outcome(AgentStatus.INTEGRATION_PENDING, message=reason)
         code = decision.chosen.get("code")
         scoped, applied = self._scoped_profiles(candidates, [code] if code else [])
         readings = scoped if applied else profiles
