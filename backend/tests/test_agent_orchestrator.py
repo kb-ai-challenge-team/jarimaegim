@@ -42,13 +42,14 @@ CANDIDATES = [{"id": "l1", "name": "OO동 1층", "admin_dong": "역삼1동", "mo
 
 class CountingTiming(TimingTeam):
     def __init__(self):
+        super().__init__()
         self.calls = 0
         self.saw = None
 
-    def run(self, candidates):
+    def run(self, candidates, decision=None):
         self.calls += 1
         self.saw = [item["id"] for item in candidates]
-        return super().run(candidates)
+        return super().run(candidates, decision)
 
 
 def agent(params=FULL, *, timing=None, location=None):
@@ -58,102 +59,102 @@ def agent(params=FULL, *, timing=None, location=None):
                      timing=timing or TimingTeam())
 
 
-def test_a_complete_run_reports_every_team_in_order():
-    result = agent().run(CONDITIONS, CANDIDATES)
+async def test_a_complete_run_reports_every_team_in_order():
+    result = await agent().run(CONDITIONS, CANDIDATES)
     assert [report.team for report in result.reports] == ["condition", "finance", "location", "timing", "main"]
 
 
-def test_unsettled_conditions_stop_before_the_finance_team_runs():
-    result = agent().run({**CONDITIONS, "industry": ""}, CANDIDATES)
+async def test_unsettled_conditions_stop_before_the_finance_team_runs():
+    result = await agent().run({**CONDITIONS, "industry": ""}, CANDIDATES)
     assert [report.team for report in result.reports] == ["condition", "main"]
     assert result.halted_at == "condition"
     assert result.questions
     assert result.surviving == []
 
 
-def test_a_missing_band_stops_before_the_location_team_runs():
+async def test_a_missing_band_stops_before_the_location_team_runs():
     # 팀 계약 — 기준선 없이는 후보를 판정할 수 없으므로 후속 전체 중단.
-    result = agent(EMPTY).run(CONDITIONS, CANDIDATES)
+    result = await agent(EMPTY).run(CONDITIONS, CANDIDATES)
     assert [report.team for report in result.reports] == ["condition", "finance", "main"]
     assert result.halted_at == "finance"
     assert result.surviving == []
 
 
-def test_the_timing_team_only_sees_surviving_candidates():
+async def test_the_timing_team_only_sees_surviving_candidates():
     timing = CountingTiming()
     dropping = LocationTeam(stress_check=lambda candidate: {"passes": candidate["id"] != "l1",
                                                             "runway_months": 6})
-    result = agent(timing=timing, location=dropping).run(CONDITIONS, CANDIDATES)
+    result = await agent(timing=timing, location=dropping).run(CONDITIONS, CANDIDATES)
     assert timing.saw == ["l2"]
     assert [item["id"] for item in result.surviving] == ["l2"]
     assert result.dropped[0]["id"] == "l1"
 
 
-def test_the_finance_team_runs_once_regardless_of_candidate_count():
-    result = agent().run(CONDITIONS, CANDIDATES)
+async def test_the_finance_team_runs_once_regardless_of_candidate_count():
+    result = await agent().run(CONDITIONS, CANDIDATES)
     finance = next(report for report in result.reports if report.team == "finance")
     assert len([item for item in finance.outcomes if item.key == "finance.band"]) == 1
 
 
-def test_the_run_reports_how_many_of_the_twelve_agents_are_active():
-    result = agent().run(CONDITIONS, CANDIDATES)
+async def test_the_run_reports_how_many_of_the_twelve_agents_are_active():
+    result = await agent().run(CONDITIONS, CANDIDATES)
     assert result.activation["total"] == 12
     # 조건 2 + 밴드 + 스트레스 + 메인 통합 = 5. 상권·생존·타이밍·KB·지원금은 원천이 없다.
     assert result.activation["active"] == 5
     assert result.activation["by_key"]["location.demand"] == AgentStatus.INTEGRATION_PENDING
 
 
-def test_an_identical_run_is_served_from_the_previous_result():
+async def test_an_identical_run_is_served_from_the_previous_result():
     # 가드 2 — 동일 조건 재조회 시 재실행하지 않는다.
     timing = CountingTiming()
     main = agent(timing=timing)
-    first = main.run(CONDITIONS, CANDIDATES)
-    second = main.run(CONDITIONS, CANDIDATES)
+    first = await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run(CONDITIONS, CANDIDATES)
     assert timing.calls == 1
     assert second.reused is True
     assert first.fingerprint == second.fingerprint
 
 
-def test_changed_conditions_force_a_rerun():
+async def test_changed_conditions_force_a_rerun():
     timing = CountingTiming()
     main = agent(timing=timing)
-    main.run(CONDITIONS, CANDIDATES)
-    main.run({**CONDITIONS, "equity_krw": 200_000_000}, CANDIDATES)
+    await main.run(CONDITIONS, CANDIDATES)
+    await main.run({**CONDITIONS, "equity_krw": 200_000_000}, CANDIDATES)
     assert timing.calls == 2
 
 
-def test_the_summary_only_repeats_numbers_the_teams_produced():
-    result = agent().run(CONDITIONS, CANDIDATES)
+async def test_the_summary_only_repeats_numbers_the_teams_produced():
+    result = await agent().run(CONDITIONS, CANDIDATES)
     band = next(report for report in result.reports if report.team == "finance")
     lines = next(item for item in band.outcomes if item.key == "finance.band").data["bands"]
     assert result.summary["recommended_ceiling_krw"] == lines[1]["ceiling_krw"]
     assert result.summary["target_monthly_revenue_krw"] == lines[1]["target_monthly_revenue_krw"]
 
 
-def test_the_summary_is_empty_when_the_run_halted():
-    result = agent(EMPTY).run(CONDITIONS, CANDIDATES)
+async def test_the_summary_is_empty_when_the_run_halted():
+    result = await agent(EMPTY).run(CONDITIONS, CANDIDATES)
     assert result.summary == {}
 
 
-def test_the_main_agent_reports_its_own_integration_as_the_twelfth_outcome():
+async def test_the_main_agent_reports_its_own_integration_as_the_twelfth_outcome():
     # 메인도 일을 한다 — 팀 보고를 모아 수치 카드를 만든다. 그 결과를 스스로 내지 않으면
     # 화면에는 11개만 도착하고 12번째 칸이 영원히 비어 있게 된다.
-    result = agent().run(CONDITIONS, CANDIDATES)
+    result = await agent().run(CONDITIONS, CANDIDATES)
     keys = [item.key for report in result.reports for item in report.outcomes]
     assert keys[-1] == "main.integrate"
     assert len(keys) == 12
 
 
-def test_the_main_agent_marks_itself_withheld_when_the_run_halted():
-    result = agent(EMPTY).run(CONDITIONS, CANDIDATES)
+async def test_the_main_agent_marks_itself_withheld_when_the_run_halted():
+    result = await agent(EMPTY).run(CONDITIONS, CANDIDATES)
     main = [item for report in result.reports for item in report.outcomes if item.key == "main.integrate"]
     assert len(main) == 1
     assert main[0].status is AgentStatus.WITHHELD
     assert main[0].message
 
 
-def test_the_integration_outcome_carries_the_same_numbers_as_the_summary():
-    result = agent().run(CONDITIONS, CANDIDATES)
+async def test_the_integration_outcome_carries_the_same_numbers_as_the_summary():
+    result = await agent().run(CONDITIONS, CANDIDATES)
     main = next(item for report in result.reports for item in report.outcomes if item.key == "main.integrate")
     assert main.data["summary"] == result.summary
     assert main.data["surviving_count"] == len(result.surviving)

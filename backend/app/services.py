@@ -145,10 +145,13 @@ class AIService:
                 raise
             return await self.client.responses.create(**common)
 
-    def responder(self) -> "OpenAIResponder | None":
-        if not self.client or not self.settings.ai_chat_model or not self.settings.ai_explanation_enabled:
+    def responder(self, model: str | None = None) -> "OpenAIResponder | None":
+        """`model` 을 주면 그 모델로 부른다 — 서브에이전트와 메인 에이전트가 서로 다른 모델을
+        쓰기 때문이고, 어느 쪽이든 키나 게이트가 없으면 None 이라는 계약은 같다."""
+        chosen = model or self.settings.ai_chat_model
+        if not self.client or not chosen or not self.settings.ai_explanation_enabled:
             return None
-        return OpenAIResponder(self.client, self.settings.ai_chat_model)
+        return OpenAIResponder(self.client, chosen)
 
 
 class OpenAIResponder:
@@ -169,9 +172,16 @@ class OpenAIResponder:
     def __init__(self, client: AsyncOpenAI, model: str):
         self.client, self.model = client, model
 
-    async def respond(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+    async def respond(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+                      *, temperature: float | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"model": self.model, "input": self._translate(messages), "store": False,
                                     "max_output_tokens": 2000}
+        # The agent path (agents/llm.py) pins temperature to 0 because guard 2 -- "no re-run under
+        # identical conditions" -- needs the same input to yield the same choice. The chat path
+        # passes nothing and keeps whatever the model defaults to; changing that would alter
+        # answers on a route this change has no business touching.
+        if temperature is not None:
+            payload["temperature"] = temperature
         if tools:
             # `strict` MUST stay False. Verified against the live Responses API, not just the SDK
             # stub: `strict: True` requires `required` to list every key in `properties`, and four
@@ -183,6 +193,21 @@ class OpenAIResponder:
             # explicitly anyway so the value is a decision on the page rather than a default.
             payload["tools"] = [{"type": "function", "name": tool["name"], "description": tool["description"],
                                  "parameters": tool["parameters"], "strict": False} for tool in tools]
+        # Reasoning models reject `temperature` outright. Same shape of compatibility problem as
+        # `reasoning` below and the same fix -- retry without it -- but layered outside, because
+        # dropping temperature must not also drop the reasoning negotiation. Losing temperature
+        # costs determinism, not correctness: the schema validation in agents/llm.py is what keeps
+        # a model-invented value out of the result, and it does not depend on this parameter.
+        try:
+            response = await self._create(payload)
+        except Exception as exc:
+            if "temperature" not in payload or "temperature" not in str(exc):
+                raise
+            response = await self._create({key: value for key, value in payload.items()
+                                           if key != "temperature"})
+        return self._parse(response)
+
+    async def _create(self, payload: dict[str, Any]):
         # Same reasoning-parameter compatibility problem AIService._respond solves for explain(),
         # and the same fix, in the same order: TypeError means this SDK build's `responses.create`
         # doesn't accept `reasoning` as a keyword at all (a local, unconditional signature
@@ -192,14 +217,13 @@ class OpenAIResponder:
         # limit, context length, ...) that must propagate so ChatStreamer's `except Exception`
         # reports it as UPSTREAM_UNAVAILABLE instead of this method silently eating it.
         try:
-            response = await self.client.responses.create(**payload, reasoning={"effort": "low"})
+            return await self.client.responses.create(**payload, reasoning={"effort": "low"})
         except TypeError:
-            response = await self.client.responses.create(**payload)
+            return await self.client.responses.create(**payload)
         except Exception as exc:
             if "reasoning" not in str(exc):
                 raise
-            response = await self.client.responses.create(**payload)
-        return self._parse(response)
+            return await self.client.responses.create(**payload)
 
     @staticmethod
     def _translate(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

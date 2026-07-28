@@ -32,6 +32,19 @@ FILLED = {
 }
 
 
+@pytest.fixture(autouse=True)
+def offline_agents(monkeypatch):
+    """이 파일이 시험하는 것은 HTTP 계약이다. 모델을 붙이면 네트워크를 타고 답이 매번 달라진다.
+
+    메인 에이전트는 케이스 id 로 캐시되고 그 안에 가드 2의 재실행 캐시가 들어 있으므로,
+    테스트 사이에 비워 둔다 — 안 그러면 앞 테스트의 결과가 뒤 테스트로 새어 나간다."""
+    import app.main as main
+    monkeypatch.setattr(main.ai, "responder", lambda *args, **kwargs: None)
+    main._main_agents.clear()
+    yield
+    main._main_agents.clear()
+
+
 @pytest.fixture
 def client():
     from app.main import app
@@ -146,3 +159,78 @@ def test_the_chat_cannot_reach_this_endpoint_with_a_case_patch(client, case_id, 
     response = client.post(f"/api/v1/cases/{case_id}/prescribe",
                            json={**BODY, "confirmed_case_patch": [{"field": "industry"}]})
     assert response.status_code == 422
+
+
+# ── POST /api/v1/conditions/interpret — 발화를 조건으로 읽는 경로 ─────────────
+# 화면의 조건 카드를 채우는 것이 이 엔드포인트다. 정규식이 먼저 채우고, 이 응답이 빈칸만 덮는다.
+
+class OneShotResponder:
+    """condition.location 의 추출 한 번을 흉내 낸다. 네트워크를 타지 않는다."""
+
+    def __init__(self, mentions):
+        self.mentions = mentions
+
+    async def respond(self, messages, tools, **options):
+        return {"text": "", "tool_calls": [{"id": "c", "name": tools[0]["name"],
+                                            "arguments": {"mentions": self.mentions}}]}
+
+
+@pytest.fixture
+def scripted_interpreter(monkeypatch):
+    import app.main as main
+
+    def install(mentions):
+        monkeypatch.setattr(main.ai, "responder", lambda *a, **k: OneShotResponder(mentions))
+    return install
+
+
+def test_interpret_requires_a_session():
+    from app.main import app
+    with TestClient(app) as anonymous:
+        response = anonymous.post("/api/v1/conditions/interpret", json={"utterance": "강남구 카페"})
+        assert response.status_code == 401
+
+
+def test_interpret_reads_the_conditions_the_model_pointed_at(client, scripted_interpreter):
+    scripted_interpreter([{"field": "district", "span": "강남구"},
+                          {"field": "industry", "span": "카페"},
+                          {"field": "monthly_rent_krw", "span": "300만원"}])
+    response = client.post("/api/v1/conditions/interpret",
+                           json={"utterance": "강남구에 카페, 월세 300만원까지 봅니다", "known": {}})
+    body = response.json()
+    assert body["patch"] == {"district": "강남구", "industry": "카페",
+                             "monthly_rent_krw": 3_000_000}
+    assert body["decision"]["source"] == "llm"
+
+
+def test_interpret_never_overwrites_a_value_the_user_already_confirmed(client, scripted_interpreter):
+    scripted_interpreter([{"field": "industry", "span": "카페"}])
+    response = client.post("/api/v1/conditions/interpret",
+                           json={"utterance": "강남구에 카페", "known": {"industry": "제과점"}})
+    assert response.json()["patch"] == {}
+
+
+def test_interpret_discards_a_span_that_is_not_in_the_utterance(client, scripted_interpreter):
+    scripted_interpreter([{"field": "monthly_rent_krw", "span": "월세 500만원"}])
+    response = client.post("/api/v1/conditions/interpret",
+                           json={"utterance": "강남구에 카페 자리 찾아요", "known": {}})
+    body = response.json()
+    assert body["patch"] == {}
+    assert body["decision"]["rejected"][0]["reason"] == "not_in_source"
+
+
+def test_interpret_only_resolves_districts_inside_seoul(client, scripted_interpreter):
+    # 범위 밖은 추정하지 않는다. 서울 25개 자치구가 아니면 자치구를 채우지 않는다.
+    scripted_interpreter([{"field": "district", "span": "분당구"}])
+    response = client.post("/api/v1/conditions/interpret",
+                           json={"utterance": "분당구에 카페 열려고요", "known": {}})
+    assert "district" not in response.json()["patch"]
+
+
+def test_interpret_without_a_model_returns_an_empty_patch_rather_than_failing(client):
+    response = client.post("/api/v1/conditions/interpret",
+                           json={"utterance": "강남구에 카페", "known": {}})
+    assert response.status_code == 200
+    assert response.json() == {"patch": {}, "decision": {"source": "unavailable",
+                                                         "schema": "extract_conditions",
+                                                         "chosen": {}, "rejected": []}}

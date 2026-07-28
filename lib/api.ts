@@ -1,4 +1,4 @@
-import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, PrescribeStreamHandlers, Program, RetrievalResponse, StatusResponse } from "./types";
+import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, ConditionInterpretation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, PrescribeStreamHandlers, Program, RetrievalResponse, StatusResponse } from "./types";
 import { createSseParser, type SseEvent } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
@@ -285,6 +285,10 @@ export const api = {
   chat: (caseId: string, content: string) => request<{ message: string; citations: Citation[]; integration_status: string }>(`/cases/${caseId}/messages`, { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ client_message_id: requestId(), content, base_case_version: 1, confirmed_case_patch: [], locale: "ko-KR" }) }),
   chatStream: (caseId: string, content: string, handlers: ChatStreamHandlers, signal?: AbortSignal) => chatStream(caseId, content, handlers, signal),
   listAgents: () => request<{ total: number; agents: AgentSpec[] }>("/agents"),
+  // condition.location 의 추출. 정규식이 즉시 채운 뒤 이 응답이 **빈칸만** 덮는다 — 서버가
+  // 확정된 값을 덮어쓰지 않는 것과 같은 규칙이며, 키가 없으면 빈 패치가 온다.
+  interpretConditions: (utterance: string, known: Partial<CaseInput>) =>
+    request<ConditionInterpretation>("/conditions/interpret", { method: "POST", body: JSON.stringify({ utterance, known }) }),
   prescribeStream: (caseId: string, body: Record<string, unknown>, handlers: PrescribeStreamHandlers, signal?: AbortSignal) => prescribeStream(caseId, body, handlers, signal),
   createDocument: (caseId: string, template: string) => request<DocumentRecord>("/documents", { method: "POST", headers: { "Idempotency-Key": requestId() }, body: JSON.stringify({ case_id: caseId, template, confirmed: true }) }),
   getDocument: (documentId: string) => request<DocumentRecord>(`/documents/${documentId}`),

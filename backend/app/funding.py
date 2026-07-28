@@ -1,5 +1,37 @@
 from __future__ import annotations
 
+from typing import Any
+
+
+class ScenarioParams:
+    """제도 파라미터 몇 개만 갈아 끼운 읽기 전용 겹침.
+
+    스트레스 시나리오("매출 −30%이면?", "금리가 1%p 오르면?")를 계산하려면 같은 산식을 다른
+    파라미터로 한 번 더 돌려야 한다. 그 산식을 에이전트 쪽에 복제하면 두 곳이 갈라지므로,
+    파라미터만 덮고 `compute_bands` 를 그대로 다시 부른다. 원본은 건드리지 않는다 —
+    같은 요청 안의 다른 밴드가 갈아 낀 값을 보게 되면 화면의 수치가 서로 어긋난다."""
+
+    def __init__(self, base: Any, overrides: dict[str, float]):
+        self._base, self._overrides = base, overrides
+
+    @property
+    def updated_at(self) -> Any:
+        return self._base.updated_at
+
+    def value(self, key: str) -> float:
+        if key in self._overrides:
+            return self._overrides[key]
+        return self._base.value(key)
+
+    def industry(self, name: str) -> dict[str, Any]:
+        return self._base.industry(name)
+
+    def missing(self, industry: str) -> list[str]:
+        return self._base.missing(industry)
+
+    def sources(self, industry: str) -> list[str]:
+        return self._base.sources(industry)
+
 
 def monthly_annuity_krw(principal_krw: int, annual_rate_percent: float, term_months: int) -> int:
     """원리금균등 월 상환액. 원 단위로 내림한다."""

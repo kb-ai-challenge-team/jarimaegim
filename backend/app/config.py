@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     kakao_rest_api_key: str = ""
     openai_api_key: str = ""
     ai_chat_model: str = ""
+    #: 서브에이전트 11개가 쓰는 모델. 하는 일이 "열거된 선택지 중에서 고르기"라 작은 모델로
+    #: 충분하고, 케이스당 호출 수가 많은 쪽이라 비용도 여기서 정해진다. 비우면 대화 모델을 쓴다.
+    ai_agent_model: str = ""
+    #: 메인 에이전트가 쓰는 모델. 팀 보고 전체를 읽고 설명문을 쓰는 유일한 자리라 추론 여력이
+    #: 필요하다. 실행당 한 번만 부른다. 비우면 대화 모델을 쓴다.
+    ai_main_model: str = ""
     ai_explanation_enabled: bool = True
     ai_daily_request_limit: int = 20
     ipzitalk_mcp_enabled: bool = False
@@ -54,6 +60,14 @@ class Settings(BaseSettings):
         """Every upstream key presale-mcp needs. A partial set would fail at call time, not startup."""
         return bool(self.ipzitalk_mcp_enabled and self.ipzitalk_mcp_command and self.kakao_rest_api_key
                     and self.data_go_kr_service_key and self.naver_maps_client_id and self.naver_maps_client_secret)
+
+    @property
+    def agent_model(self) -> str:
+        return self.ai_agent_model or self.ai_chat_model
+
+    @property
+    def main_agent_model(self) -> str:
+        return self.ai_main_model or self.ai_chat_model
 
     @property
     def retrieval_configured(self) -> bool:

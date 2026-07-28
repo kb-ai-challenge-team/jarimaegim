@@ -57,7 +57,10 @@ def test_the_stream_declares_the_sse_content_type():
     response = client.post(f"/api/v1/cases/{case_id}/messages/stream", json=message_body())
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.headers["cache-control"] == "no-cache"
+    # no-transform 은 앞단(Next 프록시·nginx)에 본문을 압축하지 말라고 말한다. 압축되면 압축기가
+    # 블록이 찰 때까지 바이트를 쥐고 있어, 서버가 나눠 보낸 프레임이 브라우저에는 마지막에
+    # 한꺼번에 도착한다. x-accel-buffering 은 버퍼링만 끄고 압축은 끄지 못한다.
+    assert response.headers["cache-control"] == "no-cache, no-transform"
     assert response.headers["x-accel-buffering"] == "no"
 
 

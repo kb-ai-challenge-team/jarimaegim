@@ -232,7 +232,18 @@ class PrescribeRequest(BaseModel):
     existing_debt_krw: int = Field(default=0, ge=0, le=100_000_000_000)
     other_monthly_fixed_krw: int = Field(default=0, ge=0, le=1_000_000_000)
     operating_style: str = Field(default="", max_length=60)
+    #: 조건을 만든 발화. condition.location 이 아직 비어 있는 항목을 여기서 읽는다. 이미 확정된
+    #: 값은 덮어쓰지 않으므로, 이 필드가 케이스 조건을 바꾸는 경로가 되지는 않는다.
+    utterance: str = Field(default="", max_length=1000)
     confirmed_case_patch: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ConditionInterpret(BaseModel):
+    """자유 문장 한 개를 조건으로 읽는 요청. 케이스를 만들기 전에 쓰인다."""
+
+    utterance: str = Field(min_length=1, max_length=1000)
+    #: 이미 확정된 값. 채워져 있는 항목은 덮어쓰지 않는다.
+    known: dict[str, Any] = Field(default_factory=dict)
 
 
 class FundingBandInput(BaseModel):

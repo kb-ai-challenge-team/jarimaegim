@@ -343,6 +343,16 @@ export interface PrescribeResult {
   dropped: (Record<string, unknown> & { reason?: string })[];
 }
 
+/** condition.location 이 발화에서 읽어 낸 것.
+ *
+ *  `patch` 의 수치는 모델이 아니라 코드가 발화에서 읽은 값이다 — 모델은 발화의 어느 조각이
+ *  어느 항목인지 가리키기만 하고, 그 조각이 발화에 그대로 있어야 통과한다. `decision` 은 무엇을
+ *  골랐고 무엇이 검증에서 떨어졌는지의 기록이다. */
+export interface ConditionInterpretation {
+  patch: Partial<CaseInput> & { area_pyeong?: number; deposit_krw?: number; monthly_rent_krw?: number; operating_style?: string };
+  decision: { source: string; schema: string; chosen: Record<string, unknown>; rejected: { field: string; value: unknown; reason: string }[] };
+}
+
 /** `done` 은 언제나 마지막 프레임이고 `error` 는 던져진다 — chat 스트림과 같은 규칙이다. */
 export interface PrescribeStreamHandlers {
   onRunStart(info: { total_agents: number; fingerprint: string }): void;

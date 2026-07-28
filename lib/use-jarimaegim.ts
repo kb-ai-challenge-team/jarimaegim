@@ -124,6 +124,9 @@ export function useJarimaegim() {
   const [error, setError] = useState("");
   const [trace, setTrace] = useState<TraceRun>(EMPTY_TRACE);
   const [traceOpen, setTraceOpen] = useState(false);
+  /** 조건을 만든 발화. condition.location 이 실행 중에도 이것을 읽어 아직 비어 있는 항목을 채운다. */
+  const [utterance, setUtterance] = useState("");
+  const [operatingStyle, setOperatingStyle] = useState("");
   const sessionReady = useRef<Promise<void> | null>(null);
   const traceMark = useRef<Record<string, number>>({});
   const traceOrigin = useRef(0);
@@ -155,12 +158,40 @@ export function useJarimaegim() {
     return sessionReady.current;
   }, []);
 
-  const interpret = useCallback((text: string, patch: Partial<CaseInput>) => {
+  /** 발화를 조건으로 옮긴다. 정규식이 먼저 채워 화면이 즉시 응답하고, 그 다음 condition.location
+   *  의 추출이 **빈칸만** 덮는다. 순서가 이런 이유는 둘 다 필요하기 때문이다 — 정규식은 키가
+   *  없어도 돌고, 추출은 정규식이 못 읽는 문장을 읽는다. 추출이 실패해도 화면은 이미 채워져 있다.
+   *
+   *  덮어쓰기가 아니라 빈칸 채우기인 것은 서버 쪽 규칙과 같다. 사용자가 확인할 값을 두 경로가
+   *  번갈아 바꾸면 "확인 후 수정하고 시작해 주세요"라는 문구가 거짓이 된다. */
+  const interpret = useCallback(async (text: string, patch: Partial<CaseInput>) => {
     setForm((prev) => ({ ...prev, ...patch }));
     setParsedKeys(new Set(Object.keys(patch) as (keyof CaseInput)[]));
     setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "말씀하신 내용을 조건으로 정리했습니다. 확인 후 수정하고 시작해 주세요." }]);
     setStep("confirm");
-  }, []);
+    setUtterance(text);
+    try {
+      await ensureSession();
+      const known = { ...DEFAULT_CASE, ...patch };
+      const read = await api.interpretConditions(text, known);
+      const { area_pyeong, deposit_krw, monthly_rent_krw, operating_style, ...caseFields } = read.patch;
+      if (Object.keys(caseFields).length > 0) {
+        setForm((prev) => ({ ...prev, ...caseFields }));
+        setParsedKeys((prev) => new Set([...prev, ...(Object.keys(caseFields) as (keyof CaseInput)[])]));
+      }
+      // 평수·보증금·월세는 케이스가 아니라 밴드 입력이다. 발화에서 읽혔으면 여기에 채워 두고,
+      // 사용자가 '정밀하게 맞추기'에서 언제든 고칠 수 있다.
+      setBandForm((prev) => ({
+        ...prev,
+        area_pyeong: prev.area_pyeong || area_pyeong || prev.area_pyeong,
+        deposit_krw: prev.deposit_krw || deposit_krw || prev.deposit_krw,
+        monthly_rent_krw: prev.monthly_rent_krw || monthly_rent_krw || prev.monthly_rent_krw,
+      }));
+      if (operating_style) setOperatingStyle(operating_style);
+    } catch {
+      // 추출은 보조 경로다. 실패하면 정규식이 채운 값으로 그대로 진행한다.
+    }
+  }, [ensureSession]);
 
   const setField = useCallback(<K extends keyof CaseInput>(key: K, value: CaseInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -295,6 +326,7 @@ export function useJarimaegim() {
         key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
         deposit_krw: bandForm.deposit_krw || null, fitout_krw: bandForm.fitout_krw || null,
         existing_debt_krw: profile.existing_debt_krw, other_monthly_fixed_krw: profile.other_monthly_fixed_krw,
+        operating_style: operatingStyle, utterance,
       }, {
         onRunStart: () => {},
         onTeamStart: () => {},
@@ -341,7 +373,7 @@ export function useJarimaegim() {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep]);
+  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, operatingStyle, profile, runBands, runSearch, settleStep, utterance]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;

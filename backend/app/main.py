@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from .agents.conditions import ConditionLayer
 from .agents.finance import FinanceTeam
 from .agents.location import LocationTeam
+from .agents.llm import AgentLLM, RunBudget
 from .agents.orchestrator import MainAgent
 from .agents.registry import AGENT_SPECS
 from .agents.timing import TimingTeam
@@ -28,7 +29,7 @@ from .funding import compute_bands
 from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
-from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
+from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, ConditionInterpret, CostPlanCreate,
                      DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
                      PrescribeRequest, PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
@@ -54,6 +55,23 @@ app = FastAPI(title="자리매김 API", version="1.0.0", docs_url="/api/v1/docs"
 app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Idempotency-Key", "If-Match", "Last-Event-ID"])
 
 SEOUL_DISTRICTS = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"}
+
+
+#: SSE 응답이 중간 계층에서 모이지 않게 하는 헤더 묶음.
+#:
+#: `no-transform` 이 핵심이다. 브라우저는 gzip 을 요청하고, 앞단(개발 시 Next 의 rewrite 프록시,
+#: 운영 시 nginx)이 그 요청에 맞춰 스트림을 압축하면 압축기가 블록이 찰 때까지 바이트를 쥐고
+#: 있는다. 그러면 서버가 5초에 한 팀씩 내보내도 브라우저는 마지막에 전부를 한꺼번에 받는다.
+#: 실측으로 확인한 값이다 — curl 은 5.1s / 23.6s 로 나눠 받고, `--compressed` 를 붙이는 순간
+#: 전부 15.9s 에 한꺼번에 도착했다. 브라우저 안에서 fetch 로 직접 읽어도 같았다.
+#: `no-transform` 은 중간 계층에 "본문을 바꾸지 말라"고 말하는 표준 지시자이고, Next 의 압축이
+#: 이것을 존중하는 것을 실측으로 확인했다. 응답에 `Content-Encoding: identity` 를 실어 보는
+#: 방법도 시도했으나 프록시가 그대로 gzip 으로 덮어써서 듣지 않는다.
+#:
+#: `X-Accel-Buffering: no` 는 nginx 의 버퍼링만 끄고 압축은 끄지 못하므로 이것을 대신하지 못한다.
+#: 진행 표시는 장식이 아니라 "12개 분석이 실제로 돌았다"의 근거이므로(제안서 11장), 이 헤더가
+#: 빠지면 화면은 25초 동안 1단계에 멈춰 있다가 한 번에 끝난 것처럼 보인다.
+SSE_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"}
 
 
 def error_payload(code: str, message: str, request_id: str, retryable: bool = False, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -328,13 +346,26 @@ def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
                    programs: list[dict[str, Any]]) -> MainAgent:
     agent = _main_agents.get(case_id)
     if agent is None:
+        # 키가 없으면 `responder()` 가 None 이고, 그때 12개 에이전트는 전부 결정론 경로로
+        # 내려간다. LLM 이 없다고 실행이 멈추지는 않는다 — 없을 때의 동작이 계약이다.
+        #
+        # 모델은 둘로 나뉜다. 서브에이전트 11개는 열거된 선택지를 고르는 일이라 작은 모델로
+        # 충분하고 호출 수가 많다. 메인은 실행당 한 번, 팀 보고 전체를 읽고 문장을 쓴다.
+        # 예산(RunBudget)은 하나를 공유한다 — 상한은 모델별이 아니라 실행당이다.
+        budget = RunBudget()
+        reasoner = AgentLLM(ai.responder(settings.agent_model), budget=budget)
+        integrator = AgentLLM(ai.responder(settings.main_agent_model), budget=budget)
         agent = MainAgent(
-            conditions=ConditionLayer(mydata_enabled=settings.mydata_enabled),
-            finance=FinanceTeam(policy_params, kb_products=kb_products, programs=programs),
+            conditions=ConditionLayer(mydata_enabled=settings.mydata_enabled, llm=reasoner),
+            finance=FinanceTeam(policy_params, kb_products=kb_products, programs=programs,
+                                llm=reasoner),
             # 상권 프로파일 모듈이 붙으면 여기에 주입된다. 없는 동안 세 축은 스스로
             # integration_pending 을 선언하고, 판정하지 못한 축은 후보를 떨어뜨리지 않는다.
-            location=LocationTeam(trade_area=None),
-            timing=TimingTeam())
+            # 원천이 없으면 이 세 축은 모델도 부르지 않는다(가드 3).
+            location=LocationTeam(trade_area=None, llm=reasoner),
+            # 일정 문서 원천이 아직 없다. 문서가 붙기 전에는 관련성 판단도 하지 않는다.
+            timing=TimingTeam(llm=reasoner),
+            llm=integrator, budget=budget)
         _main_agents[case_id] = agent
     return agent
 
@@ -350,6 +381,22 @@ def agent_roster() -> dict[str, Any]:
 async def list_agents():
     """선언은 공개다 — 어떤 분석이 있고 무엇이 그 근거인지는 세션 없이도 읽을 수 있어야 한다."""
     return agent_roster()
+
+
+@app.post("/api/v1/conditions/interpret")
+async def interpret_conditions(payload: ConditionInterpret, session_id: UUID = Depends(current_session)):
+    """발화를 조건으로 읽는다 — condition.location 의 추출 경로를 케이스 생성 전에 한 번 쓴다.
+
+    모델은 발화의 어느 조각이 어느 항목인지 가리키기만 하고, 그 조각이 발화에 그대로 있는지
+    확인한 뒤 금액·평수는 코드가 읽는다. 그래서 이 응답에 들어오는 수치는 사용자가 실제로 말한
+    것이며, 모델이 지어낸 값이 조건 카드에 채워질 수 있는 경로가 없다.
+
+    호출 상한이 1인 것은 이 요청이 추출 한 번이기 때문이다. 키가 없으면 빈 패치를 돌려주고
+    화면은 정규식이 채운 값을 그대로 쓴다 — 실패가 아니라 설계된 축소 경로다."""
+    layer = ConditionLayer(llm=AgentLLM(ai.responder(settings.agent_model),
+                                        budget=RunBudget(max_calls=1)))
+    patch, decision = await layer.interpret({**payload.known, "utterance": payload.utterance})
+    return {"patch": patch, "decision": decision.as_data()}
 
 
 @app.post("/api/v1/cases/{case_id}/prescribe")
@@ -372,9 +419,9 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
     programs = await knowledge.programs()
     agent = main_agent_for(case_id, kb_products, programs)
 
-    def frames():
+    async def frames():
         try:
-            for event in agent.run_events(conditions, candidates):
+            async for event in agent.run_events(conditions, candidates):
                 if event["event"] != "done":
                     yield sse_frame({"event": event.pop("event"), "data": event})
                     continue
@@ -398,8 +445,7 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
             yield sse_frame({"event": "error", "data": {"code": "PRESCRIBE_FAILED",
                              "message": "분석을 완료하지 못했습니다.", "retryable": True}})
 
-    return StreamingResponse(frames(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(frames(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @app.get("/api/v1/programs")
@@ -603,7 +649,7 @@ async def create_message_stream(case_id: UUID, payload: MessageCreate, session_i
     # comment frames from heartbeat_frames are what actually keeps idle proxies from dropping the
     # connection; a `Connection` header was never doing that job.
     return StreamingResponse(heartbeat_frames(frames(), interval_s=15.0), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers=SSE_HEADERS)
 
 
 @app.post("/api/v1/documents", status_code=201)
