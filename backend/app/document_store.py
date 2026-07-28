@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
+from xml.sax.saxutils import escape
 
 
 class DocumentStore:
@@ -161,6 +162,13 @@ def render_case_pdf(case: dict[str, Any], document: dict[str, Any], *,
         font = "HYSMyeongJo-Medium"
     except Exception:
         font = "Helvetica"
+    # Paragraph 는 미니 HTML 을 파싱한다. 케이스 입력도 카탈로그 문자열도 바깥에서 온 값이라
+    # <b> 하나, URL 의 & 하나로 ValueError 가 나고 — create_document 는 OSError 만 잡으므로
+    # 그대로 500 이 된다. 문단이 되는 모든 텍스트는 이 함수를 거친다. 표는 마크업을 해석하지
+    # 않고 문자열을 그대로 그리므로 이스케이프하지 않는다(하면 &lt; 가 눈에 보이게 된다).
+    def para(text: Any, style) -> Paragraph:
+        return Paragraph(escape(str(text)), style)
+
     buffer = BytesIO()
     pdf = SimpleDocTemplate(buffer, pagesize=A4, title="자리매김 PDF 초안", author="자리매김")
     styles = getSampleStyleSheet()
@@ -169,23 +177,23 @@ def render_case_pdf(case: dict[str, Any], document: dict[str, Any], *,
     rows = [["문서 ID", str(document["document_id"])], ["템플릿", str(document["template"])], ["케이스", str(case["id"])], ["제목", str(case["title"])], ["버전", str(case["version"])]]
     table = Table(rows, colWidths=[110, 380])
     table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), font), ("GRID", (0, 0), (-1, -1), .25, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story = [Paragraph("자리매김 PDF 초안", styles["Title"]), Spacer(1, 12), table, Spacer(1, 16), Paragraph("사용자 확인값", styles["Heading2"])]
+    story = [para("자리매김 PDF 초안", styles["Title"]), Spacer(1, 12), table, Spacer(1, 16), para("사용자 확인값", styles["Heading2"])]
     for key, value in case.get("inputs", {}).items():
-        story.append(Paragraph(f"{key}: {value}", styles["BodyText"]))
+        story.append(para(f"{key}: {value}", styles["BodyText"]))
     lines = listing_section_lines(case)
     if lines:
         heading, *body = lines
         story.append(Spacer(1, 16))
-        story.append(Paragraph(heading, styles["Heading2"]))
-        story.extend(Paragraph(line, styles["BodyText"]) for line in body)
+        story.append(para(heading, styles["Heading2"]))
+        story.extend(para(line, styles["BodyText"]) for line in body)
     # 조달 요약과 고른 수단은 언제나 제목 + 최소 한 줄을 돌려주므로 빈 검사가 필요 없다.
     # 계산하지 못했다는 사실도 문서에 남아야 하기 때문에 그렇게 설계했다.
     for section in (funding_section_lines(funding),
                     selection_section_lines(products or [], programs or [], dropped, unavailable)):
         heading, *body = section
         story.append(Spacer(1, 16))
-        story.append(Paragraph(heading, styles["Heading2"]))
-        story.extend(Paragraph(line, styles["BodyText"]) for line in body)
-    story.extend([Spacer(1, 16), Paragraph("AI가 작성한 초안이며 사용자 검토가 필요합니다. 결과는 보장되지 않으며 공식 원문이 우선합니다. 확인하지 못한 값은 공란으로 유지합니다.", styles["BodyText"])])
+        story.append(para(heading, styles["Heading2"]))
+        story.extend(para(line, styles["BodyText"]) for line in body)
+    story.extend([Spacer(1, 16), para("AI가 작성한 초안이며 사용자 검토가 필요합니다. 결과는 보장되지 않으며 공식 원문이 우선합니다. 확인하지 못한 값은 공란으로 유지합니다.", styles["BodyText"])])
     pdf.build(story)
     return buffer.getvalue()

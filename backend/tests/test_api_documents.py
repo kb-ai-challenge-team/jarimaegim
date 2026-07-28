@@ -183,6 +183,15 @@ def test_only_the_catalog_that_was_asked_for_is_fetched(client, monkeypatch):
     assert calls == []
 
 
+def test_markup_in_a_case_input_does_not_500_the_endpoint(client):
+    """reportlab 의 Paragraph 는 미니 HTML 을 파싱한다. 케이스에 적힌 <b> 가 그대로 들어가면
+    ValueError 가 나는데 create_document 는 OSError 만 잡으므로 그대로 500 이 된다."""
+    case_id = make_case(client, industry="<b>카페")
+    response = client.post("/api/v1/documents",
+                           json={"case_id": case_id, "template": "funding", "confirmed": True})
+    assert response.status_code == 201, response.text
+
+
 def test_an_absent_funding_input_says_why_the_summary_is_missing(client):
     response = client.post("/api/v1/documents", json={
         "case_id": make_case(client), "template": "funding", "confirmed": True})

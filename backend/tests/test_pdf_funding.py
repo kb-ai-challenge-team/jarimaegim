@@ -166,6 +166,34 @@ def test_the_pdf_still_renders_with_only_two_arguments():
     assert render_case_pdf(CASE, DESCRIPTOR).startswith(b"%PDF")
 
 
+def test_markup_in_a_case_input_does_not_break_the_render():
+    """reportlab 의 Paragraph 는 미니 HTML 을 파싱한다. 사용자가 적은 <b> 가 그대로 들어가면
+    ValueError 가 나고, create_document 의 except OSError 를 뚫고 500 으로 나간다."""
+    case = {**CASE, "inputs": {**CASE["inputs"], "industry": "<b>카페"}}
+    assert render_case_pdf(case, DESCRIPTOR).startswith(b"%PDF")
+
+
+def test_markup_in_a_catalog_string_does_not_break_the_render():
+    """카탈로그 문자열도 원천이 준 값이다. URL 의 & 하나로도 같은 자리에서 깨진다."""
+    product = {**PRODUCT, "name": '<font color="red">KB', "official_url": "https://x.example/a?b=1&c=2"}
+    assert render_case_pdf(CASE, DESCRIPTOR, products=[product]).startswith(b"%PDF")
+
+
+def test_escaped_text_is_still_the_text_the_user_typed(monkeypatch):
+    """이스케이프는 지우는 것이 아니다. 사용자가 적은 글자가 그대로 남아야 한다."""
+    from reportlab.platypus import SimpleDocTemplate
+    captured: list[str] = []
+    original = SimpleDocTemplate.build
+
+    def capture(self, story, *args, **kwargs):
+        captured.extend(getattr(item, "text", "") for item in story)
+        return original(self, story, *args, **kwargs)
+
+    monkeypatch.setattr(SimpleDocTemplate, "build", capture)
+    render_case_pdf({**CASE, "inputs": {**CASE["inputs"], "industry": "<b>카페"}}, DESCRIPTOR)
+    assert any("&lt;b&gt;카페" in text for text in captured)
+
+
 def test_the_pdf_renders_with_funding_and_a_selection():
     payload = render_case_pdf(CASE, DESCRIPTOR, funding=computed(),
                               products=[PRODUCT], programs=[PROGRAM], dropped=1)
