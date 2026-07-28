@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CircleHelp, ExternalLink, Landmark, LoaderCircle, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { CircleHelp, Landmark, LoaderCircle, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import type { KbProduct } from "@/lib/types";
 import type { Jarimaegim } from "@/lib/use-jarimaegim";
 
@@ -79,7 +79,7 @@ export function KbProductPanel({ flow }: { flow: Jarimaegim }) {
           <div className="kb-unknown">{product.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>
           <div className="kb-policy-foot">
             <small>{product.organization}</small>
-            <a href={product.official_url} target="_blank" rel="noopener noreferrer">공시 원문 열기 <ExternalLink aria-hidden="true" /></a>
+            
           </div>
         </li>)}</ul>
       </>}

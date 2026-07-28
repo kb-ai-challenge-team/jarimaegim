@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, LoaderCircle, Send } from "lucide-react";
+import { LoaderCircle, Send } from "lucide-react";
 import type { Jarimaegim } from "@/lib/use-jarimaegim";
 
 const QUICK = ["확인하지 못한 정보는?", "다음에 뭘 해야 해?", "근거 출처를 알려줘"];
@@ -23,7 +23,7 @@ export function JarimaegimChat({ flow }: { flow: Jarimaegim }) {
       <div className="kb-chat-message kb-chat-assistant"><p>{flow.messages[0].text}</p></div>
       {history.map((message, index) => <div key={index} className={`kb-chat-message kb-chat-${message.role}`}>
         <p>{message.text}</p>
-        {message.citation && <a href={message.citation} target="_blank" rel="noopener noreferrer">근거 원문 <ExternalLink aria-hidden="true" /></a>}
+        
       </div>)}
       {flow.chatBusy && <div className="kb-chat-message kb-chat-assistant kb-chat-pending"><LoaderCircle className="kb-spin" aria-hidden="true" /> 공식 근거를 확인하고 있습니다.</div>}
     </div>

@@ -42,9 +42,11 @@
 
 목록 카드와 다른 모양이어야 한다. 목록은 나열이고 검색 결과는 근거 등급 `C`가 붙은 판단 재료다.
 
-담는 것: 제목 · 기관 · provider 배지 · `excerpt`(원문 발췌, 인용 표시) · `matched_conditions` · `unknown_conditions` · `ProvenanceBar` · 공식 원문 링크.
+담는 것: 제목 · 기관 · provider 배지 · `excerpt`(원문 발췌, 인용 표시) · `matched_conditions` · `unknown_conditions` · `ProvenanceBar`.
 
 담지 않는 것: `similarity`. 상위부터 나열되는 것으로만 드러난다.
+
+**공식 원문 링크는 담지 않는다(2026-07-28 변경).** 사용자 요청으로 원문 이동 기능을 앱 전체에서 제거했다. `official_url`은 계속 수집·저장되고 인덱싱 조건(https 검증)으로도 남지만 화면에는 노출하지 않는다. `ProvenanceBar`의 출처명·기준일·신뢰도·한계 표시는 그대로이므로 불변조건 3은 유지된다 — 사라진 것은 출처 표시가 아니라 원문에 도달하는 경로다.
 
 ## 5. 접근성
 

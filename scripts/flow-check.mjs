@@ -62,14 +62,16 @@ await page.waitForSelector(".plan-page");
 await programsResponse;
 await page.waitForFunction(() => Boolean(window.document.querySelector(".program-list article, .full-empty")), null, { timeout: 30000 });
 const programItems = await page.locator(".program-list article").all();
-let programsWithSource = 0;
-for (const item of programItems) if (await item.locator('a[href^="http"]').count() > 0) programsWithSource += 1;
+let programsWithConditions = 0;
+for (const item of programItems) if (await item.locator(".condition-tags span").count() > 0) programsWithConditions += 1;
 const funding = {
   programCount: programItems.length,
-  // 공고가 있으면 모두 공식 원문 링크를 가져야 하고, 없으면 빈 상태가 보여야 한다
+  // 원문 이동 기능은 제거되었다. 남은 요구는 "판정하지 않았음을 카드가 스스로 밝힌다"이다.
   safeState: programItems.length > 0
-    ? programsWithSource === programItems.length
-    : await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible().catch(() => false)
+    ? programsWithConditions === programItems.length
+    : await page.getByText("표시할 수 있는 공식 공고가 없습니다").isVisible().catch(() => false),
+  // 제거된 기능이 되돌아오면 여기서 걸린다
+  noOutboundLinks: await page.locator('.program-list a[href^="http"]').count() === 0
 };
 
 // 의미 검색. 키 없는 머신에서는 integration_pending 이 정상이므로 "결과가 나온다"를 단언하지
@@ -82,20 +84,20 @@ await page.waitForFunction(
 const retrievedItems = await page.locator(".retrieved-list article").all();
 let retrievedWithEvidence = 0;
 for (const item of retrievedItems) {
-  const hasSource = await item.locator('a[href^="http"]').count() > 0;
   const hasExcerpt = await item.locator("blockquote").count() > 0;
   const hasProvenance = await item.locator(".provenance").count() > 0;
-  if (hasSource && hasExcerpt && hasProvenance) retrievedWithEvidence += 1;
+  if (hasExcerpt && hasProvenance) retrievedWithEvidence += 1;
 }
 const searchText = await page.locator(".plan-page").innerText();
 const search = {
   resultCount: retrievedItems.length,
-  // 결과가 있으면 모두 원문·발췌·출처를 갖춰야 하고, 없으면 이유를 밝힌 빈 상태여야 한다
+  // 결과가 있으면 모두 발췌·출처를 갖춰야 하고, 없으면 이유를 밝힌 빈 상태여야 한다
   safeState: retrievedItems.length > 0
     ? retrievedWithEvidence === retrievedItems.length && searchText.includes("근거 등급 C")
     : await page.getByText("검색 결과가 없습니다").isVisible().catch(() => false),
   // 유사도 수치는 화면에 나오면 안 된다 (점수로 오해된다)
-  hidesSimilarity: !/0\.\d{2}/.test(searchText)
+  hidesSimilarity: !/0\.\d{2}/.test(searchText),
+  noOutboundLinks: await page.locator('.retrieved-list a[href^="http"]').count() === 0
 };
 if (retrievedItems.length > 0) await page.locator(".retrieved-list header button").click();
 
@@ -140,7 +142,7 @@ await page.waitForFunction(() => window.document.querySelectorAll(".chat-message
 // 보여주는 것이다 — 실행 중(running) 상태의 tool-activity 행도, 범용 진행 문구도 남아있으면 안 된다.
 const progressCleared = await page.waitForFunction(() => !document.querySelector(".tool-progress") && document.querySelectorAll(".tool-activity-item:not(.ok):not(.error)").length === 0, null, { timeout: 10000 }).then(() => true).catch(() => false);
 const reply = (await page.locator(".chat-message").last().textContent()) || "";
-const citationLinks = await page.locator(".citation-list a").count();
+const citationItems = await page.locator(".citation-item").count();
 const caseAfter = await (await page.request.get(`${base}/api/v1/cases/${caseId}`)).json();
 const copilot = {
   aiConfigured,
@@ -152,7 +154,7 @@ const copilot = {
     && JSON.stringify(caseAfter.inputs) === JSON.stringify(caseBefore.inputs),
   // 부록 A 불변조건 1 — ipzitalk 도구 연동이 없으면 인용은 도구 호출 결과에서 나올 수 없으므로 하나도
   // 렌더링되어서는 안 된다. 도구가 연동되어 있으면 실제 인용 유무는 이 스크립트의 관심사가 아니다.
-  noFabricatedCitations: ipzitalkConfigured ? true : citationLinks === 0,
+  noFabricatedCitations: ipzitalkConfigured ? true : citationItems === 0,
   noOrphanedProgress: progressCleared,
   streamEndpointUsed: Boolean(streamResponse) && streamResponse.ok() && /event-stream/.test(streamResponse.headers()["content-type"] || "")
 };
@@ -160,4 +162,4 @@ const copilot = {
 const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !search.safeState || !search.hidesSimilarity || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
+if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;

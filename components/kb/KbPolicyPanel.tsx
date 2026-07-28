@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CircleHelp, ExternalLink, LoaderCircle, RefreshCw, ScrollText, Search, ShieldCheck } from "lucide-react";
+import { CircleHelp, LoaderCircle, RefreshCw, ScrollText, Search, ShieldCheck } from "lucide-react";
 import { PROGRAM_CATEGORY_LABELS } from "@/lib/constants";
 import type { Program } from "@/lib/types";
 import type { Jarimaegim } from "@/lib/use-jarimaegim";
@@ -11,7 +11,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "ALL", label: "전체" }, { id: "GOVERNMENT", label: "정부지원" }, { id: "PRIVATE", label: "민간금융" }
 ];
 
-/** Browses the official notices as source documents — every row links to its verified 원문 URL. */
+/** Browses the official notices as source documents. Outbound links to the 원문 were removed on request, so a row states what it knows and defers the rest. */
 export function KbPolicyPanel({ flow }: { flow: Jarimaegim }) {
   const [filter, setFilter] = useState<Filter>("ALL");
   const [query, setQuery] = useState("");
@@ -29,7 +29,7 @@ export function KbPolicyPanel({ flow }: { flow: Jarimaegim }) {
   return <div className="kb-policy">
     <header className="kb-policy-head">
       <div><ScrollText aria-hidden="true" /><strong>정책 원문</strong></div>
-      <p>공공 API에서 수집한 공고를 원문 링크와 함께 모았습니다. 승인 여부나 자격은 판단하지 않으며, 조건은 원문에서 직접 확인해야 합니다.</p>
+      <p>공공 API에서 수집한 공고를 모았습니다. 승인 여부나 자격은 판단하지 않으며, 조건은 소관기관에서 직접 확인해야 합니다.</p>
     </header>
 
     <div className="kb-policy-search">
@@ -70,7 +70,7 @@ export function KbPolicyPanel({ flow }: { flow: Jarimaegim }) {
           <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>
           <div className="kb-policy-foot">
             <small>{program.source_as_of ? `수집 기준 ${program.source_as_of}` : "수집일 확인 필요"}</small>
-            <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
+            
           </div>
         </li>)}</ul>
       </>}

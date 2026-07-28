@@ -16,7 +16,7 @@ from .config import Settings
 from .models import Provenance, RetrievalResponse, RetrievedDocument
 
 EXCERPT_LIMIT = 300
-NOT_CONFIGURED = "의미 검색이 아직 연결되지 않았습니다. 공고 원문 링크는 계속 확인할 수 있습니다."
+NOT_CONFIGURED = "의미 검색이 아직 연결되지 않았습니다. 저장된 공고 목록은 계속 확인할 수 있습니다."
 UNAVAILABLE = "근거 검색이 지연되고 있습니다. 저장된 공식 원문은 계속 사용할 수 있습니다."
 
 BASE_UNKNOWNS = ("공식 원문의 지역·업종·업력·제외 조건을 직접 확인해야 합니다.",)
