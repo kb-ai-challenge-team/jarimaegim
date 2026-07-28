@@ -15,7 +15,9 @@
 
 condition.location 은 자유 문장에서 조건을 읽는다. 그러나 **모델이 값을 말하지는 않는다**:
 모델은 원문의 어느 조각이 어느 항목인지 가리키기만 하고(`field` + `span`), 그 조각이 원문에
-그대로 있는지 확인한 뒤 금액·평수를 코드가 다시 읽는다(`amount_krw` · `resolve_mention`).
+그대로 있는지 확인한 뒤 금액·평수를 코드가 다시 읽는다(`amount_from` · `resolve_mention`).
+금액 산술은 `condition_parse.amount_from` 하나뿐이다 — 이 레이어가 자체 산술을 갖고 있던 동안
+"월세 300"이 화면 경로에서 3,000,000원, 실행 경로에서 300원이었다.
 "월세 400만원 정도 생각한다"고 말한 적 없는 사용자의 조건에 400만원이 들어가는 경로를
 이 방식으로 없앴다. 발화가 없으면 대조할 원문이 없으므로 모델을 아예 부르지 않는다.
 
@@ -31,6 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..condition_parse import amount_from
 from .contracts import AgentStatus, TeamReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick, Records, Span
 from .registry import spec
@@ -54,10 +57,6 @@ SEOUL_DISTRICTS = ("종로구", "중구", "용산구", "성동구", "광진구",
 EXTRACTABLE = ("industry", "district", "area_pyeong", "operating_style",
                "deposit_krw", "monthly_rent_krw")
 
-_AMOUNT_UNITS = (("억", 100_000_000), ("천만", 10_000_000), ("백만", 1_000_000), ("만", 10_000))
-#: 천단위 쉼표는 반복될 수 있으므로 `*` 다. `?` 로 두면 "2,500,000원"이 2,500 으로 읽혀
-#: 천 배 작은 금액이 조용히 조건에 들어간다.
-_AMOUNT = re.compile(r"(\d+(?:[.,]\d+)*)\s*(억|천만|백만|만)?\s*원?")
 _AREA = re.compile(r"(\d+(?:\.\d+)?)\s*평")
 #: 조사만 떼어 낸다. 그 이상 손대면 업종명을 코드가 고쳐 쓰는 셈이 된다.
 _PARTICLES = re.compile(r"(?:을|를|이|가|은|는|에서|에|으로|로|랑|하고|와|과)$")
@@ -71,28 +70,6 @@ EXTRACT_SCHEMA = ChoiceSchema(
                 "span": Span(description="발화에 그대로 등장하는 조각. 금액은 단위까지 포함한다.")})})
 
 
-def amount_krw(text: str) -> int | None:
-    """문자열에서 금액을 읽는다. 없으면 None — 0 을 돌려주면 "월세 0원"이 조용히 만들어진다.
-
-    "1억 5천만원"처럼 단위가 이어지면 더한다. 단위 없는 숫자는 원 단위로 본다."""
-    total = 0
-    found = False
-    for match in _AMOUNT.finditer(text or ""):
-        raw, unit = match.group(1), match.group(2)
-        if not raw:
-            continue
-        try:
-            value = float(raw.replace(",", ""))
-        except ValueError:
-            continue
-        if value <= 0:
-            continue
-        multiplier = next((factor for name, factor in _AMOUNT_UNITS if name == unit), 1)
-        total += int(round(value * multiplier))
-        found = True
-    return total if found else None
-
-
 def resolve_mention(field_name: str, span: str) -> Any | None:
     """모델이 가리킨 조각에서 값을 읽는다. 읽지 못하면 None — 추측하지 않는다."""
     text = (span or "").strip()
@@ -104,7 +81,7 @@ def resolve_mention(field_name: str, span: str) -> Any | None:
         match = _AREA.search(text)
         return float(match.group(1)) if match else None
     if field_name in ("deposit_krw", "monthly_rent_krw"):
-        return amount_krw(text)
+        return amount_from(text)
     if field_name in ("industry", "operating_style"):
         return _PARTICLES.sub("", text).strip() or None
     return None

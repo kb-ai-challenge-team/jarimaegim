@@ -55,32 +55,48 @@ MAX_KRW = 100_000_000_000
 
 
 def amount_from(text: str) -> int | None:
-    """'300만원'·'1억'·'300'·'3,000,000원'을 원 단위 정수로. 세 갈래 규칙을 따른다:
+    """'300만원'·'1억 5천만원'·'300'·'3,000,000원'을 원 단위 정수로. 두 경로의 유일한 산술이다.
+
+    성분마다 세 갈래 규칙을 따른다:
     (1) 억/천만/백만/만 단위어가 있으면 그 단위를 곱한다.
     (2) 단위어가 없고 숫자가 1만 미만이면 만원 관행을 적용한다 — "월세 300" 은 300만원이다.
     (3) 단위어가 없고 숫자가 1만 이상이면 그대로 원 단위로 읽는다 — "3,000,000" 을 쓴 사람은
         정확히 그 금액을 뜻한 것이지, 300억을 뜻한 게 아니다.
     쉼표는 천단위 구분자로만 벗겨내고 자릿수 판단에는 관여하지 않는다.
 
+    **인접한 성분만 더한다.** "1억 5천만원" 은 한 금액의 두 성분이므로 더해야 하지만,
+    "월세 300, 관리비 20" 의 20 은 다른 항목이다. 성분 사이에 공백 아닌 것이 끼면 거기서
+    멈춘다 — 더 관대하게 두면 사용자가 말하지 않은 금액이 조건에 들어간다.
+
+    금액이 없으면 None 이다. 0 을 돌려주면 "월세 0원" 이라는 조건이 조용히 만들어진다.
+
     AI 경로도 이 함수를 쓴다 — 모델은 근거 구간만 지목하고 산술은 코드가 한다
-    (부록 A 불변조건 4)."""
-    match = AMOUNT.search(text)
-    if not match:
+    (부록 A 불변조건 4). `agents/conditions.resolve_mention` 도 같은 이유로 이것을 부른다:
+    실행 경로가 자체 산술을 가지면 화면이 읽은 값과 실행이 읽는 값이 갈라진다."""
+    total, found, cursor = 0, False, None
+    for match in AMOUNT.finditer(text or ""):
+        if cursor is not None and text[cursor:match.start()].strip():
+            # 앞 성분과 공백만으로 이어지지 않았다. 여기서부터는 다른 항목이다.
+            break
+        try:
+            raw = float(match.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        if raw <= 0:
+            continue
+        unit = match.group(2)
+        if unit:
+            value = round(raw * UNITS[unit])
+        elif raw < 10_000:
+            value = round(raw * 10_000)
+        else:
+            value = round(raw)
+        total += value
+        found = True
+        cursor = match.end()
+    if not found or total <= 0 or total > MAX_KRW:
         return None
-    try:
-        raw = float(match.group(1).replace(",", ""))
-    except ValueError:
-        return None
-    unit = match.group(2)
-    if unit:
-        value = round(raw * UNITS[unit])
-    elif raw < 10_000:
-        value = round(raw * 10_000)
-    else:
-        value = round(raw)
-    if value <= 0 or value > MAX_KRW:
-        return None
-    return value
+    return total
 
 
 def _field(value: Any = None, evidence: str | None = None) -> dict[str, Any]:

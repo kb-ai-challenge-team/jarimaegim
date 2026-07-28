@@ -9,7 +9,7 @@
 """
 import pytest
 
-from app.agents.conditions import ConditionLayer, amount_krw, resolve_mention
+from app.agents.conditions import ConditionLayer, resolve_mention
 from app.agents.contracts import AgentStatus
 from app.agents.llm import AgentLLM, RunBudget
 
@@ -43,17 +43,8 @@ def layer(responder, **kwargs):
 
 # ── 코드가 값을 읽는다 — 순수 함수부터 고정한다 ─────────────────────────────
 
-@pytest.mark.parametrize("text,expected", [
-    ("1억", 100_000_000), ("3천만원", 30_000_000), ("250만원", 2_500_000),
-    ("1억 5천만원", 150_000_000), ("2,500,000원", 2_500_000), ("보증금 5천만", 50_000_000),
-])
-def test_amounts_are_read_from_the_text_by_code(text, expected):
-    assert amount_krw(text) == expected
-
-
-def test_text_without_an_amount_yields_nothing_rather_than_zero():
-    # 0 을 돌려주면 "월세 0원"이라는 조건이 조용히 만들어진다.
-    assert amount_krw("적당한 가격이면 좋겠어요") is None
+# 금액 파싱 자체의 계약은 `test_amount_parsing.py` 가 두 경로에 걸쳐 고정한다.
+# 여기서 다시 단언하면 같은 것을 두 곳에서 정의하게 되고, 한쪽만 고쳐도 통과하게 된다.
 
 
 def test_a_district_is_resolved_only_to_one_of_the_twenty_five():
