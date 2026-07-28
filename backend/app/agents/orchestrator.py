@@ -51,6 +51,10 @@ class RunResult:
     surviving: list[dict[str, Any]] = field(default_factory=list)
     dropped: list[dict[str, Any]] = field(default_factory=list)
     questions: list[dict[str, str]] = field(default_factory=list)
+    #: 없어서 그 수치만 못 낸 항목. 되묻지 않고 진행했다는 사실을 화면이 말할 수 있어야 한다.
+    deferred: list[str] = field(default_factory=list)
+    #: 발화가 확정된 값과 어긋나 올라온 변경 제안. 적용되지 않은 상태로 전달된다.
+    proposals: list[dict[str, Any]] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
     halted_at: str | None = None
     reused: bool = False
@@ -154,9 +158,12 @@ class MainAgent:
         for event in self._team_events(settled):
             yield event
         reports.append(settled)
+        # 유보 항목과 변경 제안은 멈춘 실행에서도 화면이 읽어야 한다 — 멈춘 이유와 별개로
+        # "무엇을 못 냈는지" 와 "무엇을 바꾸자고 하는지" 는 그대로 보여야 한다.
+        carried = {"deferred": list(settled.deferred), "proposals": list(settled.proposals)}
         if settled.halted:
             async for event in self._close(fingerprint, reports, halted_at="condition",
-                                           questions=list(settled.questions)):
+                                           questions=list(settled.questions), **carried):
                 yield event
             return
 
@@ -168,7 +175,7 @@ class MainAgent:
             yield event
         reports.append(prescription)
         if prescription.halted:
-            async for event in self._close(fingerprint, reports, halted_at="finance"):
+            async for event in self._close(fingerprint, reports, halted_at="finance", **carried):
                 yield event
             return
 
@@ -185,7 +192,7 @@ class MainAgent:
 
         async for event in self._close(fingerprint, reports, surviving=scheduled.surviving,
                                        dropped=list(narrowed.dropped),
-                                       summary=self._summary(prescription)):
+                                       summary=self._summary(prescription), **carried):
             yield event
 
     async def _close(self, fingerprint: str, reports: list[TeamReport], **rest: Any):

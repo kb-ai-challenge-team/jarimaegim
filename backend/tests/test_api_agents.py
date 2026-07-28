@@ -181,3 +181,12 @@ def test_the_chat_cannot_reach_this_endpoint_with_a_case_patch(client, case_id, 
     response = client.post(f"/api/v1/cases/{case_id}/prescribe",
                            json={**BODY, "confirmed_case_patch": [{"field": "industry"}]})
     assert response.status_code == 422
+
+
+def test_the_done_frame_carries_the_deferred_items_and_any_proposals(client, case_id, filled_params):
+    """화면이 "무엇을 못 냈는지" 와 "무엇을 바꾸자고 제안하는지" 를 한 프레임에서 읽는다."""
+    response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
+    done = next(frame for frame in frames(response) if frame["event"] == "done")
+    assert "deferred" in done["data"]
+    assert "proposals" in done["data"]
+    assert isinstance(done["data"]["proposals"], list)

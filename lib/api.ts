@@ -1,4 +1,4 @@
-import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, ConditionInterpretResult, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, FundingCapacityResult, KbProduct, PrescribeStreamHandlers, Program, RetrievalResponse, StatusResponse } from "./types";
+import type { AgentProgress, AgentRunStatus, AgentSpec, AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, ConditionInterpretResult, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, FundingCapacityResult, KbProduct, PrescribeStreamHandlers, PrescribeSummary, Program, RetrievalResponse, StatusResponse } from "./types";
 import { createSseParser, type SseEvent } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
@@ -222,8 +222,17 @@ export function applyPrescribeFrame(frame: SseEvent, handlers: PrescribeStreamHa
       reused: Boolean(frame.data.reused),
       halted_at: typeof frame.data.halted_at === "string" ? frame.data.halted_at : null,
       questions: asRecordList(frame.data.questions).map(item => ({ field: asString(item.field), label: asString(item.label) })),
+      // 유보 항목과 변경 제안은 서버가 판정한 그대로 옮긴다. 여기서 다시 고르거나 채우지 않는다 —
+      // 제안은 적용되지 않은 상태여야 하고, 적용 여부는 사용자가 정한다.
+      deferred: Array.isArray(frame.data.deferred) ? frame.data.deferred.map(item => String(item)) : [],
+      proposals: asRecordList(frame.data.proposals).map(item => ({
+        field: asString(item.field),
+        current: (typeof item.current === "string" || typeof item.current === "number") ? item.current : null,
+        proposed: (typeof item.proposed === "string" || typeof item.proposed === "number") ? item.proposed : "",
+        span: asString(item.span),
+      })),
       activation: { total: Number(activation.total) || 0, active: Number(activation.active) || 0, by_key: (activation.by_key ?? {}) as Record<string, AgentRunStatus | null> },
-      summary: (frame.data.summary ?? {}) as Record<string, number | null>,
+      summary: (frame.data.summary ?? {}) as PrescribeSummary,
       surviving: asRecordList(frame.data.surviving),
       dropped: asRecordList(frame.data.dropped),
     });

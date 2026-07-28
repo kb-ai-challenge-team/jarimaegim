@@ -458,6 +458,7 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
                 yield sse_frame({"event": "done", "data": {
                     "fingerprint": result.fingerprint, "reused": result.reused,
                     "halted_at": result.halted_at, "questions": result.questions,
+                    "deferred": result.deferred, "proposals": result.proposals,
                     "activation": result.activation, "summary": result.summary,
                     "surviving": result.surviving, "dropped": result.dropped,
                     "reports": [{"team": report.team, "name": report.name,

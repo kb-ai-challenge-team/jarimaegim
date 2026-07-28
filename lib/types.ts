@@ -377,13 +377,36 @@ export type AgentRunStatus = "ok" | "integration_pending" | "withheld" | "failed
  *  형태는 에이전트마다 다르므로 읽는 쪽이 필요한 필드만 좁혀서 꺼내 쓴다. */
 export interface AgentProgress { team: string; key: string; name: string; status: AgentRunStatus; message?: string; data?: Record<string, unknown> }
 
+/** 발화가 이미 확정된 값과 어긋나 올라온 변경 제안. 적용되지 않은 상태로 온다 —
+ *  조건 변경은 재실행을 유발하므로 사용자가 모르는 사이에 일어나면 안 된다. */
+export interface ConditionProposal { field: string; current: string | number | null; proposed: string | number; span: string }
+
+/** `orchestrator._summary` 를 그대로 미러링한다. 여력 세 줄은 금융 프로필만으로 나오므로
+ *  언제나 있고, 권장 조달선 이하는 희망 월세가 있어야 나온다. */
+export interface PrescribeSummary {
+  equity_line_krw?: number | null;
+  borrowing_headroom_krw?: number | null;
+  maximum_line_krw?: number | null;
+  /** 이 실행에서 값이 없어 내지 못한 조건 항목. */
+  deferred?: string[];
+  recommended_ceiling_krw?: number | null;
+  monthly_repayment_krw?: number | null;
+  target_monthly_revenue_krw?: number | null;
+  target_daily_revenue_krw?: number | null;
+  runway_months?: number | null;
+  required_capital_krw?: number | null;
+}
+
 export interface PrescribeResult {
   fingerprint?: string;
   reused: boolean;
   halted_at: string | null;
   questions: { field: string; label: string }[];
+  /** 없어서 그 수치만 내지 못한 조건 항목. 되묻지 않고 진행했다는 사실을 화면이 말한다. */
+  deferred: string[];
+  proposals: ConditionProposal[];
   activation: { total: number; active: number; by_key: Record<string, AgentRunStatus | null> };
-  summary: Record<string, number | null>;
+  summary: PrescribeSummary;
   surviving: Record<string, unknown>[];
   dropped: (Record<string, unknown> & { reason?: string })[];
 }
