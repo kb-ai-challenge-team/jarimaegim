@@ -896,3 +896,4 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 /* 보증금·월세는 "보 1,700만"처럼 한 줄로 읽혀야 한다. 후손 strong 이 블록이 되면 라벨과 금액이 갈라진다. */
 .listing-terms>span{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}
 .listing-terms strong{display:inline;font-size:inherit;letter-spacing:normal;color:var(--ink)}
+.kb-gate small{display:block;margin-top:2px;font-size:10.5px;font-weight:600;color:#3f8a63}

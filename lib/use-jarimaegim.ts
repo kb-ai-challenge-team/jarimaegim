@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, formatKrw } from "./constants";
+import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
 import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
 // 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 처방 세 단계로 간다. 프로필은 스텝이 아니라 진입 관문이고,
 // 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
 export type FlowStep = "profile" | "ask" | "confirm" | "recommend" | "prescribe";
 export type BandForm = typeof DEFAULT_BAND_FORM;
-export type Profile = typeof DEFAULT_PROFILE;
+export type { Profile } from "./profile-storage";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
 export interface ChatMessage { role: "assistant" | "user"; text: string; citation?: string }
 
@@ -65,6 +66,8 @@ export function useJarimaegim() {
   const [step, setStep] = useState<FlowStep>("profile");
   const [profile, setProfile] = useState<Profile>(DEFAULT_PROFILE);
   const [profileConfirmed, setProfileConfirmed] = useState(false);
+  // 저장된 값을 복원했는지. 화면이 "이 브라우저에 저장됨"을 말하려면 이 사실을 알아야 한다.
+  const [profileRestored, setProfileRestored] = useState(false);
   const [form, setForm] = useState<CaseInput>(DEFAULT_CASE);
   const [parsedKeys, setParsedKeys] = useState<Set<keyof CaseInput>>(new Set());
   const [caseData, setCaseData] = useState<CaseRecord | null>(null);
@@ -99,6 +102,15 @@ export function useJarimaegim() {
   const traceOrigin = useRef(0);
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
+
+  /** 브라우저에 남은 프로필을 복원한다. localStorage 는 서버에 없으므로 마운트 후에만 읽는다.
+   *  복원되면 관문을 건너뛰고 조건부터 시작한다 — 같은 질문을 두 번 하지 않는 것이 저장의 목적이다. */
+  useEffect(() => {
+    const stored = loadProfile();
+    if (!stored) return;
+    setProfile(stored); setProfileConfirmed(true); setProfileRestored(true);
+    setStep((current) => current === "profile" ? "ask" : current);
+  }, []);
 
   // Landing overview. A failure leaves the map empty rather than breaking the shell —
   // the summary is orientation, not something the flow depends on.
@@ -138,8 +150,17 @@ export function useJarimaegim() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  /** 프로필 확정. 이 값은 세션이 사는 동안 케이스·밴드·재검색이 계속 다시 읽으므로 여기서 한 번만 묻는다. */
-  const confirmProfile = useCallback(() => { setProfileConfirmed(true); setStep("ask"); }, []);
+  /** 프로필 확정. 케이스·밴드·재검색이 계속 다시 읽고, 세션이 만료돼도 다시 묻지 않도록 브라우저에 남긴다. */
+  const confirmProfile = useCallback(() => {
+    saveProfile(profile);
+    setProfileConfirmed(true); setProfileRestored(true); setStep("ask");
+  }, [profile]);
+
+  /** 저장된 프로필을 지운다. 지우면 관문으로 돌아가고, 다음 방문에도 복원되지 않는다. */
+  const forgetProfile = useCallback(() => {
+    clearProfile();
+    setProfile(DEFAULT_PROFILE); setProfileConfirmed(false); setProfileRestored(false); setStep("profile");
+  }, []);
 
   const beginTrace = useCallback((steps: TraceStep[]) => {
     const now = performance.now();
@@ -396,7 +417,7 @@ export function useJarimaegim() {
   return {
     step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
     summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
-    profile, setProfileField, profileConfirmed, confirmProfile, restart,
+    profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,

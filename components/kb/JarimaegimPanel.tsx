@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
 import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
@@ -52,7 +52,7 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
 /** 스텝 0. 마이데이터가 주 동선이고, 게이트가 닫혀 있으면 수동 입력이 같은 항목을 채운다.
  *  잠긴 사실을 숨기지 않는 것이 부록 A 불변조건 5의 요구다. */
 function ProfileStep({ flow }: { flow: Jarimaegim }) {
-  const { profile, setProfileField, status } = flow;
+  const { profile, setProfileField, status, profileRestored } = flow;
   const mydataOn = Boolean(status?.feature_flags.mydata);
   const ready = profile.equity_krw > 0;
   const money = (key: keyof Profile, label: string, note: string) => <label key={key} className="kb-field">
@@ -89,11 +89,13 @@ function ProfileStep({ flow }: { flow: Jarimaegim }) {
         <li>조건 화면에서 자기자본을 다시 묻지 않습니다</li>
         <li>자기자본선과 최대 조달선이 곧바로 계산됩니다</li>
         <li>산출된 권장 조달선이 후보를 거르는 상한이 됩니다</li>
-        <li>조건을 바꿔 다시 검색해도 다시 입력하지 않습니다</li>
+        <li>세션이 만료돼 다시 들어와도 이 화면을 건너뜁니다</li>
       </ul>
     </div>
     <p className="kb-note"><Info aria-hidden="true" />업종 · 자치구 · 희망 임대조건은 마이데이터에 없습니다. 다음 화면에서 받습니다.</p>
-    <p className="kb-note"><ShieldCheck aria-hidden="true" />별도 계정 없이 익명 세션으로 진행하며, 입력한 값은 최대 24시간 보관됩니다. 세션이 끝나면 이 화면부터 다시 시작합니다.</p>
+    {/* 저장 위치와 지우는 방법을 같은 자리에서 말한다. 금액을 남긴다는 사실을 묻어 두지 않는다. */}
+    <p className="kb-note"><ShieldCheck aria-hidden="true" />별도 계정 없이 익명 세션으로 진행합니다. 이 세 항목은 <strong>이 브라우저에만</strong> 저장해 다음 방문에 다시 묻지 않고, 서버에는 조건을 확정해 케이스를 만들 때만 전송합니다.</p>
+    {profileRestored && <button className="kb-ghost" onClick={flow.forgetProfile}><Trash2 aria-hidden="true" /> 이 브라우저에 저장된 값 지우기</button>}
   </div>;
 }
 
@@ -103,7 +105,8 @@ function ProfileBadge({ flow }: { flow: Jarimaegim }) {
   const { equity_krw, existing_debt_krw, other_monthly_fixed_krw } = flow.profile;
   return <div className="kb-gate">
     <Check aria-hidden="true" />
-    <span>금융 프로필 확정 — 자기자본 <strong>{formatKrw(equity_krw)}</strong> · 기존부채 <strong>{formatKrw(existing_debt_krw)}</strong> · 월 고정지출 <strong>{formatKrw(other_monthly_fixed_krw)}</strong></span>
+    <span>금융 프로필 확정 — 자기자본 <strong>{formatKrw(equity_krw)}</strong> · 기존부채 <strong>{formatKrw(existing_debt_krw)}</strong> · 월 고정지출 <strong>{formatKrw(other_monthly_fixed_krw)}</strong>
+      {flow.profileRestored && <small>이 브라우저에 저장됨</small>}</span>
     <button className="kb-gate-edit" onClick={() => flow.setStep("profile")}>수정</button>
   </div>;
 }

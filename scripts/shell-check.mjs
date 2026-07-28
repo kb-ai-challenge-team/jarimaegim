@@ -62,6 +62,29 @@ const profile = {
 await panel.locator(".kb-profile-form input").nth(0).fill("100000000");
 await panel.getByRole("button", { name: /확정하고 조건 입력으로/ }).click();
 
+// 프로필은 익명 세션(24시간)보다 오래 산다. 세션 쿠키를 버리고 새로 들어와도 다시 묻지 않아야 한다.
+await context.clearCookies();
+await page.reload({ waitUntil: "networkidle" });
+await panel.locator(".kb-gate").first().waitFor({ timeout: 15000 });
+const persistence = {
+  gateSkipped: await panel.locator(".kb-gate-rail").count() === 0,
+  badgeCarriesEquity: (await panel.locator(".kb-gate").first().innerText()).includes("1억"),
+  storageDisclosed: (await panel.locator(".kb-gate").first().innerText()).includes("이 브라우저에 저장됨"),
+  // 지우는 수단이 없으면 저장해서는 안 된다.
+  erasable: await (async () => {
+    await panel.locator(".kb-gate-edit").first().click();
+    await panel.getByRole("button", { name: /이 브라우저에 저장된 값 지우기/ }).waitFor({ timeout: 10000 });
+    await panel.getByRole("button", { name: /이 브라우저에 저장된 값 지우기/ }).click();
+    await page.reload({ waitUntil: "networkidle" });
+    await panel.locator(".kb-gate-rail").waitFor({ timeout: 15000 });
+    return await panel.locator(".kb-profile-form input").nth(0).inputValue() === "";
+  })()
+};
+
+// 지웠으므로 처음부터 다시 확정한다.
+await panel.locator(".kb-profile-form input").nth(0).fill("100000000");
+await panel.getByRole("button", { name: /확정하고 조건 입력으로/ }).click();
+
 // 조건 — 예시 문장으로 채우고 확인 화면으로
 await panel.locator(".kb-examples button").first().click();
 await panel.getByRole("button", { name: "조건으로 정리하기" }).click();
@@ -204,13 +227,14 @@ const productTab = {
   noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
 };
 
-const result = { stepper, overview, drilldown, returned, profile, condition, flowOrder, lease, bands, location, cost, funding, prescription, policyTab, productTab, axes, errors };
+const result = { stepper, overview, drilldown, returned, profile, persistence, condition, flowOrder, lease, bands, location, cost, funding, prescription, policyTab, productTab, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 const expected = ["조건", "입지", "처방"];
 const stepperOk = stepper.labels.length === 3 && expected.every((label, index) => (stepper.labels[index] || "").includes(label));
 if (errors.length || !stepperOk
   || !profile.gateVisible || !profile.mydataGated || !profile.lockExplained || profile.manualAdapterFields !== 3
+  || !persistence.gateSkipped || !persistence.badgeCarriesEquity || !persistence.storageDisclosed || !persistence.erasable
   || !condition.equityCarried || !condition.profileBadgeShown || condition.askCount > 3
   || !flowOrder.bandsBeforeSearch || !flowOrder.landsOnLocation || !flowOrder.bandSummaryInPlace
   || !lease.fieldsPresent || !lease.profileNotReasked || !lease.stillOnLocation || !lease.noRawParamKeys
