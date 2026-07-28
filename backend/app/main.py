@@ -23,7 +23,7 @@ from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
 from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
-                     DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
+                     DocumentCreate, FundingBandInput, FundingBandResult, FundingFacts, LocationSearch, MessageCreate,
                      PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
@@ -572,6 +572,35 @@ async def create_message_stream(case_id: UUID, payload: MessageCreate, session_i
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+async def catalog_selection(payload: DocumentCreate) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """고른 id 를 서버 카탈로그에서 되찾는다. 화면이 보낸 이름·금리·URL 은 쓰지 않는다.
+
+    조회되지 않는 id 는 422 로 막지 않고 제외한 뒤 건수를 알린다 — 카탈로그가 갱신된 사이
+    사용자가 갇히지 않게 하되, 조용히 자르지도 않기 위해서다."""
+    if not payload.selected_product_ids and not payload.selected_program_ids:
+        return [], [], 0
+    products = {item["id"]: item for item in await knowledge.kb_products() if item.get("id")}
+    programs = {item["id"]: item for item in await knowledge.programs() if item.get("id")}
+    chosen_products = [products[key] for key in payload.selected_product_ids if key in products]
+    chosen_programs = [programs[key] for key in payload.selected_program_ids if key in programs]
+    dropped = ((len(payload.selected_product_ids) - len(chosen_products))
+               + (len(payload.selected_program_ids) - len(chosen_programs)))
+    return chosen_products, chosen_programs, dropped
+
+
+def document_funding(facts: FundingFacts | None) -> dict[str, Any] | None:
+    """문서에 실을 조달 요약. 화면이 계산한 숫자를 받지 않고 같은 산식을 다시 돌린다 —
+    /funding-bands 와 문서가 갈라지지 않는 유일한 방법이다. 계산할 수 없으면 None 이고,
+    그때 문서는 조달 요약이 없다는 사실을 그대로 적는다."""
+    if facts is None or policy_params.missing(facts.industry):
+        return None
+    try:
+        computed = compute_bands(policy_params, **facts.model_dump())
+    except ValueError:
+        return None
+    return {**computed, "assumed": policy_params.assumed(facts.industry), "as_of": policy_params.updated_at}
+
+
 @app.post("/api/v1/documents", status_code=201)
 async def create_document(payload: DocumentCreate, session_id: UUID = Depends(current_session)):
     case = owned_case(session_id, payload.case_id)
@@ -579,12 +608,18 @@ async def create_document(payload: DocumentCreate, session_id: UUID = Depends(cu
         raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "포함 정보를 확인한 뒤 문서를 생성해 주세요."})
     document_id = uuid4()
     descriptor = {"document_id": str(document_id), "created_at": datetime.now(UTC).isoformat(), "template": payload.template}
+    funding = document_funding(payload.funding_input)
+    products, programs, dropped = await catalog_selection(payload)
     try:
-        pdf = await asyncio.to_thread(render_case_pdf, case.model_dump(mode="json"), descriptor)
+        pdf = await asyncio.to_thread(render_case_pdf, case.model_dump(mode="json"), descriptor,
+                                      funding=funding, products=products, programs=programs, dropped=dropped)
         document = document_store.save(owner_session_id=session_id, case_id=payload.case_id, template=payload.template, pdf=pdf, document_id=document_id)
     except OSError as exc:
         raise HTTPException(500, {"code": "DOCUMENT_STORAGE_FAILED", "message": "PDF를 안전하게 저장하지 못했습니다."}) from exc
-    return {**document, "message": "PDF가 준비되었습니다. 현재 익명 세션에서 다운로드할 수 있습니다."}
+    message = "PDF가 준비되었습니다. 현재 익명 세션에서 다운로드할 수 있습니다."
+    if dropped:
+        message += f" {dropped}건은 공시 목록에서 확인되지 않아 제외했습니다."
+    return {**document, "message": message}
 
 
 @app.get("/api/v1/documents/{document_id}")
