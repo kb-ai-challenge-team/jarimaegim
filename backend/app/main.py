@@ -169,11 +169,17 @@ async def integration_status():
         "knowledge_index": await knowledge.freshness(),
         "agents": agent_roster(),
         "axes": analysis_axes(),
-        "limits": {"chat_daily_turns": {
-            "per_session": settings.ai_daily_request_limit,
-            "scope": "process_local",
-            "note": "다중 워커·재시작 환경에서는 이 한도가 실제로 적용되지 않는 알려진 한계입니다 (세션별 카운터가 프로세스 메모리에만 있습니다).",
-        }}}
+        "limits": {"chat_daily_turns": _chat_turn_limit()}}
+
+
+def _chat_turn_limit() -> dict[str, Any]:
+    """한도를 껐으면 한도를 광고하지 않는다. 없는 제약을 있다고 말하면 그 자체가 사실이 아니다."""
+    limit = settings.ai_daily_request_limit
+    if limit < 0:
+        return {"enabled": False, "per_session": None, "scope": "process_local",
+                "note": "AI 대화 일일 한도가 꺼져 있습니다. 턴 수를 세지 않습니다."}
+    return {"enabled": True, "per_session": limit, "scope": "process_local",
+            "note": "다중 워커·재시작 환경에서는 이 한도가 실제로 적용되지 않는 알려진 한계입니다 (세션별 카운터가 프로세스 메모리에만 있습니다)."}
 
 
 @app.post("/api/v1/sessions/anonymous", status_code=201)

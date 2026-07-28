@@ -237,7 +237,9 @@ export interface AnalysisAxis {
  * cross-worker/cross-restart) counter -- `note` says so plainly, surface it rather than implying
  * a durable quota. */
 export interface ChatDailyTurnsLimit {
-  per_session: number;
+  /** false 면 한도를 세지 않는다. 그때 per_session 은 null 이며 숫자를 표시하면 안 된다. */
+  enabled: boolean;
+  per_session: number | null;
   scope: string;
   note: string;
 }

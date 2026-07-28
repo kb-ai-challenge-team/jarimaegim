@@ -68,7 +68,11 @@ class Repository:
         gap against production multi-worker deployment, not a silent one. The counter dict is keyed by session id
         only and wiped whenever the wall-clock day (via the module-level _today seam) advances, so entries never
         outlive the day they were spent on and cannot grow unbounded across restarts-free long-running processes."""
-        if limit <= 0:
+        if limit < 0:
+            # 음수는 무제한이다. 세지 않는 것이 핵심 — 무제한인데 카운터만 자라면 그 자체가 누수다.
+            # 0 은 여전히 "한 턴도 허용하지 않음"이므로 두 뜻이 겹치지 않는다.
+            return True
+        if limit == 0:
             return False
         today = _today()
         with self._lock:
