@@ -610,3 +610,61 @@ def test_every_raw_tool_call_targets_a_name_the_server_actually_has():
     assert called, "no self.session.call(...) call sites were found -- did the pattern or the code move?"
     unknown = called - REAL_MCP_TOOL_NAMES
     assert not unknown, f"chat_tools.py calls raw tool name(s) presale-mcp does not expose: {unknown}"
+
+
+# --- 업스트림이 실패를 성공으로 포장하는 경우 -------------------------------------------------
+# presale-mcp 는 청약홈이 401 을 돌려줘도 도구 호출 자체는 성공으로 처리하고, 빈 목록과 함께
+# metadata.warnings 에만 실패를 남긴다. 실측으로 확인한 형태 그대로를 픽스처로 쓴다.
+
+FAILED_PRESALE = {**GANGNAM, "search_presale_announcements": {
+    "announcements": [], "unlocated_announcements": [], "summary": {"total_found": 0},
+    "metadata": {"provider_query_count": 1, "provider_query_failed_count": 1,
+                 "provider_query_timeout_count": 0,
+                 "warnings": ["ApplyHome APT API failed: HTTP 401"]}}}
+
+TRUNCATED_NEARBY = {**GANGNAM, "search_by_nearby_keyword": {
+    "results": [{"place_name": f"카페{i}"} for i in range(45)],
+    "metadata": {"warnings": ["Kakao Local API returned the maximum 45 results for at least one "
+                              "query; additional farther results may have been truncated."]}}}
+
+
+async def _resolved(payloads):
+    tools = ChatToolset(FakeSession(payloads), PlaceRegistry())
+    resolved = await tools.run("resolve_seoul_place", {"query": "역삼동 테스트빌딩"})
+    return tools, resolved["place_ref"]
+
+
+async def test_a_failed_presale_query_is_an_error_not_an_empty_result():
+    """Reading only `announcements` would report "no announcements here" for a query that never
+    reached ApplyHome. Deleting the _provider_failure check makes this fail with status=empty --
+    which is the fabrication this test exists to prevent."""
+    tools, ref = await _resolved(FAILED_PRESALE)
+    result = await tools.run("lookup_seoul_presale", {"place_ref": ref})
+    assert result["status"] == "error"
+    assert "401" in result["message"]
+    assert "확인하지 못했다" in result["message"]
+    assert result["citations"]
+
+
+async def test_a_genuinely_empty_presale_query_is_still_empty():
+    """The failure check must not swallow a real zero-row answer."""
+    clean = {**GANGNAM, "search_presale_announcements": {
+        "announcements": [], "summary": {"total_found": 0},
+        "metadata": {"provider_query_count": 1, "provider_query_failed_count": 0, "warnings": []}}}
+    tools, ref = await _resolved(clean)
+    result = await tools.run("lookup_seoul_presale", {"place_ref": ref})
+    assert result["status"] == "empty"
+
+
+async def test_a_truncated_nearby_search_says_the_list_may_be_incomplete():
+    tools, ref = await _resolved(TRUNCATED_NEARBY)
+    result = await tools.run("scan_nearby_facilities", {"place_ref": ref, "keywords": ["카페"]})
+    assert result["status"] == "ok"
+    assert len(result["by_keyword"]["카페"]) == 45
+    assert "truncated" in result["completeness_note"]
+
+
+async def test_an_untruncated_nearby_search_has_no_completeness_note():
+    tools, ref = await _resolved(NEARBY)
+    result = await tools.run("scan_nearby_facilities", {"place_ref": ref, "keywords": ["카페"]})
+    assert "completeness_note" not in result
