@@ -246,18 +246,30 @@ try {
     prescribe.nextUnlockedAfterCommit = !(await nextStep().isDisabled());
 
     await nextStep().click();
-    await kb.waitForSelector(".kb-gap-card");
+    // 조달 화면은 들어서면서 공시 상품·공고 카탈로그를 실제로 조회한다. 위의 20초는 "아직 없는
+    // 화면"을 빨리 포기하려고 고른 값이라 이 대기에는 맞지 않는다 — 같은 파일에서 공고/검색 대기에
+    // 30~40초를 준 것과 같은 이유로, 느린 것은 네트워크이지 화면이 아니므로 여기만 40초로 늘린다.
+    await kb.waitForSelector(".kb-gap-card", { timeout: 40000 });
     prescribe.reachedFunding = true;
-    // 무키 환경에서는 Supabase 가 없어 공시·공고가 둘 다 0건이다. 그것이 정상 경로이며,
-    // 그때도 서류로 넘어갈 수 있어야 한다. 문구는 대화 칼럼이 아니라 단계 본문에서 찾는다 —
-    // getByText 는 여러 개가 잡혀도 count 로는 터지지 않으므로, 대화 말풍선이 같은 말을 하면
-    // 조달 화면을 확인하지 않고도 조용히 통과해 버린다.
-    prescribe.emptyCatalogExplained = await kb.locator(".kb-step").getByText("고를 수단이 없습니다").count() > 0
-      || await kb.locator(".kb-select-row").count() > 0;
+    // 카탈로그는 이 화면에 들어선 뒤에야 조회된다(use-jarimaegim 의 step==="funding" 효과).
+    // 그래서 첫 렌더에는 목록이 비어 "고를 수단이 없습니다"가 한 프레임 스쳐 간다 — 그 찰나를
+    // 읽으면 공시가 66건 있어도 빈 상태로 통과해 버린다. 먼저 고를 수 있는 입력이 나타나기를
+    // 기다리고, 끝내 나타나지 않을 때만 빈 상태를 정상으로 인정한다.
+    // 행 수만 세면 체크박스를 잃은 행도 통과하므로, 행이 아니라 입력 자체를 센다.
+    const selectable = await kb.waitForSelector(".kb-select-row input[type=checkbox]", { timeout: 15000 }).then(() => true).catch(() => false);
+    // 무키 환경에서는 공시·공고가 둘 다 0건일 수 있다. 그것도 정상 경로이며 그때도 서류로 넘어갈
+    // 수 있어야 한다. 문구는 대화 칼럼이 아니라 단계 본문에서 찾는다 — getByText 는 여러 개가
+    // 잡혀도 count 로는 터지지 않으므로, 대화 말풍선이 같은 말을 하면 조달 화면을 확인하지 않고도
+    // 조용히 통과해 버린다.
+    prescribe.emptyCatalogExplained = selectable
+      || await kb.locator(".kb-step").getByText("고를 수단이 없습니다").count() > 0;
 
     await kb.getByRole("button", { name: /문서 만들기|서류로/ }).click();
     await kb.waitForSelector(".kb-doc-preview");
     prescribe.reachedPaperwork = true;
+    // 미리보기는 항상 나오는 여섯 줄 + 시연용 가정값일 때만 붙는 한 줄로 구성된다. 여기서 막고 싶은
+    // 것은 "동의만 받고 무엇이 담기는지는 안 보여주는" 회귀이지 줄 수의 변화가 아니므로, 정확히
+    // 세지 않고 느슨한 하한만 둔다 — 문구를 다듬는다고 이 검사가 깨지면 안 된다.
     prescribe.previewListsSections = (await kb.locator(".kb-doc-preview li").count()) >= 4;
     // 동의 전에는 준비 버튼이 잠겨 있어야 한다. 서버의 422 는 그대로 남아 있는 방어선이다.
     prescribe.prepareLockedBeforeConsent = await kb.getByRole("button", { name: /초안 준비하기/ }).isDisabled();
@@ -268,7 +280,7 @@ try {
   // 첫 줄만 남기면 "Timeout 20000ms exceeded." 뿐이라 무엇을 못 찾았는지가 사라진다.
   // 어떤 셀렉터에서 멈췄는지가 이 검사의 알맹이이므로 call log 의 대기 대상 줄을 같이 남긴다.
   // playwright 는 call log 를 ANSI dim 으로 감싸므로 JSON 에 그대로 실리지 않게 벗겨낸다.
-  const lines = String(error?.message ?? error).replace(/\[\d+m/g, "").split("\n").map(line => line.trim()).filter(Boolean);
+  const lines = String(error?.message ?? error).replace(/\x1b\[\d+m/g, "").split("\n").map(line => line.trim()).filter(Boolean);
   prescribe.error = [lines[0], lines.find(line => /waiting for/.test(line))].filter(Boolean).join(" ");
 }
 kb.setDefaultTimeout(30000);

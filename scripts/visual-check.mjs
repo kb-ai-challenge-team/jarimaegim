@@ -34,6 +34,55 @@ for (const viewport of viewports) {
     await page.screenshot({ path: outputPath(`${viewport.name}-${slug}.png`), fullPage: true });
     results.push({ viewport: viewport.name, route, ...geometry });
   }
+  // KB 흐름의 ④ 조달 · ⑤ 서류. 시연용 매물이 없으면 도달할 수 없으므로 건너뛴 사실을 남긴다 —
+  // 조용히 지나가면 "찍었다"로 읽힌다.
+  const kbSteps = { viewport: viewport.name, route: "/kb", funding: false, paperwork: false, skipped: null };
+  try {
+    await page.goto(base + "/kb", { waitUntil: "networkidle" });
+    await page.locator(".kb-profile-form input").nth(0).fill("100000000");
+    await page.getByRole("button", { name: /확정하고 조건 입력으로/ }).click();
+    await page.locator(".kb-field-block textarea").fill("강남구에서 카페를 준비 중이에요");
+    await page.getByRole("button", { name: /조건으로 정리하기/ }).click();
+    await page.locator(".kb-askbox input").first().fill("2500000");
+    await page.getByRole("button", { name: "이 조건으로 입지 찾기" }).click();
+    await page.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 30000 });
+    if (await page.locator(".kb-candidates li").count() === 0) {
+      kbSteps.skipped = "시연용 매물 없음";
+    } else {
+      await page.getByRole("button", { name: "계획 기준으로 확정" }).first().click();
+      await page.waitForSelector(".kb-candidate-actions .kb-primary-sm");
+      // 단계 이동 버튼은 .kb-stepnav 안에만 있다. 대화 칼럼의 추천 질문도 버튼이라 이름만으로 고르면 두 개가 잡힌다.
+      await page.locator(".kb-stepnav").getByRole("button", { name: /다음/ }).click();
+      // 조달 화면은 들어서면서 공시·공고를 조회한다. 첫 렌더에는 빈 상태가 한 프레임 스쳐 가므로
+      // 빈 상태를 대기 조건에 같이 넣으면 즉시 통과해 그 찰나를 찍는다 — 고를 수 있는 입력이
+      // 나타나기를 기다리고, 정말 빈 환경일 때만 시간 초과 후 빈 상태를 찍는다.
+      await page.waitForSelector(".kb-gap-card", { timeout: 40000 });
+      await page.waitForSelector(".kb-select-row input[type=checkbox]", { timeout: 15000 }).catch(() => null);
+      // 셸이 100vh 라 패널은 .kb-ai-scroll 안에서만 스크롤된다. 좁은 화면에서는 이 안쪽 스크롤이
+      // 대화 쪽에 머물러 있어 fullPage 로 찍어도 단계 본문이 프레임 밖에 남는다(측정값 y≈-1700px).
+      // 찍기 전에 본문을 안쪽 뷰포트로 끌어와야 "찍었다"가 실제로 그 화면을 뜻한다.
+      await page.locator(".kb-gap-card").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: outputPath(`${viewport.name}-kb-funding.png`), fullPage: true });
+      kbSteps.funding = true;
+      kbSteps.fundingSelectable = await page.locator(".kb-select-row input[type=checkbox]").count();
+      kbSteps.horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+      // 단계 본문이 실제로 몇 px 안에서 보이는지. 좁은 화면에서 이 값이 본문 높이에 비해 터무니없이
+      // 작으면 스크린샷은 찍혀도 사람이 볼 수 있는 화면은 아니다 — 수치로 남겨 두어야 드러난다.
+      kbSteps.panelViewport = await page.evaluate(() => {
+        const el = document.querySelector(".kb-ai-scroll");
+        return el ? { clientH: el.clientHeight, scrollH: el.scrollHeight } : null;
+      });
+      await page.getByRole("button", { name: /문서 만들기|서류로/ }).click();
+      await page.waitForSelector(".kb-doc-preview");
+      await page.locator(".kb-doc-preview").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: outputPath(`${viewport.name}-kb-paperwork.png`), fullPage: true });
+      kbSteps.paperwork = true;
+    }
+  } catch (error) {
+    kbSteps.skipped = String(error?.message ?? error).replace(/\x1b\[\d+m/g, "").split("\n")[0].trim();
+  }
+  results.push(kbSteps);
+
   await context.request.post(base + "/api/v1/sessions/anonymous", { data: { retention_notice_accepted: true } });
   const created = await context.request.post(base + "/api/v1/cases", { data: { title: "마포구 카페 처음 창업", inputs: { industry: "카페", district: "마포구", budget_krw: 100000000, equity_krw: 70000000, business_stage: "PRE_OPEN", startup_type: "INDEPENDENT", priority: "STABILITY" } } });
   const record = await created.json();
