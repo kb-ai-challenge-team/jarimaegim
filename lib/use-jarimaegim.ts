@@ -25,8 +25,8 @@ function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
     { id: "session", label: "익명 세션 확인", detail: "계정 없이 익명 세션으로 진행합니다. 조건은 최대 24시간만 보관합니다.", status: "idle" },
     { id: "case", label: "입력 조건 확정", detail: "서울 25개 자치구 범위인지 서버에서 검증하고 케이스로 저장합니다.", status: "idle" },
     { id: "bands", label: "조달 밴드 산출", detail: "자기자본과 임대 조건으로 자기자본선·권장 조달선·최대 조달선과 손익분기선을 계산합니다. 외부 데이터는 쓰지 않습니다.", status: "idle" },
-    { id: "search", label: "공식 장소 데이터 조회", detail: `Kakao Local 장소 검색 · 질의어 "서울 ${inputs.district} ${inputs.industry}" · 정확도순 최대 12곳`, status: "idle" },
-    { id: "grade", label: "근거 등급·출처 정리", detail: "후보마다 확인 가능한 근거 등급과 출처만 붙입니다. 없는 근거는 만들지 않습니다.", status: "idle" }
+    { id: "search", label: "시연용 매물 데이터 조회", detail: `시연용 매물 데이터 · 서울 ${inputs.district} · 보증금이 총예산 이하인 매물만 · 월세 낮은 순 최대 4곳. 업종은 후보 선별에 쓰이지 않습니다.`, status: "idle" },
+    { id: "grade", label: "근거 등급·출처 정리", detail: "시연용 매물은 좌표만 확인된 상태라 모두 근거 C이며, 출처는 시연용 생성 데이터로 표시합니다. 없는 근거는 만들지 않습니다.", status: "idle" }
   ];
   return leg === "full" ? steps : steps.slice(3);
 }
@@ -176,7 +176,7 @@ export function useJarimaegim() {
   const runSearch = useCallback(async (record: CaseRecord) => {
     setOverviewDistrict(null); setLocationState("loading"); setCandidates([]); setFocused(null);
     const result = await api.searchLocations(record.id, record.inputs);
-    settleStep("search", "done", result.status === "success" ? `응답 ${result.candidates.length}건` : result.message || "조건에 맞는 공식 장소가 없습니다.");
+    settleStep("search", "done", result.status === "success" ? `응답 ${result.candidates.length}건` : result.message || "조건에 맞는 시연용 매물이 없습니다.");
     setCandidates(result.candidates);
     setLocationState(result.status);
     setFocused(result.candidates[0]?.id ?? null);

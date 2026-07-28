@@ -37,7 +37,7 @@ export function AgentRunOverlay({ trace, inputs, onRetry, onDismiss, onEditCondi
   const settled = trace.steps.filter((step) => step.status !== "idle" && step.status !== "active").length;
   const found = trace.steps.find((step) => step.id === "grade");
   const heading = running ? "자리매김 AI가 입지를 확인하고 있습니다" : failed ? "확인이 중간에 멈췄습니다" : "확인을 마쳤습니다";
-  const lead = running ? `공식 데이터로 확인 가능한 범위만 찾습니다. ${trace.steps.length}단계 중 ${settled + 1}단계 진행 중입니다.`
+  const lead = running ? `확인 가능한 범위만 찾고, 없는 근거는 만들지 않습니다. ${trace.steps.length}단계 중 ${settled + 1}단계 진행 중입니다.`
     : failed ? "어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다."
     : `${found?.note ?? ""} · 총 ${formatMs(trace.totalMs)}`;
   const live = running ? `${trace.steps.length}단계 중 ${settled + 1}단계, ${active?.label ?? ""} 진행 중입니다.`

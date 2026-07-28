@@ -108,19 +108,19 @@ function BandBanner({ bands }: { bands: FundingBandResult }) {
 
 function RecommendStep({ flow }: { flow: Jarimaegim }) {
   const { candidates, locationState, focused, caseData, trace, bands } = flow;
-  const conditions = `${flow.form.district} ${flow.form.industry}`.trim();
+  const conditions = flow.form.district.trim();
   return <div className="kb-step">
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{trace.state === "running"
-      ? `${conditions} 조건으로 공식 장소 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
+      ? `${conditions} 시연용 매물 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
-      : caseData ? `${caseData.inputs.district} ${caseData.inputs.industry} 조건으로 공식 장소 데이터를 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+      : caseData ? `${caseData.inputs.district} 시연용 매물을 월세 낮은 순으로 확인했습니다. 업종은 후보 선별에 쓰이지 않았습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
     {bands?.status === "computed" && <BandBanner bands={bands} />}
     {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />조달 밴드는 아직 계산되지 않았습니다. 자금 단계에서 무엇이 비어 있는지 확인할 수 있습니다.</p>}
     {locationState === "loading" && <div className="kb-skeletons">{[0, 1, 2].map((row) => <div key={row} className="kb-skeleton" />)}</div>}
     {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />
-      <strong>{locationState === "integration_pending" ? "공식 위치 API 연결을 기다리고 있습니다" : "현재 조건에서 표시할 후보가 없습니다"}</strong>
-      <p>{locationState === "integration_pending" ? "Kakao Local REST 키가 설정되면 실제 장소를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "업종 이름이나 자치구를 바꿔 다시 확인해 주세요."}</p>
+      <strong>{locationState === "integration_pending" ? "시연용 매물 데이터 연결을 기다리고 있습니다" : "현재 조건에서 표시할 후보가 없습니다"}</strong>
+      <p>{locationState === "integration_pending" ? "매물 데이터가 연결되면 후보를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "시연용 매물이 준비된 자치구인지, 총예산이 보증금보다 낮지 않은지 확인해 주세요. 업종은 후보 선별에 쓰이지 않습니다."}</p>
       <button className="kb-ghost" onClick={flow.retrySearch}><RefreshCw aria-hidden="true" /> 다시 확인</button>
     </div>}
     {candidates.length > 0 && <>
@@ -132,7 +132,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
             <strong>{candidate.name}</strong>
             <small>{candidate.road_address || candidate.address}</small>
             <span className="kb-grade" data-grade={candidate.evidence_grade}>{EVIDENCE_BADGES[candidate.evidence_grade]} · {EVIDENCE_LABELS[candidate.evidence_grade]}</span>
-            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span></span>}
+            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보증금 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월세 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span></span>}
           </span>
         </button>
         <ProvenanceBar data={candidate.provenance} />
@@ -185,7 +185,7 @@ function StepNav({ flow }: { flow: Jarimaegim }) {
   const previous = order[index - 1];
   const labels: Record<string, string> = { bands: "자금", recommend: "입지", evidence: "근거", prescribe: "처방" };
   return <div className="kb-stepnav">
-    {previous ? <button className="kb-ghost" onClick={() => flow.setStep(previous)}>← {labels[previous]}</button> : <button className="kb-ghost" onClick={flow.reset}><RotateCcw aria-hidden="true" /> 조건 다시 입력</button>}
-    {next && <button className="kb-primary kb-primary-sm" onClick={() => flow.setStep(next)}>{labels[next]}로 <ArrowRight aria-hidden="true" /></button>}
+    {previous ? <button className="kb-ghost" onClick={() => flow.setStep(previous)} aria-label={`이전 단계 ${labels[previous]}`}>← 이전</button> : <button className="kb-ghost" onClick={flow.reset}><RotateCcw aria-hidden="true" /> 조건 다시 입력</button>}
+    {next && <button className="kb-primary kb-primary-sm" onClick={() => flow.setStep(next)} aria-label={`다음 단계 ${labels[next]}`}>다음 <ArrowRight aria-hidden="true" /></button>}
   </div>;
 }
