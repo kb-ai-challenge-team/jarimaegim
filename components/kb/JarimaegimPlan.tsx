@@ -246,9 +246,14 @@ export function PlanFunding({ caseData, committed, bands, programs, programState
       </dl>
       {pending
         ? <p className="kb-gap-pending"><Info aria-hidden="true" />{bands?.message || "조달 밴드를 아직 계산하지 못했습니다."}</p>
-        : gapKrw === 0
-          ? <p className="kb-gap-headline">추가 차입 없이 자기자본으로 가능합니다</p>
-          : <p className="kb-gap-headline"><strong>부족분 {formatKrw(gapKrw ?? 0)}</strong>을 무엇으로 메울까요?</p>}
+        /* 권장 조달선이 없으면 부족분을 모른다. compute_bands 는 늘 세 밴드를 다 돌려주고 밴드가 없는
+           응답은 integration_pending 뿐이라 지금 이 가지에는 닿지 않는다. 그래도 0원으로 대신하지 않는다 —
+           "부족분 0원"은 부족분이 없다는 없는 사실이 된다. 모르는 값은 이 화면의 다른 값들과 같이 확인 필요로 말한다. */
+        : gapKrw === null
+          ? <p className="kb-gap-pending"><Info aria-hidden="true" />권장 조달선을 읽지 못해 부족분은 확인 필요입니다.</p>
+          : gapKrw === 0
+            ? <p className="kb-gap-headline">추가 차입 없이 자기자본으로 가능합니다</p>
+            : <p className="kb-gap-headline"><strong>부족분 {formatKrw(gapKrw)}</strong>을 무엇으로 메울까요?</p>}
       {partial && <p className="kb-note"><Info aria-hidden="true" />필요자금은 평수·보증금이 있어야 계산합니다. 위 부족분은 권장 조달선 기준 차입액입니다.</p>}
       {pending && <p className="kb-note"><Info aria-hidden="true" />부족분을 계산하지 못해 아래 목록은 조건 대조만 했습니다. 금액 대조는 하지 않았습니다.</p>}
     </section>
