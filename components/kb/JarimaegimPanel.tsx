@@ -8,11 +8,12 @@ import type { AnalysisResult, CaseInput, FundingBandResult, ListingTerms } from 
 import { manwon } from "@/lib/format";
 import type { FlowStep, Jarimaegim, Profile } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
-import { PlanPrescription, PlanTuning, runwayLabel } from "./JarimaegimPlan";
+import { PlanFunding, PlanPaperwork, PlanTuning, runwayLabel } from "./JarimaegimPlan";
 
-// 금융 프로필은 스텝이 아니라 진입 관문이다. 스테퍼는 조건 → 입지 → 처방 셋뿐이다.
+// 금융 프로필은 스텝이 아니라 진입 관문이다. 스테퍼는 조건 → 입지 → 조달 → 서류 넷이다.
 const STEPS: { id: FlowStep; label: string }[] = [
-  { id: "ask", label: "조건" }, { id: "recommend", label: "입지" }, { id: "prescribe", label: "처방" }
+  { id: "ask", label: "조건" }, { id: "recommend", label: "입지" },
+  { id: "funding", label: "조달" }, { id: "paperwork", label: "서류" }
 ];
 const EXAMPLES = ["마포구에서 카페를 준비하고 있어요", "성동구에 2호점 낼 자리 찾고 있어요", "관악구 분식점 자리를 알아보는 중이에요"];
 // 확인 화면이 물을 수 있는 전부. 답이 후보를 바꾸는 항목만 남기며 "최대 3"의 상한도 여기서 온다.
@@ -42,15 +43,23 @@ export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: 
       {flow.step === "ask" && <AskStep flow={flow} />}
       {flow.step === "confirm" && <ConfirmStep flow={flow} />}
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
-      {flow.step === "prescribe" && flow.caseData && <PlanPrescription caseData={flow.caseData}
+      {flow.step === "funding" && flow.caseData && <PlanFunding caseData={flow.caseData}
         committed={flow.candidates.find((item) => item.id === flow.committed) || null}
-        programs={flow.programs} state={flow.programState}
-        applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)} bands={flow.bands}
+        bands={flow.bands} programs={flow.programs} programState={flow.programState}
         kbProducts={flow.kbProducts.filter((product) => product.category === "BUSINESS_LOAN")} kbState={flow.kbState}
+        applicationEnabled={Boolean(flow.status?.feature_flags.financial_application)}
+        selected={flow.selected} onToggle={flow.toggleFunding}
+        onBackToLocation={() => flow.setStep("recommend")} onNext={() => flow.setStep("paperwork")} />}
+      {flow.step === "paperwork" && flow.caseData && <PlanPaperwork caseData={flow.caseData}
+        committed={flow.candidates.find((item) => item.id === flow.committed) || null}
+        bands={flow.bands}
+        products={flow.kbProducts.filter((product) => flow.selected.products.includes(product.id))}
+        programs={flow.programs.filter((program) => flow.selected.programs.includes(program.id))}
         documents={flow.documents} docBusy={flow.docBusy} docNotice={flow.docNotice}
+        confirmed={flow.docConfirmed} onConfirm={flow.setDocConfirmed}
         onPrepareDocument={(template) => flow.documents[template] ? flow.downloadDocument(template) : flow.prepareDocument(template)}
-        onBackToLocation={() => flow.setStep("recommend")} />}
-      {flow.caseData && (flow.step === "recommend" || flow.step === "prescribe") && <StepNav flow={flow} />}
+        onBackToFunding={() => flow.setStep("funding")} />}
+      {flow.caseData && (flow.step === "recommend" || flow.step === "funding" || flow.step === "paperwork") && <StepNav flow={flow} />}
     </div>
   </div>;
 }
@@ -358,15 +367,21 @@ function EvidenceContract({ result }: { result: AnalysisResult }) {
 }
 function assertNever(value: never): never { throw new Error(`Unexpected contract: ${String(value)}`); }
 
+/** 후보를 확정해야 부족분이 확정되므로, 확정 전에는 조달로 넘어가지 못한다.
+ *  잠그는 이유를 버튼 옆에 쓴다 — 눌리지 않는 버튼만 두면 고장으로 읽힌다. */
 function StepNav({ flow }: { flow: Jarimaegim }) {
-  const order: FlowStep[] = ["recommend", "prescribe"];
+  const order: FlowStep[] = ["recommend", "funding", "paperwork"];
   const index = order.indexOf(flow.step);
   const next = order[index + 1];
   const previous = order[index - 1];
-  const labels: Record<string, string> = { recommend: "입지", prescribe: "처방" };
-  return <div className="kb-stepnav">
-    {previous ? <button className="kb-ghost" onClick={() => flow.setStep(previous)} aria-label={`이전 단계 ${labels[previous]}`}>← 이전</button>
-      : <button className="kb-ghost" onClick={flow.restart}><RotateCcw aria-hidden="true" /> 조건 다시 입력</button>}
-    {next && <button className="kb-primary kb-primary-sm" onClick={() => flow.setStep(next)} aria-label={`다음 단계 ${labels[next]}`}>다음 <ArrowRight aria-hidden="true" /></button>}
-  </div>;
+  const labels: Record<string, string> = { recommend: "입지", funding: "조달", paperwork: "서류" };
+  const blocked = flow.step === "recommend" && !flow.committed;
+  return <>
+    {blocked && <p className="kb-note"><CircleHelp aria-hidden="true" />계획 기준 후보를 하나 확정해야 조달 계획을 세울 수 있습니다.</p>}
+    <div className="kb-stepnav">
+      {previous ? <button className="kb-ghost" onClick={() => flow.setStep(previous)} aria-label={`이전 단계 ${labels[previous]}`}>← 이전</button>
+        : <button className="kb-ghost" onClick={flow.restart}><RotateCcw aria-hidden="true" /> 조건 다시 입력</button>}
+      {next && <button className="kb-primary kb-primary-sm" disabled={blocked} onClick={() => flow.setStep(next)} aria-label={`다음 단계 ${labels[next]}`}>다음 <ArrowRight aria-hidden="true" /></button>}
+    </div>
+  </>;
 }
