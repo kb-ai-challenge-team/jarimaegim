@@ -267,16 +267,30 @@ class MainAgent:
 
     @staticmethod
     def _summary(prescription: TeamReport) -> dict[str, Any]:
-        """팀이 낸 수치를 고르기만 한다. 여기서 새로 계산하는 값은 하나도 없다."""
+        """팀이 낸 수치를 고르기만 한다. 여기서 새로 계산하는 값은 하나도 없다.
+
+        희망 월세가 없으면 권장 조달선이 없다. 그때도 여력 세 줄은 있으므로 빈 요약을 내지
+        않고 낼 수 있는 것만 낸다 — 빈 요약은 화면에서 "아무것도 못 냈다" 로 읽힌다."""
         band = next((item for item in prescription.outcomes if item.key == "finance.band"), None)
         if band is None or not band.active:
             return {}
-        recommended = next(line for line in band.data["bands"] if line["band"] == "RECOMMENDED")
-        return {
+        capacity = band.data.get("capacity") or {}
+        summary: dict[str, Any] = {
+            "equity_line_krw": capacity.get("equity_line_krw"),
+            "borrowing_headroom_krw": capacity.get("borrowing_headroom_krw"),
+            "maximum_line_krw": capacity.get("maximum_line_krw"),
+            "deferred": band.data.get("deferred", []),
+        }
+        recommended = next((line for line in band.data.get("bands", [])
+                            if line["band"] == "RECOMMENDED"), None)
+        if recommended is None:
+            return summary
+        summary.update({
             "recommended_ceiling_krw": recommended["ceiling_krw"],
             "monthly_repayment_krw": recommended["monthly_repayment_krw"],
             "target_monthly_revenue_krw": recommended["target_monthly_revenue_krw"],
             "target_daily_revenue_krw": recommended["target_daily_revenue_krw"],
             "runway_months": recommended["runway_months"],
             "required_capital_krw": band.data.get("required_capital_krw"),
-        }
+        })
+        return summary

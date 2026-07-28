@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..funding import ScenarioParams, compute_bands
+from ..funding import ScenarioParams, compute_bands, compute_capacity
 from ..models import Provenance
 from .contracts import AgentOutcome, AgentStatus, TeamReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick
@@ -64,6 +64,8 @@ _BAND_FIELDS: tuple[tuple[str, Any], ...] = (
 
 _BAND_PENDING = ("조달 밴드 계산에 필요한 제도·업종 파라미터가 아직 등록되지 않았습니다. "
                  "등록 전에는 추정하지 않습니다.")
+_RENT_DEFERRED = ("희망 월세를 받기 전에는 권장 조달선과 손익분기를 계산하지 않았습니다. "
+                  "자기자본선·차입 여력·최대 조달선은 금융 프로필만으로 나오므로 그대로 냅니다.")
 _SUBSIDY_PENDING = ("공고 원문에 지원 규모가 구조화된 금액 필드로 들어오지 않아 조달선 상향분을 "
                     "계산하지 않았습니다. 본문에서 금액을 추측해 상한을 올리지 않습니다.")
 _KB_PENDING = "창업자금으로 쓸 수 있는 개인사업자대출 공시가 인덱스에 없습니다."
@@ -195,6 +197,22 @@ class FinanceTeam:
                 required_actions=[f"{name} 을(를) 출처와 함께 등록해 주세요." for name in missing],
             ), None
         inputs = self._inputs(conditions)
+        # 여력은 금융 프로필만으로 나온다 — `compute_capacity` 는 업종도 월세도 읽지 않는다.
+        # 그래서 월세가 없어도 이 세 줄은 낼 수 있고, 못 내는 것은 권장 조달선과 손익분기뿐이다.
+        # 여기서 유보(WITHHELD)로 돌려주면 `FinanceReport.halted` 가 참이 되어 입지 판단까지
+        # 월세 입력을 기다리게 된다 — 그것이 이 분기가 존재하는 이유다.
+        capacity = compute_capacity(self.params, equity_krw=inputs["equity_krw"],
+                                    existing_debt_krw=inputs["existing_debt_krw"])
+        if not inputs["monthly_rent_krw"]:
+            review = review or Decision.deterministic("finance.band",
+                                                      schema=BAND_REVIEW_SCHEMA.name)
+            return declaration.outcome(
+                AgentStatus.OK, message=_RENT_DEFERRED,
+                data={"capacity": capacity, "bands": [], "deferred": ["monthly_rent_krw"],
+                      "required_capital_krw": None, "required_capital_band": None,
+                      "anomalies": [], "decision": review.as_data()},
+                provenance=self._provenance(industry),
+            ), None
         try:
             computed = compute_bands(self.params, **inputs)
         except ValueError as error:
@@ -222,13 +240,21 @@ class FinanceTeam:
                 required_actions=[ANOMALY_MESSAGES[code] for code in blocking],
             ), None
         return declaration.outcome(
-            AgentStatus.OK, data={**computed, "anomalies": confirmed, "decision": audit},
+            AgentStatus.OK, data={**computed, "capacity": capacity, "deferred": [],
+                                  "anomalies": confirmed, "decision": audit},
             provenance=self._provenance(industry),
         ), computed
 
     @staticmethod
     def _inputs(conditions: dict[str, Any]) -> dict[str, Any]:
-        return {name: conditions.get(name, fallback) for name, fallback in _BAND_FIELDS}
+        """`None` 도 기본값으로 대체한다. `.get(name, fallback)` 만으로는 키가 있고 값이
+        `None` 인 경우를 못 걸러서 `compute_bands` 가 `int(None + ...)` 로 죽는다 —
+        화면이 "아직 모른다"를 `null` 로 보내는 필드가 실제로 있다."""
+        picked: dict[str, Any] = {}
+        for name, fallback in _BAND_FIELDS:
+            value = conditions.get(name, fallback)
+            picked[name] = fallback if value is None else value
+        return picked
 
     @staticmethod
     def _confirm_anomalies(review: Decision, conditions: dict[str, Any],
@@ -279,7 +305,10 @@ class FinanceTeam:
         declaration = spec("finance.stress")
         if computed is None:
             # 밴드가 못 나온 이유를 그대로 물려받는다. 여기서 따로 진단하지 않는다.
-            return declaration.outcome(band.status, message=band.message)
+            # 월세 유보로 밴드가 OK 인 채 산출물이 없는 경우도 여기로 온다 — 스트레스는
+            # 밴드 산출물을 읽는 축이므로, 읽을 것이 없으면 OK 가 아니라 유보다.
+            status = AgentStatus.WITHHELD if band.active else band.status
+            return declaration.outcome(status, message=band.message)
         selection = selection or Decision.deterministic("finance.stress", schema=STRESS_SCHEMA.name)
         recommended = next(line for line in computed["bands"] if line["band"] == "RECOMMENDED")
         maximum = next(line for line in computed["bands"] if line["band"] == "MAXIMUM")
