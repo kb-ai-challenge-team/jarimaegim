@@ -50,6 +50,20 @@ LISTING_DEMO_NOTICE = ("실제 임대 매물이 아니며 계약 대상이 아�
 
 FUNDING_OMITTED = "조달 밴드를 계산하지 못해 이 문서에는 조달 요약이 없습니다."
 
+# 제외 사실을 알리는 두 문장. 조회가 실패해도 카탈로그는 빈 목록으로 내려오므로(knowledge.py:34-40)
+# 그 경우까지 "목록에서 확인되지 않았다"고 적으면 카탈로그 내용에 대한 거짓 주장이 된다 —
+# 상품은 목록에 있고 조회가 실패한 것뿐이다. 그래서 불러오지 못한 경우는 일어난 일만 적고
+# 목록의 내용에 대해서는 아무 말도 하지 않는다.
+SELECTION_DROPPED = "{count}건은 공시 목록에서 확인되지 않아 제외했습니다."
+SELECTION_UNAVAILABLE = "공시·공고 목록을 불러오지 못해 고른 {count}건을 문서에 담지 못했습니다."
+
+
+def selection_note(dropped: int, unavailable: bool) -> str | None:
+    """제외 한 줄. 문서와 응답 message 가 같은 문장을 쓰도록 한 곳에서만 만든다."""
+    if not dropped:
+        return None
+    return (SELECTION_UNAVAILABLE if unavailable else SELECTION_DROPPED).format(count=dropped)
+
 
 def krw(value: int | None) -> str:
     """금액 표기. 없는 값은 0 이 아니라 '확인 필요'다 — 없는 것을 0 으로 적으면 계산된 0 처럼 읽힌다."""
@@ -93,8 +107,10 @@ def rate_text(product: dict[str, Any]) -> str:
 
 
 def selection_section_lines(products: list[dict[str, Any]], programs: list[dict[str, Any]],
-                            dropped: int) -> list[str]:
-    """사용자가 고른 조달 수단. 전달된 dict 는 서버 카탈로그에서 되찾은 것이며 클라이언트 문자열이 아니다."""
+                            dropped: int, unavailable: bool = False) -> list[str]:
+    """사용자가 고른 조달 수단. 전달된 dict 는 서버 카탈로그에서 되찾은 것이며 클라이언트 문자열이 아니다.
+
+    unavailable 은 '되찾아야 하는데 카탈로그가 비어 왔다'는 뜻이고, 그때는 제외 사유를 다르게 적는다."""
     if not products and not programs and dropped == 0:
         return ["고른 조달 수단", "고른 조달 수단이 없습니다."]
     lines = ["고른 조달 수단"]
@@ -109,8 +125,9 @@ def selection_section_lines(products: list[dict[str, Any]], programs: list[dict[
                      f"{program.get('application_period') or '기간 원문 확인'}")
         lines.append(f"원문: {program.get('official_url') or '확인 필요'}")
     lines.append("공시·공고 문구와 입력 조건을 텍스트로 대조해 고른 목록이며, 자격이나 승인 가능성을 판단한 것이 아닙니다.")
-    if dropped:
-        lines.append(f"{dropped}건은 공시 목록에서 확인되지 않아 제외했습니다.")
+    note = selection_note(dropped, unavailable)
+    if note:
+        lines.append(note)
     return lines
 
 
@@ -130,7 +147,7 @@ def render_case_pdf(case: dict[str, Any], document: dict[str, Any], *,
                     funding: dict[str, Any] | None = None,
                     products: list[dict[str, Any]] | None = None,
                     programs: list[dict[str, Any]] | None = None,
-                    dropped: int = 0) -> bytes:
+                    dropped: int = 0, unavailable: bool = False) -> bytes:
     from io import BytesIO
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -164,7 +181,7 @@ def render_case_pdf(case: dict[str, Any], document: dict[str, Any], *,
     # 조달 요약과 고른 수단은 언제나 제목 + 최소 한 줄을 돌려주므로 빈 검사가 필요 없다.
     # 계산하지 못했다는 사실도 문서에 남아야 하기 때문에 그렇게 설계했다.
     for section in (funding_section_lines(funding),
-                    selection_section_lines(products or [], programs or [], dropped)):
+                    selection_section_lines(products or [], programs or [], dropped, unavailable)):
         heading, *body = section
         story.append(Spacer(1, 16))
         story.append(Paragraph(heading, styles["Heading2"]))

@@ -69,6 +69,9 @@ def test_compute_bands_output_satisfies_the_funding_section():
     assert any("권장 조달선" in line for line in lines)
 
 
+# 두 픽스처는 파이프라인이 실제로 싣는 행 모양이다. KB는 pipeline/policy/normalize.py 의
+# _kb_display(:351-363), 공고는 _program_display(:163-176) 가 만드는 display dict 를 따른다.
+# 그 두 함수가 바뀌면 이 픽스처도 함께 바뀌어야 한다.
 PRODUCT = {"id": "kb-1", "name": "KB 소호모바일대출", "loan_limit": "최대 1억원",
            "rate_min": 3.9, "rate_max": 5.2, "source_as_of": "2026-07",
            "official_url": "https://obank.kbstar.com/example"}
@@ -138,6 +141,20 @@ def test_everything_dropped_still_produces_the_section():
 def test_an_empty_required_field_falls_back_instead_of_printing_blank():
     lines = selection_section_lines([{**PRODUCT, "name": ""}], [], 0)
     assert any("이름 확인 필요" in line for line in lines)
+
+
+def test_an_unloadable_catalog_says_so_instead_of_claiming_the_ids_are_absent():
+    """조회 실패도 빈 목록으로 내려오므로, 그때 '목록에 없다'고 적으면 카탈로그 내용에 대한
+    거짓 주장이 문서에 남는다. 무슨 일이 있었는지만 적고 목록의 내용은 말하지 않는다."""
+    lines = selection_section_lines([], [], 2, unavailable=True)
+    assert any("불러오지 못해" in line and "2건" in line for line in lines)
+    assert not any("확인되지 않아 제외" in line for line in lines)
+
+
+def test_a_populated_catalog_keeps_the_missing_wording():
+    lines = selection_section_lines([PRODUCT], [], 1, unavailable=False)
+    assert any("확인되지 않아 제외" in line for line in lines)
+    assert not any("불러오지 못해" in line for line in lines)
 
 
 CASE = {"id": "22222222-2222-2222-2222-222222222222", "title": "강남구 카페", "version": 2,

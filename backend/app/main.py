@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from .chat_stream import ChatStreamer, StreamLimits
 from .chat_tools import ChatToolset, PlaceRegistry
 from .config import get_settings
-from .document_store import DocumentStore, render_case_pdf
+from .document_store import DocumentStore, render_case_pdf, selection_note
 from .funding import compute_bands
 from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
@@ -572,33 +572,54 @@ async def create_message_stream(case_id: UUID, payload: MessageCreate, session_i
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def catalog_selection(payload: DocumentCreate) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+async def catalog_selection(payload: DocumentCreate) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, bool]:
     """고른 id 를 서버 카탈로그에서 되찾는다. 화면이 보낸 이름·금리·URL 은 쓰지 않는다.
 
     조회되지 않는 id 는 422 로 막지 않고 제외한 뒤 건수를 알린다 — 카탈로그가 갱신된 사이
-    사용자가 갇히지 않게 하되, 조용히 자르지도 않기 위해서다."""
-    if not payload.selected_product_ids and not payload.selected_program_ids:
-        return [], [], 0
-    products = {item["id"]: item for item in await knowledge.kb_products() if item.get("id")}
-    programs = {item["id"]: item for item in await knowledge.programs() if item.get("id")}
-    chosen_products = [products[key] for key in payload.selected_product_ids if key in products]
-    chosen_programs = [programs[key] for key in payload.selected_program_ids if key in programs]
-    dropped = ((len(payload.selected_product_ids) - len(chosen_products))
-               + (len(payload.selected_program_ids) - len(chosen_programs)))
-    return chosen_products, chosen_programs, dropped
+    사용자가 갇히지 않게 하되, 조용히 자르지도 않기 위해서다.
+
+    다만 조회 실패도 빈 목록으로 내려오므로(knowledge.py:34-40) 두 경우를 구분해서 돌려준다.
+    되찾을 것이 있는데 카탈로그가 통째로 비어 왔다면 그건 'id 가 목록에 없다'가 아니라
+    '목록을 못 읽었다'이고, 네 번째 값이 그 사실을 나른다.
+
+    같은 id 를 두 번 보내도 한 번만 싣는다. 중복을 제외 건수로 세면 없는 누락을 알리게 된다.
+    고르지 않은 쪽 카탈로그는 조회하지 않는다."""
+    product_ids = list(dict.fromkeys(payload.selected_product_ids))
+    program_ids = list(dict.fromkeys(payload.selected_program_ids))
+    if not product_ids and not program_ids:
+        return [], [], 0, False
+    products = {item["id"]: item for item in (await knowledge.kb_products() if product_ids else []) if item.get("id")}
+    programs = {item["id"]: item for item in (await knowledge.programs() if program_ids else []) if item.get("id")}
+    chosen_products = [products[key] for key in product_ids if key in products]
+    chosen_programs = [programs[key] for key in program_ids if key in programs]
+    dropped = (len(product_ids) - len(chosen_products)) + (len(program_ids) - len(chosen_programs))
+    unavailable = (bool(product_ids) and not products) or (bool(program_ids) and not programs)
+    return chosen_products, chosen_programs, dropped, unavailable
 
 
-def document_funding(facts: FundingFacts | None) -> dict[str, Any] | None:
-    """문서에 실을 조달 요약. 화면이 계산한 숫자를 받지 않고 같은 산식을 다시 돌린다 —
-    /funding-bands 와 문서가 갈라지지 않는 유일한 방법이다. 계산할 수 없으면 None 이고,
-    그때 문서는 조달 요약이 없다는 사실을 그대로 적는다."""
-    if facts is None or policy_params.missing(facts.industry):
-        return None
+FUNDING_NO_INPUT = "조달 입력이 없어 조달 요약은 넣지 않았습니다."
+FUNDING_UNREGISTERED = "업종 파라미터가 등록되지 않아 조달 요약을 계산하지 못했습니다."
+FUNDING_UNCOMPUTABLE = "등록된 업종 파라미터로는 손익분기를 계산할 수 없어 조달 요약을 넣지 않았습니다."
+
+
+def document_funding(case: CaseRecord, facts: FundingFacts | None) -> tuple[dict[str, Any] | None, str | None]:
+    """문서에 실을 조달 요약과, 없다면 그 이유. 화면이 계산한 숫자를 받지 않고 같은 산식을
+    다시 돌린다 — /funding-bands 와 문서가 갈라지지 않는 유일한 방법이다.
+
+    업종과 자기자본만은 요청이 아니라 케이스에서 가져온다. 평수·월세처럼 화면에만 있는 값과
+    달리 이 둘은 케이스에 이미 확정값이 있고, 요청 값을 그대로 쓰면 문서의 '사용자 확인값'
+    블록과 바로 아래 조달 요약이 서로 다른 조건 위에서 계산될 수 있다."""
+    if facts is None:
+        return None, FUNDING_NO_INPUT
+    fields = {**facts.model_dump(), "industry": case.inputs.industry, "equity_krw": case.inputs.equity_krw}
+    if policy_params.missing(fields["industry"]):
+        return None, FUNDING_UNREGISTERED
     try:
-        computed = compute_bands(policy_params, **facts.model_dump())
+        computed = compute_bands(policy_params, **fields)
     except ValueError:
-        return None
-    return {**computed, "assumed": policy_params.assumed(facts.industry), "as_of": policy_params.updated_at}
+        return None, FUNDING_UNCOMPUTABLE
+    return {**computed, "assumed": policy_params.assumed(fields["industry"]),
+            "as_of": policy_params.updated_at}, None
 
 
 @app.post("/api/v1/documents", status_code=201)
@@ -608,18 +629,20 @@ async def create_document(payload: DocumentCreate, session_id: UUID = Depends(cu
         raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "포함 정보를 확인한 뒤 문서를 생성해 주세요."})
     document_id = uuid4()
     descriptor = {"document_id": str(document_id), "created_at": datetime.now(UTC).isoformat(), "template": payload.template}
-    funding = document_funding(payload.funding_input)
-    products, programs, dropped = await catalog_selection(payload)
+    funding, funding_reason = document_funding(case, payload.funding_input)
+    products, programs, dropped, unavailable = await catalog_selection(payload)
     try:
         pdf = await asyncio.to_thread(render_case_pdf, case.model_dump(mode="json"), descriptor,
-                                      funding=funding, products=products, programs=programs, dropped=dropped)
+                                      funding=funding, products=products, programs=programs,
+                                      dropped=dropped, unavailable=unavailable)
         document = document_store.save(owner_session_id=session_id, case_id=payload.case_id, template=payload.template, pdf=pdf, document_id=document_id)
     except OSError as exc:
         raise HTTPException(500, {"code": "DOCUMENT_STORAGE_FAILED", "message": "PDF를 안전하게 저장하지 못했습니다."}) from exc
-    message = "PDF가 준비되었습니다. 현재 익명 세션에서 다운로드할 수 있습니다."
-    if dropped:
-        message += f" {dropped}건은 공시 목록에서 확인되지 않아 제외했습니다."
-    return {**document, "message": message}
+    # 문서에 적힌 사실은 응답에도 같은 문장으로 나간다 — 화면이 문서를 열지 않고도
+    # 무엇이 빠졌는지 그대로 말할 수 있어야 하기 때문이다.
+    parts = ["PDF가 준비되었습니다. 현재 익명 세션에서 다운로드할 수 있습니다.", funding_reason,
+             selection_note(dropped, unavailable)]
+    return {**document, "message": " ".join(part for part in parts if part)}
 
 
 @app.get("/api/v1/documents/{document_id}")
