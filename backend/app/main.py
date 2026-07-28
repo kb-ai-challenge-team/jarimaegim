@@ -16,6 +16,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from .chat_stream import ChatStreamer, StreamLimits
 from .chat_tools import ChatToolset, PlaceRegistry
+from .condition_interpret import sanitize as sanitize_conditions
+from .condition_parse import parse_conditions
 from .config import get_settings
 from .districts import SEOUL_DISTRICTS
 from .document_store import DocumentStore, render_case_pdf
@@ -23,7 +25,8 @@ from .funding import CAPACITY_ENTRIES, compute_bands, compute_capacity
 from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
-from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
+from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord,
+                     ConditionInterpretRequest, ConditionInterpretResult, CostPlanCreate,
                      DocumentCreate, FundingBandInput, FundingBandResult, FundingCapacityInput,
                      FundingCapacityResult, LocationSearch, MessageCreate, PrivacyRequestCreate, Provenance,
                      RetrievalResponse, SessionCreate)
@@ -340,6 +343,21 @@ async def create_funding_capacity(payload: FundingCapacityInput, session_id: UUI
                                  unverified_params=unverified,
                                  recommended_line_pending=RECOMMENDED_LINE_PENDING,
                                  provenance=provenance)
+
+
+@app.post("/api/v1/conditions/interpret", response_model=ConditionInterpretResult)
+async def interpret_conditions(payload: ConditionInterpretRequest,
+                               session_id: UUID = Depends(current_session)):
+    """발화를 조건 제안으로 바꾼다. 케이스를 만들지 않으며, 확인 화면의 승인이 있어야 조건이 된다.
+
+    AI 경로와 규칙 경로가 같은 sanitize 게이트를 지난다. AI 가 없거나 실패하면 규칙 경로로
+    내려가며, 두 경로 모두 evidence 가 사용자 원문의 부분문자열임을 검증받는다."""
+    proposed = await ai.interpret_conditions(payload.text)
+    source = "AI" if proposed is not None else "RULE"
+    if proposed is None:
+        proposed = parse_conditions(payload.text)
+    result = sanitize_conditions(payload.text, proposed)
+    return ConditionInterpretResult(source=source, **result)
 
 
 @app.get("/api/v1/programs")

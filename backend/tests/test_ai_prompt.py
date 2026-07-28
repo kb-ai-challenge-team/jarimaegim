@@ -75,3 +75,24 @@ def test_build_interpret_prompt_needs_no_api_key():
 async def test_interpret_conditions_returns_none_without_a_key():
     """키가 없으면 호출부가 규칙 경로로 내려갈 수 있도록 None 을 돌려준다."""
     assert await service().interpret_conditions("마포구에서 카페") is None
+
+
+def test_loads_object_reads_a_bare_json_object():
+    from app.services import _loads_object
+    assert _loads_object('{"a": 1}') == {"a": 1}
+
+
+def test_loads_object_unwraps_a_markdown_fence():
+    """모델이 ```json 으로 감싸도 AI 경로가 조용히 죽으면 안 된다."""
+    from app.services import _loads_object
+    assert _loads_object('```json\n{"a": 1}\n```') == {"a": 1}
+
+
+def test_loads_object_ignores_prose_around_the_object():
+    from app.services import _loads_object
+    assert _loads_object('설명입니다.\n{"a": 1}\n이상입니다.') == {"a": 1}
+
+
+def test_loads_object_returns_none_on_garbage():
+    from app.services import _loads_object
+    assert _loads_object("죄송합니다, 답할 수 없습니다.") is None

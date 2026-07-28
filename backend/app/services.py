@@ -103,6 +103,21 @@ class CostService:
         }
 
 
+def _loads_object(text: str) -> Any:
+    """모델이 JSON 을 코드펜스나 설명 문장으로 감싸는 일이 잦다. 그대로 파싱해 보고,
+    실패하면 가장 바깥 중괄호 구간만 떼어 한 번 더 시도한다. 그래도 안 되면 호출부가 규칙 경로로 간다."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            return json.loads(text[start:end + 1])
+        except ValueError:
+            return None
+
+
 class AIService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -165,7 +180,7 @@ class AIService:
             text = (response.output_text or "").strip()
             if not text:
                 return None
-            parsed = json.loads(text)
+            parsed = _loads_object(text)
             return parsed if isinstance(parsed, dict) else None
         except Exception:
             return None

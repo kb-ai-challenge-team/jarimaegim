@@ -104,3 +104,10 @@ def test_rent_evidence_quotes_the_whole_number():
     result = parse_conditions("월세 3,000,000원 정도로 생각 중이에요")
     assert result["monthly_rent_krw"]["value"] == 3_000_000
     assert "3,000,000" in result["monthly_rent_krw"]["evidence"]
+
+
+def test_rent_evidence_has_no_stray_whitespace():
+    """확인 화면이 인용부호 안에 그대로 넣으므로 앞뒤 공백이 남으면 안 된다."""
+    evidence = parse_conditions("월세는 300 정도 생각해요")["monthly_rent_krw"]["evidence"]
+    assert evidence == evidence.strip()
+    assert evidence in "월세는 300 정도 생각해요"

@@ -124,7 +124,7 @@ def _rent(text: str) -> dict[str, Any]:
     if not match:
         return _field()
     value = amount_from(match.group(2))
-    return _field(value, match.group(0)) if value is not None else _field()
+    return _field(value, match.group(0).strip()) if value is not None else _field()
 
 
 def parse_conditions(text: str) -> dict[str, dict[str, Any]]:
