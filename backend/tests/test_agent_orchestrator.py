@@ -59,23 +59,23 @@ def agent(params=FULL, *, timing=None, location=None):
                      timing=timing or TimingTeam())
 
 
-async def test_a_complete_run_reports_every_team_in_order():
+async def test_a_complete_run_reports_every_axis_group_in_order():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "finance", "location", "timing", "main"]
+    assert [report.key for report in result.reports] == ["condition", "finance", "location", "timing", "main"]
 
 
-async def test_unsettled_conditions_stop_before_the_finance_team_runs():
+async def test_unsettled_conditions_stop_before_the_finance_axes_run():
     result = await agent().run({**CONDITIONS, "industry": ""}, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "main"]
+    assert [report.key for report in result.reports] == ["condition", "main"]
     assert result.halted_at == "condition"
     assert result.questions
     assert result.surviving == []
 
 
-async def test_a_missing_band_stops_before_the_location_team_runs():
+async def test_a_missing_band_stops_before_the_location_axes_run():
     # 팀 계약 — 기준선 없이는 후보를 판정할 수 없으므로 후속 전체 중단.
     result = await agent(EMPTY).run(CONDITIONS, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "finance", "main"]
+    assert [report.key for report in result.reports] == ["condition", "finance", "main"]
     assert result.halted_at == "finance"
     assert result.surviving == []
 
@@ -90,9 +90,9 @@ async def test_the_timing_team_only_sees_surviving_candidates():
     assert result.dropped[0]["id"] == "l1"
 
 
-async def test_the_finance_team_runs_once_regardless_of_candidate_count():
+async def test_the_finance_axes_run_once_regardless_of_candidate_count():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    finance = next(report for report in result.reports if report.team == "finance")
+    finance = next(report for report in result.reports if report.key == "finance")
     assert len([item for item in finance.outcomes if item.key == "finance.band"]) == 1
 
 
@@ -123,9 +123,9 @@ async def test_changed_conditions_force_a_rerun():
     assert timing.calls == 2
 
 
-async def test_the_summary_only_repeats_numbers_the_teams_produced():
+async def test_the_summary_only_repeats_numbers_the_axes_produced():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    band = next(report for report in result.reports if report.team == "finance")
+    band = next(report for report in result.reports if report.key == "finance")
     lines = next(item for item in band.outcomes if item.key == "finance.band").data["bands"]
     assert result.summary["recommended_ceiling_krw"] == lines[1]["ceiling_krw"]
     assert result.summary["target_monthly_revenue_krw"] == lines[1]["target_monthly_revenue_krw"]

@@ -144,20 +144,36 @@ def test_prescribe_requires_a_session(case_id):
         assert anonymous.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY).status_code == 401
 
 
-def test_prescribe_streams_team_progress_then_a_result(client, case_id, filled_params):
+def test_prescribe_streams_axis_progress_then_a_result(client, case_id, filled_params):
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
     assert response.status_code == 200
     names = [frame["event"] for frame in frames(response)]
     assert names[0] == "run_start"
-    assert "team_start" in names
+    assert "axis_start" in names
     assert "agent_end" in names
     assert names[-1] == "done"
 
 
-def test_each_team_reports_before_the_next_one_starts(client, case_id, filled_params):
+def test_each_axis_reports_before_the_next_one_starts(client, case_id, filled_params):
+    """진행은 축 단위로 온다. 팀 경계는 이벤트에 나타나지 않는다 — 화면의 묶음은
+    `AgentSpec.display_group` 이 정하고, 그것은 표시일 뿐 실행 단위가 아니다."""
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
-    teams = [frame["data"]["team"] for frame in frames(response) if frame["event"] == "team_start"]
-    assert teams == ["condition", "finance", "location", "timing", "main"]
+    started = [frame["data"]["key"] for frame in frames(response) if frame["event"] == "axis_start"]
+    assert started == ["condition.location", "condition.finance",
+                       "finance.band", "finance.stress", "finance.kb_products", "finance.subsidy",
+                       "location.demand", "location.competition", "location.viability",
+                       "location.survival", "timing.policy", "main.integrate"]
+
+
+def test_an_axis_starts_before_it_ends(client, case_id, filled_params):
+    """`axis_start` 와 `agent_end` 가 축마다 짝을 이룬다. 시작 없이 끝나면 화면의 진행 막대가
+    건너뛴 축을 완료로 칠한다."""
+    response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
+    order = [(frame["event"], frame["data"]["key"]) for frame in frames(response)
+             if frame["event"] in ("axis_start", "agent_end")]
+    for index in range(0, len(order), 2):
+        assert order[index][0] == "axis_start"
+        assert order[index + 1] == ("agent_end", order[index][1])
 
 
 def test_every_agent_end_names_the_agent_and_its_status(client, case_id, filled_params):

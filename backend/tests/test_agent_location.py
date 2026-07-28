@@ -62,9 +62,13 @@ def test_a_dead_axis_never_drops_a_candidate():
     assert report.dropped == []
 
 
-def test_the_team_never_blocks_the_run():
-    # 금융처방 팀과 달리 입지팀 실패는 후속 중단 사유가 아니다.
-    assert LocationTeam().run(CANDIDATES, CONDITIONS).blocking is False
+def test_a_location_failure_never_stops_the_run():
+    """입지 축은 중단 규칙에 들어 있지 않다 — 축 하나가 죽어도 나머지로 계속 간다.
+    중단은 조건 미확정과 여력 커널 실패 둘뿐이고, 그 판정은 orchestrator 가 한다."""
+    from app.agents.orchestrator import capacity_failed, conditions_unsettled
+    report = LocationTeam().run(CANDIDATES, CONDITIONS)
+    assert not hasattr(report, "halted")
+    assert not hasattr(report, "blocking")
 
 
 def test_axes_turn_on_when_a_profile_is_available():

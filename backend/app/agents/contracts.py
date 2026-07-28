@@ -97,25 +97,23 @@ class AgentOutcome:
 
 
 @dataclass(frozen=True)
-class TeamReport:
-    """팀장이 메인 에이전트에게 올리는 보고.
+class AxisReport:
+    """실행 단위 하나가 낸 결과.
 
-    `blocking` 은 제안서 04장의 팀 계약을 그대로 옮긴 것이다 — 금융처방 팀이 실패하면 후속
-    전체가 중단되고(기준선 없이는 후보를 판정할 수 없다), 입지·타이밍 팀은 실패한 축만
-    빠지고 나머지는 진행한다.
+    팀 보고가 아니다 — **멈출지 말지를 스스로 선언하지 않는다.** 예전에는 `blocking` 과
+    `halted` 가 여기 있었고, 세 곳(기본 · 조건 · 금융)이 각자 다른 규칙으로 그것을 덮어썼다.
+    그 결과 논리적으로 독립인 판단이 팀 경계에 인질로 잡혔다: 금융 밴드가 실패하면 "이 자리에
+    손님이 있나"까지 함께 멈췄다.
+
+    지금 중단 판정은 `orchestrator` 한 곳에만 있다. 여기 있는 것은 사실뿐이다 — 어느 축들이
+    무엇을 냈는가. 그 사실을 읽고 무엇을 멈출지 정하는 것은 메인의 책임이다.
     """
 
-    team: str
+    key: str
     name: str
     outcomes: list[AgentOutcome]
-    blocking: bool = False
     message: str | None = None
 
     @property
     def active_count(self) -> int:
         return sum(1 for item in self.outcomes if item.active)
-
-    @property
-    def halted(self) -> bool:
-        """이 보고 때문에 후속을 멈춰야 하는가."""
-        return self.blocking and self.active_count == 0

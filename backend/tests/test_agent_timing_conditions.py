@@ -7,6 +7,7 @@
 조건 계약 (제안서 03장)
   최소 조건 미충족 시 후보를 생성하지 않고 질문한다. 최대 3개, 답이 후보를 바꾸는 항목만.
 """
+from app.agents.orchestrator import conditions_unsettled
 from app.agents.conditions import ConditionLayer
 from app.agents.contracts import AgentStatus
 from app.agents.timing import TimingTeam
@@ -37,8 +38,10 @@ def test_timing_keeps_every_candidate():
     assert [item["id"] for item in report.surviving] == ["l1", "l2"]
 
 
-def test_timing_never_blocks_the_run():
-    assert TimingTeam().run(CANDIDATES).blocking is False
+def test_timing_never_reduces_the_candidate_set():
+    """판정하지 못한 축이 후보를 줄이면 안 된다. 타이밍은 원천이 없어 언제나 유보다."""
+    report = TimingTeam().run(CANDIDATES)
+    assert len(report.surviving) == len(CANDIDATES)
 
 
 # ── 조건 확정 레이어 ────────────────────────────────────────────────
@@ -68,10 +71,9 @@ def test_questions_are_capped_at_three():
     assert 0 < len(report.questions) <= 3
 
 
-def test_the_layer_blocks_candidate_generation_until_settled():
+def test_an_unsettled_layer_blocks_candidate_generation():
     # 제안서 03장 — 미충족 시 후보를 생성하지 않는다.
-    assert ConditionLayer().run({}).blocking is True
-    assert ConditionLayer().run({}).halted is True
+    assert conditions_unsettled(ConditionLayer().run({})) is True
 
 
 def test_mydata_is_declared_off_and_manual_entry_satisfies_the_same_schema():
@@ -87,6 +89,6 @@ def test_optional_fields_do_not_hold_the_run():
     report = ConditionLayer().run({**COMPLETE, "area_pyeong": None, "operating_style": "",
                                    "monthly_rent_krw": None, "deposit_krw": None})
     assert report.settled is True
-    assert report.halted is False
+    assert conditions_unsettled(report) is False
     assert report.questions == []
     assert set(report.deferred) >= {"monthly_rent_krw", "area_pyeong", "deposit_krw"}

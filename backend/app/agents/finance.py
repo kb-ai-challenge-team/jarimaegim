@@ -2,7 +2,8 @@
 
 제안서 04장의 되먹임 방향에서 이 팀이 **선행**한다. 조달 상한을 모르는 상태에서는 감당 불가한
 후보를 걸러낼 기준이 없으므로, 이 팀이 기준선을 만들고 입지팀이 그 선을 넘을 수 있는지 증명한다.
-그래서 팀 계약이 `blocking=True` 다 — 밴드를 못 그리면 후속 전체가 중단된다.
+밴드를 못 그리면 후속 전체가 중단되지만, 그 판정은 이 파일이 아니라 `orchestrator`
+가 한다 — 중단 규칙이 한 벌이어야 논리적으로 독립인 판단이 인질로 잡히지 않는다.
 
 네 서브에이전트 중 **밴드 산출만이 계산을 한다.** 스트레스는 같은 산출물을 읽고, 지원정책과
 KB 상품은 조회한 값을 인용만 한다. 가드 1(숫자는 도구 결과만)을 지키는 가장 단순한 방법은
@@ -32,24 +33,14 @@ finance.kb_products · finance.subsidy 만 모델을 부른다. 공시의 한도
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from ..funding import ScenarioParams, compute_bands, compute_capacity
 from ..models import Provenance
-from .contracts import AgentOutcome, AgentStatus, TeamReport
+from .contracts import AgentOutcome, AgentStatus, AxisReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick
 from .registry import spec
 
-
-@dataclass(frozen=True)
-class FinanceReport(TeamReport):
-    @property
-    def halted(self) -> bool:
-        """후속을 멈추는 조건은 "밴드를 그렸는가" 하나다. KB 공시가 붙었다는 사실은
-        기준선을 대신하지 못하므로 기본 규칙(`활성 0건`)으로 판정하면 안 된다."""
-        band = next((item for item in self.outcomes if item.key == "finance.band"), None)
-        return band is None or not band.active
 
 #: 창업 자금 조달에 쓸 수 있는 공시 카테고리. 소비자 대출(주담대·전세·예적금)은 창업자금이
 #: 아니므로 여기 들어오지 않는다 — 넣으면 "조달 가능"을 잘못 말하게 된다.
@@ -153,7 +144,7 @@ STRESS_DECISION = "run_all_stress_scenarios"
 class FinanceTeam:
     """조회 결과를 생성자로 받는다. 이 클래스는 네트워크를 모른다 — 그래야 팀 계약만 테스트된다."""
 
-    team = "finance"
+    key = "finance"
     name = "금융처방 팀"
 
     def __init__(self, params, *, kb_products: list[dict[str, Any]],
@@ -164,17 +155,17 @@ class FinanceTeam:
         self.llm = llm
 
     def run(self, conditions: dict[str, Any],
-            decisions: dict[str, Decision] | None = None) -> TeamReport:
+            decisions: dict[str, Decision] | None = None) -> AxisReport:
         chosen = decisions or {}
         band, computed = self._band(conditions, chosen.get("finance.band"))
         outcomes = [band,
                     self._stress(band, computed, conditions),
                     self._kb_products(chosen.get("finance.kb_products")),
                     self._subsidy(chosen.get("finance.subsidy"))]
-        return FinanceReport(team=self.team, name=self.name, outcomes=outcomes, blocking=True,
-                             message=None if band.active else band.message)
+        return AxisReport(key=self.key, name=self.name, outcomes=outcomes,
+                          message=None if band.active else band.message)
 
-    async def arun(self, conditions: dict[str, Any]) -> TeamReport:
+    async def arun(self, conditions: dict[str, Any]) -> AxisReport:
         return self.run(conditions, await self.decide(conditions))
 
     async def decide(self, conditions: dict[str, Any]) -> dict[str, Decision]:
@@ -203,7 +194,7 @@ class FinanceTeam:
         inputs = self._inputs(conditions)
         # 여력은 금융 프로필만으로 나온다 — `compute_capacity` 는 업종도 월세도 읽지 않는다.
         # 그래서 월세가 없어도 이 세 줄은 낼 수 있고, 못 내는 것은 권장 조달선과 손익분기뿐이다.
-        # 여기서 유보(WITHHELD)로 돌려주면 `FinanceReport.halted` 가 참이 되어 입지 판단까지
+        # 여기서 유보(WITHHELD)로 돌려주면 여력 커널 실패로 읽혀 입지 판단까지
         # 월세 입력을 기다리게 된다 — 그것이 이 분기가 존재하는 이유다.
         capacity = compute_capacity(self.params, equity_krw=inputs["equity_krw"],
                                     existing_debt_krw=inputs["existing_debt_krw"])

@@ -14,6 +14,7 @@
 """
 from app.agents.contracts import AgentStatus
 from app.agents.finance import ANOMALY_PREDICATES, FinanceTeam, STRESS_SCENARIOS, WITHHOLDABLE
+from app.agents.orchestrator import capacity_failed
 from app.agents.llm import AgentLLM, RunBudget
 from app.policy_params import PolicyParams
 
@@ -108,7 +109,7 @@ def test_an_input_contradiction_is_reported_but_the_band_is_still_drawn():
 
 def test_an_input_contradiction_never_halts_the_run():
     conditions = {**CONDITIONS, "deposit_krw": 200_000_000, "equity_krw": 100_000_000}
-    assert team().run(conditions).halted is False
+    assert capacity_failed(team().run(conditions)) is False
 
 
 def test_an_anomaly_carries_the_sentence_the_code_owns():

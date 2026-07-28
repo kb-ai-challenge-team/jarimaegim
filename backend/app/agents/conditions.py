@@ -39,7 +39,7 @@ from typing import Any
 
 from ..condition_parse import amount_from
 from ..industry import resolve as resolve_industry, suggest as suggest_industry
-from .contracts import AgentStatus, TeamReport
+from .contracts import AgentStatus, AxisReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick, Records, Span
 from .registry import spec
 
@@ -100,7 +100,7 @@ def resolve_mention(field_name: str, span: str) -> Any | None:
 
 
 @dataclass(frozen=True)
-class ConditionReport(TeamReport):
+class ConditionReport(AxisReport):
     #: 되묻기 항목. `options` 가 리스트라 값 타입이 str 하나가 아니다.
     questions: list[dict[str, Any]] = field(default_factory=list)
     settled: bool = False
@@ -110,12 +110,6 @@ class ConditionReport(TeamReport):
     deferred: list[str] = field(default_factory=list)
     #: 발화가 이미 확정된 값과 충돌한 것. 조용히 덮어쓰지 않고 제안으로만 올린다.
     proposals: list[dict[str, Any]] = field(default_factory=list)
-
-    @property
-    def halted(self) -> bool:
-        """기본 규칙(`활성 0건`)을 쓰지 않는다. 차단 항목이 하나라도 비면 계산이 성립하지
-        않으므로 멈추고, 유보 항목은 아무리 비어도 멈추지 않는다."""
-        return not self.settled
 
 
 def _blank(value: Any) -> bool:
@@ -139,7 +133,7 @@ def _missing(conditions: dict[str, Any], required) -> list[tuple[str, str]]:
 
 
 class ConditionLayer:
-    team = "condition"
+    key = "condition"
     name = "조건 확정 레이어"
 
     def __init__(self, *, mydata_enabled: bool = False, llm: AgentLLM | None = None):
@@ -195,7 +189,7 @@ class ConditionLayer:
                           "options": suggest_industry(str(merged["industry"]))}]
         settled = not blocking_gaps and not unmapped
         return ConditionReport(
-            team=self.team, name=self.name, outcomes=outcomes, blocking=True,
+            key=self.key, name=self.name, outcomes=outcomes,
             questions=questions, settled=settled, conditions=merged,
             deferred=[key for key, _ in deferred_gaps], proposals=proposals,
             message=None if settled else "확정되지 않은 조건이 있어 후보를 생성하지 않았습니다.")

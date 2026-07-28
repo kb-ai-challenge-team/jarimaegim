@@ -5,6 +5,7 @@
 가 여력을 못 내고, 자치구가 없으면 탐색 공간을 못 자른다. 희망 월세는 손익분기만 못 내므로
 입지 축은 전부 그대로 돈다 — 그래서 되묻지 않고 그 수치만 유보한다.
 """
+from app.agents.orchestrator import conditions_unsettled
 from app.agents.conditions import BLOCKING, DEFERRABLE, ConditionLayer
 
 FULL = {"industry": "카페", "district": "마포구", "equity_krw": 50_000_000,
@@ -27,33 +28,33 @@ def test_the_rent_is_deferrable_not_blocking():
 def test_complete_conditions_settle_and_do_not_halt():
     report = layer().run(FULL)
     assert report.settled is True
-    assert report.halted is False
+    assert conditions_unsettled(report) is False
     assert report.questions == []
 
 
 def test_a_missing_rent_does_not_halt_the_run():
     """M0 의 핵심 — 손익분기만 못 내는 항목이 입지 판단을 인질로 잡지 않는다."""
     report = layer().run({**FULL, "monthly_rent_krw": None})
-    assert report.halted is False
+    assert conditions_unsettled(report) is False
     assert report.questions == []
     assert "monthly_rent_krw" in report.deferred
 
 
 def test_a_missing_area_or_deposit_does_not_halt_the_run():
     report = layer().run({**FULL, "area_pyeong": None, "deposit_krw": None})
-    assert report.halted is False
+    assert conditions_unsettled(report) is False
     assert report.questions == []
 
 
 def test_a_missing_industry_halts_and_asks_for_exactly_that():
     report = layer().run({**FULL, "industry": None})
-    assert report.halted is True
+    assert conditions_unsettled(report) is True
     assert [item["field"] for item in report.questions] == ["industry"]
 
 
 def test_a_missing_equity_halts_and_asks_for_exactly_that():
     report = layer().run({**FULL, "equity_krw": None})
-    assert report.halted is True
+    assert conditions_unsettled(report) is True
     assert [item["field"] for item in report.questions] == ["equity_krw"]
 
 
@@ -71,7 +72,7 @@ def test_questions_are_still_capped_at_three():
 def test_a_zero_equity_counts_as_missing_rather_than_as_an_answer():
     """0 원을 확정된 자기자본으로 읽으면 여력 커널이 0 을 진짜 답으로 낸다."""
     report = layer().run({**FULL, "equity_krw": 0})
-    assert report.halted is True
+    assert conditions_unsettled(report) is True
 
 
 # ── 업종 정규화 실패는 값이 있어도 복구를 요구한다 ────────────────────────
@@ -80,7 +81,7 @@ def test_an_unmappable_industry_halts_even_though_the_field_is_filled():
     """'스터디카페'는 값이 있지만 코드로 정규화되지 않는다. 그대로 진행하면 입지 네 축이
     통째로 꺼진 채 아무 설명 없이 빈 결과가 나온다."""
     report = layer().run({**FULL, "industry": "스터디카페"})
-    assert report.halted is True
+    assert conditions_unsettled(report) is True
     assert [item["field"] for item in report.questions] == ["industry"]
 
 

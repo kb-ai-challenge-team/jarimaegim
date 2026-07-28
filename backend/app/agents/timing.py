@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import AgentStatus, TeamReport
+from .contracts import AgentStatus, AxisReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick
 from .registry import spec
 
@@ -26,12 +26,12 @@ SCHEDULE_SCHEMA_NAME = "select_schedule_documents"
 
 
 @dataclass(frozen=True)
-class TimingReport(TeamReport):
+class TimingReport(AxisReport):
     surviving: list[dict[str, Any]] = field(default_factory=list)
 
 
 class TimingTeam:
-    team = "timing"
+    key = "timing"
     name = "타이밍 팀"
 
     def __init__(self, *, llm: AgentLLM | None = None,
@@ -51,7 +51,7 @@ class TimingTeam:
                                 for item in self.documents]},
             required_actions=["재개발·교통·주택공급·공사 일정 원천을 확보해야 시점을 말할 수 있습니다."])
         # 후보는 그대로 통과시킨다. 판정하지 못한 팀이 후보를 줄이면 안 된다.
-        return TimingReport(team=self.team, name=self.name, outcomes=[outcome], blocking=False,
+        return TimingReport(key=self.key, name=self.name, outcomes=[outcome],
                             surviving=list(candidates))
 
     async def arun(self, candidates: list[dict[str, Any]]) -> TimingReport:

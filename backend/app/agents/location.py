@@ -46,7 +46,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .contracts import AgentOutcome, AgentStatus, TeamReport
+from .contracts import AgentOutcome, AgentStatus, AxisReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Flag, Pick, Records
 from .registry import spec
 from .survival_mapping import VerificationTable
@@ -79,7 +79,7 @@ SURVIVAL_SCHEMA_NAME = "propose_survival_mapping"
 
 
 @dataclass(frozen=True)
-class LocationReport(TeamReport):
+class LocationReport(AxisReport):
     """팀 보고 + 축소 결과. 탈락은 언제나 사유와 함께 나간다."""
 
     surviving: list[dict[str, Any]] = field(default_factory=list)
@@ -101,7 +101,7 @@ def _optional(source: Any, name: str):
 
 
 class LocationTeam:
-    team = "location"
+    key = "location"
     name = "입지추천 팀"
 
     def __init__(self, *, trade_area: Any | None = None,
@@ -140,7 +140,7 @@ class LocationTeam:
             self._survival(chosen.get("location.survival")),
         ]
         surviving, dropped = self._narrow(candidates, profiles, outcomes)
-        return LocationReport(team=self.team, name=self.name, outcomes=outcomes, blocking=False,
+        return LocationReport(key=self.key, name=self.name, outcomes=outcomes,
                               surviving=surviving, dropped=dropped)
 
     async def arun(self, candidates: list[dict[str, Any]],

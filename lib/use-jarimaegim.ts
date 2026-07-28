@@ -356,7 +356,7 @@ export function useJarimaegim() {
         utterance,
       }, {
         onRunStart: () => {},
-        onTeamStart: () => {},
+        onAxisStart: () => {},
         onAgentEnd: (agent) => {
           // 메인 통합은 마지막 줄이다. 여기서 바로 정착시키면 트레이스가 done 으로 넘어가고,
           // 그 뒤에 오는 정리 루프가 전부 무시되어 중간 줄이 "진행 중"인 채로 남는다.

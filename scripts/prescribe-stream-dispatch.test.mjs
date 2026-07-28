@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { applyPrescribeFrame, ApiError } from "../lib/api.ts";
 
 function recorder() {
-  const calls = { runStart: [], teamStart: [], agentEnd: [], done: [] };
+  const calls = { runStart: [], axisStart: [], agentEnd: [], done: [] };
   return { calls,
     onRunStart: info => calls.runStart.push(info),
-    onTeamStart: team => calls.teamStart.push(team),
+    onAxisStart: axis => calls.axisStart.push(axis),
     onAgentEnd: agent => calls.agentEnd.push(agent),
     onDone: result => calls.done.push(result) };
 }
@@ -17,10 +17,10 @@ test("run_start reports how many agents the run will cover", () => {
   assert.deepEqual(handlers.calls.runStart, [{ total_agents: 12, fingerprint: "abc" }]);
 });
 
-test("team_start carries the team's Korean name and its agent count", () => {
+test("axis_start carries the axis key and its Korean name", () => {
   const handlers = recorder();
-  applyPrescribeFrame({ event: "team_start", data: { team: "finance", name: "금융처방 팀", agent_count: 4 } }, handlers);
-  assert.deepEqual(handlers.calls.teamStart, [{ team: "finance", name: "금융처방 팀", agent_count: 4 }]);
+  applyPrescribeFrame({ event: "axis_start", data: { key: "finance.band", name: "조달 밴드 산출" } }, handlers);
+  assert.deepEqual(handlers.calls.axisStart, [{ key: "finance.band", name: "조달 밴드 산출" }]);
 });
 
 test("agent_end keeps the backend status verbatim so the UI never re-judges it", () => {
@@ -88,9 +88,12 @@ test("an unknown question reason degrades to MISSING rather than passing through
   assert.equal(handlers.calls.done[0].questions[0].reason, "MISSING");
 });
 
-test("team_end is accepted and ignored, not treated as the end of the run", () => {
+test("a legacy team frame is ignored, not treated as the end of the run", () => {
+  // 팀 이벤트는 사라졌지만 옛 서버가 보내도 스트림이 끊기면 안 된다 — 모르는 프레임 하나가
+  // 실행 전체를 실패로 보이게 만든다.
   const handlers = recorder();
   assert.equal(applyPrescribeFrame({ event: "team_end", data: { team: "finance", active: 1 } }, handlers), false);
+  assert.equal(applyPrescribeFrame({ event: "team_start", data: { team: "finance" } }, handlers), false);
   assert.deepEqual(handlers.calls.done, []);
 });
 
@@ -104,7 +107,7 @@ test("an error frame throws ApiError so the caller cannot mistake it for a finis
 test("an unknown event name is a forward-compatible no-op, not a crash", () => {
   const handlers = recorder();
   assert.equal(applyPrescribeFrame({ event: "something_new", data: {} }, handlers), false);
-  assert.deepEqual(handlers.calls, { runStart: [], teamStart: [], agentEnd: [], done: [] });
+  assert.deepEqual(handlers.calls, { runStart: [], axisStart: [], agentEnd: [], done: [] });
 });
 
 test("agent_end forwards the agent's own numbers so a settled row can quote them", () => {

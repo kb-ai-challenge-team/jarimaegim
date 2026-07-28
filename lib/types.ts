@@ -434,7 +434,9 @@ export interface PrescribeResult {
 /** `done` 은 언제나 마지막 프레임이고 `error` 는 던져진다 — chat 스트림과 같은 규칙이다. */
 export interface PrescribeStreamHandlers {
   onRunStart(info: { total_agents: number; fingerprint: string }): void;
-  onTeamStart(team: { team: string; name: string; agent_count: number }): void;
+  /** 축 하나가 시작했다. 팀 경계는 더 이상 이벤트에 없다 — 화면의 묶음은
+   *  `AgentSpec.display_group` 이 정하고, 그것은 표시일 뿐 실행 단위가 아니다. */
+  onAxisStart(axis: { key: string; name: string }): void;
   onAgentEnd(agent: AgentProgress): void;
   onDone(result: PrescribeResult): void;
 }

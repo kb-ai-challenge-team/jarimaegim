@@ -4,11 +4,12 @@
 업종도 월세도 읽지 않기 때문이다. 권장 조달선과 손익분기만 월세를 요구한다. 그래서 월세가
 없으면 밴드를 통째로 유보하는 대신 여력만 싣고 무엇을 못 냈는지 밝힌다.
 
-유보(`WITHHELD`)로 반환하면 `FinanceReport.halted` 가 참이 되어 실행 전체가 멈추고, 그러면
+유보(`WITHHELD`)로 반환하면 여력 커널 실패로 읽혀 실행 전체가 멈추고, 그러면
 "이 자리에 손님이 있나" 까지 월세 입력을 기다리게 된다. 그것이 M0 가 없애려는 상태다.
 """
 from app.agents.contracts import AgentStatus
 from app.agents.finance import FinanceTeam
+from app.agents.orchestrator import capacity_failed
 from app.policy_params import PolicyParams
 
 # `test_agent_finance.py` 와 같은 인라인 파라미터를 쓴다 — 저장소의 실제 파일을 읽으면
@@ -52,7 +53,7 @@ def test_without_a_rent_the_band_agent_still_reports_ok():
 
 def test_without_a_rent_the_run_is_not_halted():
     """이것이 M0 의 핵심 단언이다."""
-    assert team().run({**BASE, "monthly_rent_krw": None}).halted is False
+    assert capacity_failed(team().run({**BASE, "monthly_rent_krw": None})) is False
 
 
 def test_without_a_rent_the_capacity_lines_are_still_produced():

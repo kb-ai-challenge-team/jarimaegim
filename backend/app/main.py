@@ -464,8 +464,9 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
                     "deferred": result.deferred, "proposals": result.proposals,
                     "activation": result.activation, "summary": result.summary,
                     "surviving": result.surviving, "dropped": result.dropped,
-                    "reports": [{"team": report.team, "name": report.name,
-                                 "blocking": report.blocking, "halted": report.halted,
+                    # 축 묶음 하나가 낸 결과. `blocking`·`halted` 는 없다 — 무엇을 멈출지는
+                    # 보고가 아니라 orchestrator 가 정하고, 그 결론은 `halted_at` 한 곳에 있다.
+                    "reports": [{"key": report.key, "name": report.name,
                                  "outcomes": [{"key": item.key, "name": item.name,
                                                "status": item.status, "message": item.message,
                                                "data": item.data,

@@ -6,6 +6,7 @@
 import pytest
 from app.agents.contracts import AgentStatus
 from app.agents.finance import FinanceTeam
+from app.agents.orchestrator import capacity_failed
 from app.policy_params import PolicyParams
 
 FULL = PolicyParams({
@@ -71,17 +72,17 @@ def test_the_band_agent_reports_missing_parameters_instead_of_estimating():
     assert "industries.카페" in band.data["missing_params"]
 
 
-def test_the_team_blocks_everything_downstream_when_the_band_cannot_be_drawn():
+def test_a_band_that_cannot_be_drawn_stops_everything_downstream():
     # 제안서 04장 팀 계약 — 금융처방 실패는 후속 전체 중단이다.
     report = team(PARTIAL).run(CONDITIONS)
-    assert report.blocking is True
-    assert report.halted is True
+    assert report.key == "finance"
+    assert capacity_failed(report) is True
 
 
-def test_a_drawable_band_does_not_halt_the_run():
+def test_a_drawable_band_does_not_stop_the_run():
     report = team().run(CONDITIONS)
-    assert report.blocking is True
-    assert report.halted is False
+    assert report.key == "finance"
+    assert capacity_failed(report) is False
 
 
 def test_the_stress_agent_reuses_the_band_computation_rather_than_recomputing():

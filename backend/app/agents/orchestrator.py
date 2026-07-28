@@ -8,8 +8,13 @@
 조달 상한을 모르는 상태에서는 감당 불가한 후보를 걸러낼 수 없기 때문이다. 그래서 금융이
 선행해 기준선을 만들고, 입지가 그 선을 넘을 수 있는지 증명한다.
 
-게이트는 두 개뿐이고 둘 다 팀이 스스로 선언한다(`TeamReport.halted`). 메인은 그 선언을 읽고
-멈출 뿐, 팀의 판정에 개입하지 않는다.
+게이트는 두 개뿐이고 **둘 다 이 파일이 가진다** — `_conditions_unsettled` 와 `_capacity_failed`.
+예전에는 팀이 스스로 `halted` 를 선언했고 세 곳이 각자 다른 규칙으로 덮어썼다. 그래서 금융
+밴드가 실패하면 "이 자리에 손님이 있나"까지 함께 멈췄다. 논리적으로 독립인 판단이 팀 경계에
+인질로 잡히지 않도록, 무엇이 무엇을 멈추는지는 한 곳에서만 정한다.
+
+그 밖의 축이 실패하면 **그 축만 빠지고 실행은 계속된다.** 판정하지 못한 축은 탈락 근거로도
+쓰이지 않는다(`ACTIVE_STATUSES` 에 `withheld` 가 없는 이유와 같다).
 
 ── 메인이 쓰는 자유 문장과 그 가드 ────────────────────────────────────────
 
@@ -32,7 +37,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import AgentStatus, TeamReport
+from .contracts import AgentStatus, AxisReport
 from .llm import AgentLLM, RunBudget
 from .registry import AGENT_SPECS, spec
 
@@ -46,7 +51,7 @@ _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 @dataclass(frozen=True)
 class RunResult:
     fingerprint: str
-    reports: list[TeamReport]
+    reports: list[AxisReport]
     activation: dict[str, Any]
     surviving: list[dict[str, Any]] = field(default_factory=list)
     dropped: list[dict[str, Any]] = field(default_factory=list)
@@ -112,6 +117,27 @@ def strip_unsourced_numbers(text: str, allowed: set[str]) -> tuple[str, list[str
     return " ".join(kept), dropped
 
 
+# ── 중단 규칙. 이 둘뿐이고 둘 다 여기 있다 ─────────────────────────────────
+#
+# 예전에는 팀이 스스로 `halted` 를 선언했고 세 곳(기본 · 조건 · 금융)이 각자 다른 규칙으로
+# 그것을 덮어썼다. 그래서 금융 밴드가 실패하면 "이 자리에 손님이 있나"까지 함께 멈췄다 —
+# 논리적으로 독립인 판단이 팀 경계에 인질로 잡힌 것이다. 규칙을 한 벌로 모으면 무엇이 무엇을
+# 멈추는지가 한 화면에서 읽히고, 축이 늘어도 중단 지점은 늘지 않는다.
+
+def conditions_unsettled(settled: Any) -> bool:
+    """되묻기 대상(업종·자치구·자기자본)이 확정되지 않았다. 계산이 성립하지 않는다."""
+    return not settled.settled
+
+
+def capacity_failed(prescription: AxisReport) -> bool:
+    """여력 커널이 기준선을 못 냈다. 조달 상한을 모르면 후보를 판정할 기준이 없다.
+
+    조회 축(공시·공고)이 비어 있는 것은 여기 해당하지 않는다 — KB 공시가 붙었다는 사실은
+    기준선을 대신하지 못하고, 반대로 붙지 않았다는 사실이 기준선을 지우지도 않는다."""
+    band = next((item for item in prescription.outcomes if item.key == "finance.band"), None)
+    return band is None or not band.active
+
+
 class MainAgent:
     def __init__(self, *, conditions, finance, location, timing,
                  llm: AgentLLM | None = None, budget: RunBudget | None = None):
@@ -152,16 +178,16 @@ class MainAgent:
 
         if self.budget is not None:
             self.budget.reset()
-        reports: list[TeamReport] = []
+        reports: list[AxisReport] = []
 
         settled = await self.conditions.arun(conditions)
-        for event in self._team_events(settled):
+        for event in self._axis_events(settled):
             yield event
         reports.append(settled)
         # 유보 항목과 변경 제안은 멈춘 실행에서도 화면이 읽어야 한다 — 멈춘 이유와 별개로
         # "무엇을 못 냈는지" 와 "무엇을 바꾸자고 하는지" 는 그대로 보여야 한다.
         carried = {"deferred": list(settled.deferred), "proposals": list(settled.proposals)}
-        if settled.halted:
+        if conditions_unsettled(settled):
             async for event in self._close(fingerprint, reports, halted_at="condition",
                                            questions=list(settled.questions), **carried):
                 yield event
@@ -171,22 +197,22 @@ class MainAgent:
         confirmed = settled.conditions or conditions
 
         prescription = await self.finance.arun(confirmed)
-        for event in self._team_events(prescription):
+        for event in self._axis_events(prescription):
             yield event
         reports.append(prescription)
-        if prescription.halted:
+        if capacity_failed(prescription):
             async for event in self._close(fingerprint, reports, halted_at="finance", **carried):
                 yield event
             return
 
         # 권장 밴드로 자동 진행한다 — 사용자를 여기서 세우지 않는다(제안서 04장).
         narrowed = await self.location.arun(candidates, confirmed)
-        for event in self._team_events(narrowed):
+        for event in self._axis_events(narrowed):
             yield event
         reports.append(narrowed)
 
         scheduled = await self.timing.arun(narrowed.surviving)
-        for event in self._team_events(scheduled):
+        for event in self._axis_events(scheduled):
             yield event
         reports.append(scheduled)
 
@@ -195,7 +221,7 @@ class MainAgent:
                                        summary=self._summary(prescription), **carried):
             yield event
 
-    async def _close(self, fingerprint: str, reports: list[TeamReport], **rest: Any):
+    async def _close(self, fingerprint: str, reports: list[AxisReport], **rest: Any):
         """메인 에이전트가 마지막으로 자기 보고를 낸다.
 
         메인도 일을 한다 — 팀 보고를 모아 수치 카드와 설명문을 만드는 것이 그 일이고,
@@ -214,13 +240,13 @@ class MainAgent:
             AgentStatus.WITHHELD if halted_at else AgentStatus.OK,
             message=(f"{halted_at} 단계에서 멈춰 종합할 팀 보고가 없습니다." if halted_at else None),
             data=data)
-        report = TeamReport(team="main", name="메인 에이전트", outcomes=[outcome], blocking=False)
-        for event in self._team_events(report):
+        report = AxisReport(key="main", name="메인 에이전트", outcomes=[outcome])
+        for event in self._axis_events(report):
             yield event
         reports.append(report)
         yield {"event": "done", "result": self._finish(fingerprint, reports, **rest)}
 
-    async def _narrate(self, reports: list[TeamReport], summary: dict[str, Any],
+    async def _narrate(self, reports: list[AxisReport], summary: dict[str, Any],
                        surviving: list[dict[str, Any]],
                        dropped: list[dict[str, Any]]) -> dict[str, Any]:
         """설명문을 받고, 팀이 내지 않은 수치가 든 문장을 버린다."""
@@ -246,23 +272,22 @@ class MainAgent:
                 "narrative_source": narration.source}
 
     @staticmethod
-    def _team_events(report: TeamReport):
-        yield {"event": "team_start", "team": report.team, "name": report.name,
-               "agent_count": len(report.outcomes)}
+    def _axis_events(report: AxisReport):
+        """축 단위 진행. 팀 경계는 이벤트에 나타나지 않는다 — 화면의 묶음은
+        `AgentSpec.display_group` 이 정하고, 그것은 표시일 뿐 실행 단위가 아니다."""
         for outcome in report.outcomes:
-            yield {"event": "agent_end", "team": report.team, "key": outcome.key,
+            yield {"event": "axis_start", "key": outcome.key, "name": outcome.name}
+            yield {"event": "agent_end", "team": outcome.team, "key": outcome.key,
                    "name": outcome.name, "status": outcome.status, "message": outcome.message}
-        yield {"event": "team_end", "team": report.team, "active": report.active_count,
-               "halted": report.halted}
 
-    def _finish(self, fingerprint: str, reports: list[TeamReport], **rest: Any) -> RunResult:
+    def _finish(self, fingerprint: str, reports: list[AxisReport], **rest: Any) -> RunResult:
         result = RunResult(fingerprint=fingerprint, reports=reports,
                            activation=self._activation(reports), **rest)
         self._last = result
         return result
 
     @staticmethod
-    def _activation(reports: list[TeamReport]) -> dict[str, Any]:
+    def _activation(reports: list[AxisReport]) -> dict[str, Any]:
         """화면의 "12개 축 중 N개 가동"(가드 3). 돌지 않은 팀의 축은 상태가 없으므로 None 이다 —
         비활성과 구분해야 "아직 순서가 오지 않았다"와 "원천이 없다"가 섞이지 않는다."""
         by_key: dict[str, AgentStatus | None] = {item.key: None for item in AGENT_SPECS}
@@ -273,7 +298,7 @@ class MainAgent:
         return {"total": len(AGENT_SPECS), "active": active, "by_key": by_key}
 
     @staticmethod
-    def _summary(prescription: TeamReport) -> dict[str, Any]:
+    def _summary(prescription: AxisReport) -> dict[str, Any]:
         """팀이 낸 수치를 고르기만 한다. 여기서 새로 계산하는 값은 하나도 없다.
 
         희망 월세가 없으면 권장 조달선이 없다. 그때도 여력 세 줄은 있으므로 빈 요약을 내지

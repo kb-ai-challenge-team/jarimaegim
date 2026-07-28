@@ -204,7 +204,7 @@ function asRecordList(value: unknown): Record<string, unknown>[] {
  * backend already judged, and an axis that could not run must never be repainted as broken. */
 export function applyPrescribeFrame(frame: SseEvent, handlers: PrescribeStreamHandlers): boolean {
   if (frame.event === "run_start") { handlers.onRunStart({ total_agents: Number(frame.data.total_agents) || 0, fingerprint: asString(frame.data.fingerprint) }); return false; }
-  if (frame.event === "team_start") { handlers.onTeamStart({ team: asString(frame.data.team), name: asString(frame.data.name), agent_count: Number(frame.data.agent_count) || 0 }); return false; }
+  if (frame.event === "axis_start") { handlers.onAxisStart({ key: asString(frame.data.key), name: asString(frame.data.name) }); return false; }
   if (frame.event === "agent_end") {
     const agent: AgentProgress = { team: asString(frame.data.team), key: asString(frame.data.key), name: asString(frame.data.name), status: asString(frame.data.status, "unknown") };
     if (typeof frame.data.message === "string") agent.message = frame.data.message;
@@ -214,7 +214,9 @@ export function applyPrescribeFrame(frame: SseEvent, handlers: PrescribeStreamHa
     handlers.onAgentEnd(agent);
     return false;
   }
-  if (frame.event === "team_end") return false;
+  // 팀 이벤트는 사라졌지만 옛 서버가 보내도 조용히 흘려보낸다 — 모르는 프레임 하나가
+  // 스트림을 끊으면 실행 전체가 실패로 보인다.
+  if (frame.event === "team_start" || frame.event === "team_end") return false;
   if (frame.event === "done") {
     const activation = (frame.data.activation ?? {}) as Record<string, unknown>;
     handlers.onDone({
