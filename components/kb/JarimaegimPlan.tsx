@@ -272,3 +272,56 @@ export function PlanFunding({ caseData, committed, bands, programs, programState
     </button>
   </div>;
 }
+
+/** ⑤ 서류. 미리보기 줄은 render_case_pdf 가 실제로 담는 섹션과 1:1 로 대응한다.
+ *  대응이 깨지면 그것이 버그다 — 문서에 없는 것을 있다고 적는 화면은 만들지 않는다. */
+export function PlanPaperwork({ caseData, committed, bands, products, programs, documents, docBusy, docNotice, confirmed, onConfirm, onPrepareDocument, onBackToFunding }: {
+  caseData: CaseRecord; committed: Candidate | null; bands: FundingBandResult | null;
+  products: KbProduct[]; programs: Program[];
+  documents: Record<string, string>; docBusy: string; docNotice: string;
+  confirmed: boolean; onConfirm: (value: boolean) => void;
+  onPrepareDocument: (template: string) => void; onBackToFunding: () => void;
+}) {
+  const recommended = bands?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
+  const chosen = products.length + programs.length;
+  const rows: { label: string; value: string }[] = [
+    { label: "확정 조건", value: `${caseData.inputs.district} · ${caseData.inputs.industry}` },
+    // 케이스에 저장된 것만 문서에 담긴다. 로컬 확정과 저장 결과가 다르면 그 사실을 여기서 말한다.
+    { label: "계획 기준 후보", value: !committed ? "확정한 후보가 없습니다"
+      : caseData.inputs.committed_listing_id === committed.id ? `${committed.name} (시연용 매물)`
+      : `${committed.name} — 매물 정보를 케이스에 저장하지 못해 문서에는 담기지 않습니다` },
+    { label: "조달 요약", value: recommended
+      ? `권장 조달선 ${formatKrw(recommended.ceiling_krw)} · 차입 필요액 ${formatKrw(recommended.loan_krw)} · 월 상환 ${recommended.monthly_repayment_krw > 0 ? formatKrw(recommended.monthly_repayment_krw) : "0원"} · 넘어야 하는 일매출 ${formatKrw(recommended.target_daily_revenue_krw)}`
+      : "조달 밴드를 계산하지 못해 이 문서에는 조달 요약이 없습니다" },
+    { label: "고른 조달 수단", value: chosen === 0 ? "고른 조달 수단이 없습니다"
+      : [...products.map((product) => product.name), ...programs.map((program) => program.title)].join(" · ") },
+    { label: "출처·기준일", value: "각 섹션 말미에 출처명과 기준일을 적습니다. 확인되지 않은 값은 '확인 필요'로 남습니다." },
+    { label: "비보장 고지", value: "AI가 작성한 초안이며 결과를 보장하지 않습니다" }
+  ];
+
+  return <div className="kb-step">
+    {committed && <PlanBadge committed={committed} onBack={onBackToFunding} />}
+    <p className="kb-step-lead">아래가 문서에 담기는 전부입니다. 화면에 없는 값은 문서에도 없습니다.</p>
+
+    <ul className="kb-doc-preview">{rows.map((row) => <li key={row.label}>
+      <strong>{row.label}</strong><span>{row.value}</span>
+    </li>)}</ul>
+
+    <label className="kb-consent">
+      <input type="checkbox" checked={confirmed} onChange={(event) => onConfirm(event.target.checked)} />
+      <span>위 내용이 문서에 담기는 것을 확인했습니다</span>
+    </label>
+
+    <div className="kb-doc-actions">
+      <button className="kb-primary" disabled={!confirmed || Boolean(docBusy)} onClick={() => onPrepareDocument("funding")}>
+        {docBusy === "funding" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : <FileDown aria-hidden="true" />}
+        {documents.funding ? "초안 내려받기" : "초안 준비하기"}
+      </button>
+    </div>
+    {docNotice && <p className="kb-inline-notice" role="status">{docNotice}</p>}
+
+    <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>상담 자동 연결은 제공하지 않습니다. <strong>초안을 내려받아 지점 상담에 가져가시면 됩니다.</strong> 초안은 상담의 입력이며 승인을 보장하지 않습니다.</span></div>
+    <p className="kb-note"><ShieldCheck aria-hidden="true" />문서는 비공개 저장소에 보관하며 현재 익명 세션에서만 내려받을 수 있습니다. 세션은 최대 24시간 유지됩니다.</p>
+    <p className="kb-note"><FileText aria-hidden="true" />조달 수단을 더 고르거나 빼려면 <button className="kb-linklike" onClick={onBackToFunding}>조달 단계</button>로 돌아가면 됩니다.</p>
+  </div>;
+}
