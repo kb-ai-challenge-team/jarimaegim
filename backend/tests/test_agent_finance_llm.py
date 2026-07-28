@@ -1,13 +1,15 @@
-"""금융처방 팀의 추론.
+"""금융처방 팀에서 **모델이 남아 있는 두 축**.
 
-  finance.band         적용할 제도 파라미터 확인 · 입력 이상치 감지 시 유보 판단
-  finance.stress       이 케이스에 유의미한 시나리오 선택
   finance.kb_products  공시 문구를 읽고 상품 선별
   finance.subsidy      공고 본문 대조로 관련 공고 선별
 
-산술은 전부 `funding.compute_bands` 가 한다. 모델은 **무엇을 적용할지**만 고르고, 골라도
-코드가 다시 검증한다 — 이상치는 코드가 술어로 확인하고, 상품·공고는 실제로 존재하는 id 만
-통과한다. 모델이 "이 상권 폐업률은 12%입니다" 같은 문장을 내도 그 문장이 들어갈 자리가 없다.
+밴드와 스트레스는 여기 없다 — 둘 다 커널로 내려가 모델이 낄 자리가 없어졌다. 그 계약은
+`test_agent_finance_kernel.py` 가 더 강하게 고정한다: 술어는 코드가 전량 평가하고, 시나리오는
+카탈로그 3종을 항상 전부 돌린다.
+
+남은 둘은 공시의 한도·가입방법과 공고 본문이 **문장**이라 구조화 비교가 안 되는 경우다.
+읽는 일은 모델이 하되 **id 만 고르고**, 결과로 나가는 행은 원천의 값 그대로다. 모델이
+"이 상품 한도는 5억입니다" 같은 문장을 내도 그 문장이 들어갈 자리가 없다.
 """
 from app.agents.contracts import AgentStatus
 from app.agents.finance import ANOMALY_MESSAGES, FinanceTeam, STRESS_SCENARIOS
@@ -63,98 +65,8 @@ def outcome(report, key):
 
 # ── finance.band — 이상치는 모델이 말하고 코드가 확인한다 ──────────────────
 
-async def test_an_anomaly_the_code_cannot_confirm_is_discarded():
-    # 모델이 "보증금이 자기자본을 넘는다"고 해도 실제로 넘지 않으면 유보 근거가 되지 못한다.
-    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
-                                                      "anomalies": ["DEPOSIT_EXCEEDS_EQUITY"]})
-    report = await team(responder=responder).arun(CONDITIONS)
-    band = outcome(report, "finance.band")
-    assert band.status is AgentStatus.OK
-    assert band.data["decision"]["rejected"] == [
-        {"field": "anomalies", "value": "DEPOSIT_EXCEEDS_EQUITY", "reason": "predicate_false"}]
-
-
-async def test_a_confirmed_anomaly_with_a_withhold_verdict_stops_the_run():
-    conditions = {**CONDITIONS, "deposit_krw": 300_000_000}
-    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
-                                                      "anomalies": ["DEPOSIT_EXCEEDS_EQUITY"]})
-    report = await team(responder=responder).arun(conditions)
-    band = outcome(report, "finance.band")
-    assert band.status is AgentStatus.WITHHELD
-    assert band.message == ANOMALY_MESSAGES["DEPOSIT_EXCEEDS_EQUITY"]
-    assert report.halted is True
-
-
-async def test_a_confirmed_anomaly_without_a_withhold_verdict_is_reported_but_does_not_stop():
-    # 이상치가 있다는 사실과 판정을 멈춘다는 결정은 다르다. 자동으로 멈추면 축이 늘수록 탈락이 는다.
-    conditions = {**CONDITIONS, "deposit_krw": 300_000_000}
-    responder = ScriptedResponder(review_band_inputs={"verdict": "proceed",
-                                                      "anomalies": ["DEPOSIT_EXCEEDS_EQUITY"]})
-    report = await team(responder=responder).arun(conditions)
-    band = outcome(report, "finance.band")
-    assert band.status is AgentStatus.OK
-    assert band.data["anomalies"] == ["DEPOSIT_EXCEEDS_EQUITY"]
-    assert band.data["bands"][1]["ceiling_krw"] > 0
-
-
-async def test_withholding_never_invents_its_own_sentence():
-    # 유보 사유는 코드가 가진 고정 문장이다. 모델 문장을 그대로 실으면 그 문장이 근거가 된다.
-    conditions = {**CONDITIONS, "deposit_krw": 300_000_000}
-    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
-                                                      "anomalies": ["DEPOSIT_EXCEEDS_EQUITY"]})
-    report = await team(responder=responder).arun(conditions)
-    assert outcome(report, "finance.band").message in ANOMALY_MESSAGES.values()
-
-
-async def test_missing_parameters_are_still_decided_before_any_model_call():
-    # 가드 3 — 원천(제도 파라미터)이 없으면 판정 자체를 하지 않는다. 모델을 부를 일도 없다.
-    responder = ScriptedResponder(review_band_inputs={"verdict": "proceed", "anomalies": []})
-    report = await team(EMPTY, responder=responder).arun(CONDITIONS)
-    assert outcome(report, "finance.band").status is AgentStatus.INTEGRATION_PENDING
-    assert "review_band_inputs" not in responder.calls
-
-
-async def test_the_band_numbers_are_identical_with_and_without_the_model():
-    # 모델은 무엇을 적용할지만 고른다. 같은 조건이면 같은 수치가 나와야 한다.
-    responder = ScriptedResponder(review_band_inputs={"verdict": "proceed", "anomalies": []})
-    with_model = await team(responder=responder).arun(CONDITIONS)
-    without = team().run(CONDITIONS)
-    assert outcome(with_model, "finance.band").data["bands"] == outcome(without, "finance.band").data["bands"]
-
 
 # ── finance.stress — 시나리오 카탈로그에서 고른다 ──────────────────────────
-
-async def test_the_model_selects_scenarios_and_the_code_computes_them():
-    responder = ScriptedResponder(select_stress_scenarios={"scenarios": ["REVENUE_DROP_30"]})
-    report = await team(responder=responder).arun(CONDITIONS)
-    stress = outcome(report, "finance.stress")
-    assert [item["key"] for item in stress.data["scenarios"]] == ["REVENUE_DROP_30"]
-    assert stress.data["scenarios"][0]["label"] == STRESS_SCENARIOS["REVENUE_DROP_30"]["label"]
-    assert isinstance(stress.data["scenarios"][0]["recommended_passes_stress"], bool)
-
-
-async def test_a_scenario_outside_the_catalogue_never_runs():
-    responder = ScriptedResponder(select_stress_scenarios={"scenarios": ["매출 반토막"]})
-    report = await team(responder=responder).arun(CONDITIONS)
-    stress = outcome(report, "finance.stress")
-    assert stress.data["scenarios"] == []
-    assert stress.data["decision"]["rejected"][0]["reason"] == "not_offered"
-
-
-async def test_the_baseline_stress_result_survives_whatever_the_model_picks():
-    # 권장 조달선의 정의 자체가 기준 시나리오 통과다. 모델 선택이 그것을 지우면 안 된다.
-    responder = ScriptedResponder(select_stress_scenarios={"scenarios": ["RATE_PLUS_1PP"]})
-    report = await team(responder=responder).arun(CONDITIONS)
-    stress = outcome(report, "finance.stress")
-    assert stress.data["recommended_passes_stress"] is True
-    assert stress.data["revenue_drop_ratio"] == 0.2
-
-
-async def test_a_harsher_scenario_is_never_easier_to_pass():
-    responder = ScriptedResponder(select_stress_scenarios={"scenarios": ["REVENUE_DROP_20", "REVENUE_DROP_30"]})
-    report = await team(responder=responder).arun(CONDITIONS)
-    rows = {item["key"]: item for item in outcome(report, "finance.stress").data["scenarios"]}
-    assert rows["REVENUE_DROP_30"]["recommended_ceiling_krw"] <= rows["REVENUE_DROP_20"]["recommended_ceiling_krw"]
 
 
 # ── finance.kb_products · finance.subsidy — id 로만 고른다 ────────────────
@@ -222,33 +134,4 @@ def test_the_synchronous_path_needs_no_model():
 # 하되 판정을 멈출 근거가 되지 못한다. 그것을 멈춤으로 바꾸면 제품이 보여 주기로 한 것을
 # 모델의 그날 판단이 덮어쓰게 된다.
 
-async def test_a_displayed_state_is_reported_but_can_never_halt_the_run():
-    # 최대 조달선이 스트레스를 통과하지 못하는 것은 정상이고, 밴드 표가 그대로 보여 주는 값이다.
-    conditions = {**CONDITIONS, "equity_krw": 20_000_000, "monthly_rent_krw": 6_000_000}
-    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
-                                                      "anomalies": ["MAXIMUM_FAILS_STRESS"]})
-    report = await team(responder=responder).arun(conditions)
-    band = outcome(report, "finance.band")
-    assert band.status is AgentStatus.OK
-    assert band.data["anomalies"] == ["MAXIMUM_FAILS_STRESS"]
-    assert report.halted is False
 
-
-async def test_an_input_contradiction_can_still_halt_the_run():
-    # 보증금이 자기자본을 넘는 것은 화면이 그리기로 한 상태가 아니라 입력이 어긋난 것이다.
-    conditions = {**CONDITIONS, "deposit_krw": 300_000_000}
-    responder = ScriptedResponder(review_band_inputs={"verdict": "withhold",
-                                                      "anomalies": ["DEPOSIT_EXCEEDS_EQUITY"]})
-    report = await team(responder=responder).arun(conditions)
-    assert outcome(report, "finance.band").status is AgentStatus.WITHHELD
-
-
-async def test_a_withholdable_anomaly_mixed_with_a_displayed_one_still_withholds():
-    conditions = {**CONDITIONS, "deposit_krw": 300_000_000, "equity_krw": 20_000_000}
-    responder = ScriptedResponder(review_band_inputs={
-        "verdict": "withhold", "anomalies": ["MAXIMUM_FAILS_STRESS", "DEPOSIT_EXCEEDS_EQUITY"]})
-    report = await team(responder=responder).arun(conditions)
-    band = outcome(report, "finance.band")
-    assert band.status is AgentStatus.WITHHELD
-    # 유보 사유는 유보 가능한 이상치에서 나와야 한다. 보여 주기용 상태를 사유로 적으면 안 된다.
-    assert band.message == ANOMALY_MESSAGES["DEPOSIT_EXCEEDS_EQUITY"]

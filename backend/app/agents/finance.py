@@ -8,24 +8,27 @@
 KB 상품은 조회한 값을 인용만 한다. 가드 1(숫자는 도구 결과만)을 지키는 가장 단순한 방법은
 계산 지점을 하나로 모으는 것이다.
 
-── 이 팀에서 LLM 이 하는 일과 하지 않는 일 ──────────────────────────────────
+── 커널과 조회의 경계 ──────────────────────────────────────────────────────
 
-finance.band 는 **이상치를 지목하고 유보 여부를 판단**한다. 모델이 고를 수 있는 이상치는
-`ANOMALY_PREDICATES` 에 열거된 것뿐이고, 고른 뒤에도 코드가 술어를 직접 확인한다. 확인되지
-않은 지목은 `rejected` 로 기록만 되고 판정에 쓰이지 않는다. 유보 사유 문장도 코드가 가진
-고정 문장이다 — 모델 문장을 실으면 그 문장이 곧 근거가 되어 버린다.
+**밴드와 스트레스에는 모델이 없다.** 둘 다 커널이다.
+
+finance.band 는 `ANOMALY_PREDICATES` 5종을 **코드가 전량 평가**한다. 예전에는 모델이 이상치를
+지목하고 코드가 그 지목만 술어로 확인했는데, 그 구조에서는 모델이 고르지 않은 이상치가 술어가
+참이어도 아무 데도 남지 않았다 — 그 호출은 재현율을 떨어뜨리는 필터로만 작동했고, 놓친 이상치는
+화면에도 감사 기록에도 나타나지 않았다. 이상치 문장은 지금도 코드가 가진 고정 문장이다.
+
+finance.stress 는 `STRESS_SCENARIOS` 3종을 **항상 전부** 돌린다. 무엇을 확인할 가치가 있는지는
+케이스마다 달라지는 판단이 아니라 제품이 약속한 목록이고, 모델에게 고르게 하면 어떤 실행에는
+−30% 가 없고 어떤 실행에는 있게 되어 사용자가 그 차이를 자기 조건 탓으로 읽는다.
 
 **모델이 업종 프로필을 고르지는 않는다.** 등록된 프로필 중 "비슷한 것"을 붙이는 것이 곧
 유사 매칭이고, 제안서 06장 JUDGEMENT 01 이 전면 금지한 바로 그 동작이다("스터디카페"를
 "커피-음료"에 붙이면 전혀 다른 업종의 원가율로 손익분기를 계산하게 된다). 업종 프로필은
 정확 일치로만 붙고, 없으면 등록 대기다.
 
-finance.stress 는 `STRESS_SCENARIOS` 에서 이 케이스에 유의미한 것을 고른다. 계산은 고른
-시나리오마다 `compute_bands` 를 파라미터만 갈아 끼워 다시 부르는 것이고, 기준 시나리오
-결과는 모델이 무엇을 고르든 그대로 남는다 — 권장 조달선의 정의 자체가 그 통과이기 때문이다.
-
-finance.kb_products · finance.subsidy 는 **id 만 고른다.** 공시의 한도·가입방법과 공고 본문이
-문장이라 구조화 비교가 안 되므로 읽는 일은 모델이 하되, 결과로 나가는 행은 원천의 값 그대로다.
+finance.kb_products · finance.subsidy 만 모델을 부른다. 공시의 한도·가입방법과 공고 본문이
+**문장**이라 구조화 비교가 안 되므로 읽는 일은 모델이 하되, **id 만 고르고** 결과로 나가는
+행은 원천의 값 그대로다.
 """
 from __future__ import annotations
 
@@ -107,14 +110,21 @@ ANOMALY_PREDICATES = {
     "RENT_WITHOUT_DEPOSIT": _rent_without_deposit,
 }
 
-#: 이 중에서만 판정을 멈출 수 있다.
+#: 판정을 멈출 수 있는 이상치. **지금은 하나도 없다.**
 #:
-#: 나머지는 **화면이 그리도록 설계된 상태**다. 최대 조달선이 스트레스를 통과하지 못하는 것은
-#: 정상이고 밴드 표가 '스트레스 실패'를 그 줄에 붙여 보여 주며, 필요자금이 최대 조달선을 넘는
-#: 것도 `OUT_OF_RANGE` 로 표시하기로 한 상태다(제안서 12장). 그런 상태를 유보로 바꾸면 제품이
-#: 보여 주기로 한 것을 모델의 그날 판단이 덮어쓰게 되고, 사용자는 아무 표도 못 본 채 멈춘다.
-#: 그래서 모델이 유보를 골라도 여기 없는 이상치는 표시까지만 하고 판정을 계속한다.
-WITHHOLDABLE = frozenset({"DEPOSIT_EXCEEDS_EQUITY", "RENT_WITHOUT_DEPOSIT"})
+#: 이상치는 전부 **화면이 그리도록 설계된 상태**다. 최대 조달선이 스트레스를 통과하지 못하는
+#: 것은 정상이고 밴드 표가 '스트레스 실패'를 그 줄에 붙여 보여 주며, 필요자금이 최대 조달선을
+#: 넘는 것도 `OUT_OF_RANGE` 로 표시하기로 한 상태다(제안서 12장). 그런 상태를 유보로 바꾸면
+#: 제품이 보여 주기로 한 것이 덮이고, 사용자는 아무 표도 못 본 채 멈춘다.
+#:
+#: 입력 정합성 이상치 둘(`DEPOSIT_EXCEEDS_EQUITY`·`RENT_WITHOUT_DEPOSIT`)도 같은 이유로
+#: 내려왔다. 보증금이 자기자본을 넘는 것은 **정상 상황이다** — 보증금을 조달하려고 대출을
+#: 받는다. 예전에는 모델이 유보를 골라야만 멈췄기 때문에 이 사실이 가려져 있었고, 술어 평가를
+#: 결정론으로 바꾸는 순간 흔한 입력이 전부 금융 단계에서 멈추게 된다.
+#:
+#: 집합을 지우지 않고 빈 채로 남기는 이유는 "유보할 수 있는 이상치"라는 개념 자체는 남기
+#: 때문이다 — 계산이 성립하지 않는 이상치가 나중에 생기면 여기 들어온다.
+WITHHOLDABLE: frozenset[str] = frozenset()
 
 ANOMALY_MESSAGES = {
     "DEPOSIT_EXCEEDS_EQUITY": "희망 보증금이 자기자본을 넘어 조달 구조를 판정하지 않았습니다. 보증금이나 자기자본을 확인해 주세요.",
@@ -124,13 +134,9 @@ ANOMALY_MESSAGES = {
     "RENT_WITHOUT_DEPOSIT": "월세는 있는데 보증금이 없어 입력을 확인하기 전에는 판정하지 않았습니다.",
 }
 
-BAND_REVIEW_SCHEMA = ChoiceSchema(
-    name="review_band_inputs",
-    description="조달 밴드 입력에서 확인이 필요한 이상치를 지목하고, 판정을 유보할지 정한다.",
-    fields={"anomalies": Pick(tuple(ANOMALY_PREDICATES), multi=True,
-                              description="입력에서 실제로 관찰되는 이상치만"),
-            "verdict": Pick(("proceed", "withhold"),
-                            description="withhold 는 확인 전에는 밴드를 제시하지 않겠다는 뜻이다")})
+#: 밴드 축의 결정 이름. 모델을 부르지 않으므로 스키마가 아니라 이름만 남는다 —
+#: `Decision` 이 어느 축의 판정인지 감사 기록에서 읽을 수 있어야 하기 때문이다.
+BAND_DECISION = "evaluate_band_anomalies"
 
 #: 스트레스 시나리오 카탈로그. 제안서 03장의 매출 −20% / −30% / 금리 +1%p 다.
 #: `overrides` 는 제도 파라미터를 갈아 끼우는 값이고, `rate_delta_pp` 는 등록된 공시 금리에
@@ -141,11 +147,7 @@ STRESS_SCENARIOS: dict[str, dict[str, Any]] = {
     "RATE_PLUS_1PP": {"label": "금리 +1%p", "rate_delta_pp": 1.0},
 }
 
-STRESS_SCHEMA = ChoiceSchema(
-    name="select_stress_scenarios",
-    description="이 케이스에서 확인할 가치가 있는 시나리오를 고른다.",
-    fields={"scenarios": Pick(tuple(STRESS_SCENARIOS), multi=True,
-                              description="카탈로그에 있는 시나리오만")})
+STRESS_DECISION = "run_all_stress_scenarios"
 
 
 class FinanceTeam:
@@ -166,7 +168,7 @@ class FinanceTeam:
         chosen = decisions or {}
         band, computed = self._band(conditions, chosen.get("finance.band"))
         outcomes = [band,
-                    self._stress(band, computed, chosen.get("finance.stress"), conditions),
+                    self._stress(band, computed, conditions),
                     self._kb_products(chosen.get("finance.kb_products")),
                     self._subsidy(chosen.get("finance.subsidy"))]
         return FinanceReport(team=self.team, name=self.name, outcomes=outcomes, blocking=True,
@@ -176,12 +178,14 @@ class FinanceTeam:
         return self.run(conditions, await self.decide(conditions))
 
     async def decide(self, conditions: dict[str, Any]) -> dict[str, Decision]:
-        """네 에이전트의 선택을 모은다. 원천이 없는 에이전트는 모델을 부르지 않는다(가드 3)."""
+        """모델이 필요한 축의 선택만 모은다. 원천이 없으면 부르지 않는다(가드 3).
+
+        밴드와 스트레스는 여기 없다 — 둘 다 커널이고 모델이 낄 자리가 없다. 밴드는 술어를
+        코드가 전량 평가하고, 스트레스는 카탈로그 3종을 항상 전부 돌린다. 남은 둘은 공시
+        한도와 공고 본문이 **문장**이라 구조화 비교가 안 되는 경우뿐이다."""
         if self.llm is None:
             return {}
-        return {"finance.band": await self._review_band(conditions),
-                "finance.stress": await self._select_scenarios(conditions),
-                "finance.kb_products": await self._select_products(),
+        return {"finance.kb_products": await self._select_products(),
                 "finance.subsidy": await self._select_notices(conditions)}
 
     # ── 서브 1 · 조달 밴드 산출 ────────────────────────────────────────
@@ -204,13 +208,13 @@ class FinanceTeam:
         capacity = compute_capacity(self.params, equity_krw=inputs["equity_krw"],
                                     existing_debt_krw=inputs["existing_debt_krw"])
         if not inputs["monthly_rent_krw"]:
-            review = review or Decision.deterministic("finance.band",
-                                                      schema=BAND_REVIEW_SCHEMA.name)
             return declaration.outcome(
                 AgentStatus.OK, message=_RENT_DEFERRED,
                 data={"capacity": capacity, "bands": [], "deferred": ["monthly_rent_krw"],
                       "required_capital_krw": None, "required_capital_band": None,
-                      "anomalies": [], "decision": review.as_data()},
+                      "anomalies": [], "anomaly_checks": {}, "anomaly_notes": {},
+                      "decision": Decision.deterministic(
+                          "finance.band", schema=BAND_DECISION).as_data()},
                 provenance=self._provenance(industry),
             ), None
         try:
@@ -224,24 +228,27 @@ class FinanceTeam:
                 required_actions=["업종의 원가율·인건비율을 원천과 함께 다시 확인해 주세요."],
             ), None
 
-        review = review or Decision.deterministic("finance.band", schema=BAND_REVIEW_SCHEMA.name)
-        confirmed, rejected = self._confirm_anomalies(review, conditions, computed)
-        audit = {**review.as_data(),
-                 "rejected": review.rejected + rejected}
-        # 유보는 확인된 이상치 중 **유보 가능한 것**이 있을 때만 성립한다. 화면이 그리기로 한
-        # 상태는 표시만 하고 지나간다 — 그렇지 않으면 모델의 판단 하나가 밴드 표 전체를 지운다.
-        blocking = [code for code in confirmed if code in WITHHOLDABLE]
-        if blocking and review.chosen.get("verdict") == "withhold":
-            # 유보해도 수치를 내지 않을 뿐, 이 판단이 후보를 떨어뜨리는 근거가 되지는 않는다 —
-            # 밴드가 없으면 실행 전체가 조건 확인으로 되돌아간다(팀 계약).
+        checks = self._evaluate_anomalies(conditions, computed)
+        observed = [code for code, seen in checks.items() if seen]
+        # 유보는 `WITHHOLDABLE` 에 있는 이상치에서만 성립하고, 지금 그 집합은 비어 있다.
+        # 나머지는 화면이 그리기로 한 상태이므로 표시만 하고 판정을 계속한다.
+        blocking = [code for code in observed if code in WITHHOLDABLE]
+        if blocking:
             return declaration.outcome(
                 AgentStatus.WITHHELD, message=ANOMALY_MESSAGES[blocking[0]],
-                data={"anomalies": confirmed, "decision": audit},
+                data={"anomalies": observed, "anomaly_checks": checks,
+                      "anomaly_notes": {code: ANOMALY_MESSAGES[code] for code in observed},
+                      "decision": Decision.deterministic(
+                          "finance.band", schema=BAND_DECISION).as_data()},
                 required_actions=[ANOMALY_MESSAGES[code] for code in blocking],
             ), None
         return declaration.outcome(
             AgentStatus.OK, data={**computed, "capacity": capacity, "deferred": [],
-                                  "anomalies": confirmed, "decision": audit},
+                                  "anomalies": observed, "anomaly_checks": checks,
+                                  "anomaly_notes": {code: ANOMALY_MESSAGES[code]
+                                                    for code in observed},
+                                  "decision": Decision.deterministic(
+                                      "finance.band", schema=BAND_DECISION).as_data()},
             provenance=self._provenance(industry),
         ), computed
 
@@ -257,37 +264,15 @@ class FinanceTeam:
         return picked
 
     @staticmethod
-    def _confirm_anomalies(review: Decision, conditions: dict[str, Any],
-                           computed: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]]]:
-        """모델이 지목한 이상치를 코드가 다시 확인한다. 확인되지 않은 것은 기록만 남는다."""
-        confirmed, rejected = [], []
-        for code in review.chosen.get("anomalies", []):
-            predicate = ANOMALY_PREDICATES.get(code)
-            if predicate is not None and predicate(conditions, computed):
-                confirmed.append(code)
-            else:
-                rejected.append({"field": "anomalies", "value": code, "reason": "predicate_false"})
-        return confirmed, rejected
+    def _evaluate_anomalies(conditions: dict[str, Any],
+                            computed: dict[str, Any]) -> dict[str, bool]:
+        """5종을 전량 평가한다. 모델은 이 판정에 관여하지 않는다.
 
-    async def _review_band(self, conditions: dict[str, Any]) -> Decision:
-        industry = conditions.get("industry", "")
-        if self.params.missing(industry):
-            # 원천이 없으면 판정 자체를 하지 않으므로 물어볼 것도 없다.
-            return Decision.deterministic("finance.band", schema=BAND_REVIEW_SCHEMA.name)
-        try:
-            computed = compute_bands(self.params, **self._inputs(conditions))
-        except ValueError:
-            return Decision.deterministic("finance.band", schema=BAND_REVIEW_SCHEMA.name)
-        lines = {line["band"]: line for line in computed["bands"]}
-        return await self.llm.choose(
-            agent_key="finance.band", schema=BAND_REVIEW_SCHEMA,
-            instruction=("입력과 산출을 보고 확인이 필요한 이상치만 지목하세요. "
-                         "관찰되지 않는 이상치를 고르면 버려집니다. 수치를 다시 계산하지 마세요."),
-            context={"입력": {key: conditions.get(key) for key, _ in _BAND_FIELDS},
-                     "필요자금 위치": computed.get("required_capital_band"),
-                     "밴드": {name: {"ceiling_krw": line["ceiling_krw"],
-                                   "stress_pass": line["stress_pass"]}
-                            for name, line in lines.items()}})
+        예전에는 모델이 지목한 것만 술어로 확인했다. 그 구조에서 모델이 고르지 않은 이상치는
+        술어가 참이어도 아무 데도 남지 않았고, 그 호출은 재현율을 떨어뜨리는 필터로만 작동했다.
+        평가하지 않은 것과 거짓인 것은 다른 말이므로 판정 전체를 사전으로 돌려준다."""
+        return {code: bool(predicate(conditions, computed))
+                for code, predicate in ANOMALY_PREDICATES.items()}
 
     def _provenance(self, industry: str) -> Provenance:
         sources = ", ".join(self.params.sources(industry)) or "미기재"
@@ -301,7 +286,7 @@ class FinanceTeam:
 
     # ── 서브 2 · 창업 금융 스트레스 테스트 ──────────────────────────────
     def _stress(self, band: AgentOutcome, computed: dict[str, Any] | None,
-                selection: Decision | None, conditions: dict[str, Any]) -> AgentOutcome:
+                conditions: dict[str, Any]) -> AgentOutcome:
         declaration = spec("finance.stress")
         if computed is None:
             # 밴드가 못 나온 이유를 그대로 물려받는다. 여기서 따로 진단하지 않는다.
@@ -309,7 +294,7 @@ class FinanceTeam:
             # 밴드 산출물을 읽는 축이므로, 읽을 것이 없으면 OK 가 아니라 유보다.
             status = AgentStatus.WITHHELD if band.active else band.status
             return declaration.outcome(status, message=band.message)
-        selection = selection or Decision.deterministic("finance.stress", schema=STRESS_SCHEMA.name)
+        selection = Decision.deterministic("finance.stress", schema=STRESS_DECISION)
         recommended = next(line for line in computed["bands"] if line["band"] == "RECOMMENDED")
         maximum = next(line for line in computed["bands"] if line["band"] == "MAXIMUM")
         return declaration.outcome(AgentStatus.OK, data={
@@ -321,14 +306,18 @@ class FinanceTeam:
             "maximum_burden_ratio": maximum["repayment_burden_ratio"],
             "recommended_runway_months": recommended["runway_months"],
             "maximum_runway_months": maximum["runway_months"],
-            "scenarios": self._scenarios(self._inputs(conditions), selection),
+            "scenarios": self._scenarios(self._inputs(conditions)),
             "decision": selection.as_data(),
         })
 
-    def _scenarios(self, inputs: dict[str, Any], selection: Decision) -> list[dict[str, Any]]:
-        """고른 시나리오마다 같은 산식을 파라미터만 갈아 끼워 다시 돌린다."""
+    def _scenarios(self, inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        """카탈로그 3종을 **항상 전부** 돌린다. 같은 산식을 파라미터만 갈아 끼운다.
+
+        무엇을 확인할 가치가 있는지는 케이스마다 달라지는 판단이 아니라 제품이 약속한 목록이다.
+        모델에게 고르게 하면 어떤 실행에는 −30% 가 없고 어떤 실행에는 있게 되고, 사용자는 그
+        차이를 자기 조건 탓으로 읽는다."""
         rows = []
-        for key in selection.chosen.get("scenarios", []):
+        for key in STRESS_SCENARIOS:
             scenario = STRESS_SCENARIOS[key]
             overrides = dict(scenario.get("overrides") or {})
             if "rate_delta_pp" in scenario:
@@ -346,19 +335,6 @@ class FinanceTeam:
                          "target_daily_revenue_krw": lines["RECOMMENDED"]["target_daily_revenue_krw"],
                          "runway_months": lines["RECOMMENDED"]["runway_months"]})
         return rows
-
-    async def _select_scenarios(self, conditions: dict[str, Any]) -> Decision:
-        if self.params.missing(conditions.get("industry", "")):
-            return Decision.deterministic("finance.stress", schema=STRESS_SCHEMA.name)
-        return await self.llm.choose(
-            agent_key="finance.stress", schema=STRESS_SCHEMA,
-            instruction="이 케이스에서 확인할 가치가 있는 시나리오만 고르세요. 결과는 코드가 계산합니다.",
-            context={"업종": conditions.get("industry"),
-                     "월세": conditions.get("monthly_rent_krw"),
-                     "기존부채": conditions.get("existing_debt_krw"),
-                     "자기자본": conditions.get("equity_krw"),
-                     "고를 수 있는 시나리오": {key: item["label"]
-                                      for key, item in STRESS_SCENARIOS.items()}})
 
     # ── 서브 3 · KB 상품 조합 ─────────────────────────────────────────
     def _kb_products(self, selection: Decision | None) -> AgentOutcome:
