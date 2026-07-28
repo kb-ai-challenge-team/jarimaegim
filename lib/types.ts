@@ -39,6 +39,10 @@ export interface Provenance {
   limitations: string[];
 }
 
+/** 면적·월세는 서울교통공사 실측 분포에서, 나머지는 전부 가정값이다.
+ *  가정값은 매물 카드와 필요자금 계산에만 쓰이며 근거등급을 올리지 않는다 —
+ *  등급 B는 서울시 상권분석서비스의 실측 집계에서만 나온다.
+ *  backend/app/models.py 의 ListingTerms 와 필드 단위로 일치해야 한다. */
 export interface ListingTerms {
   listing_kind: "DEMO_SYNTHETIC";
   deposit_krw: number;
@@ -46,6 +50,17 @@ export interface ListingTerms {
   maintenance_fee_krw?: number | null;
   area_m2: number;
   floor: number;
+  // ── 아래부터 가정값. 전부 선택이며, 없으면 화면에서 해당 항목만 빠진다 ──
+  key_money_krw?: number | null;
+  exclusive_area_m2?: number | null;
+  built_year?: number | null;
+  parking_slots?: number | null;
+  corner?: boolean | null;
+  elevator?: boolean | null;
+  floors_total?: number | null;
+  frontage_m?: number | null;
+  /** ISO date (YYYY-MM-DD) */
+  available_from?: string | null;
 }
 
 /** One landing-map pin per covered district, shown before any condition is entered. */

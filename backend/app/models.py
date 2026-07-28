@@ -83,13 +83,41 @@ class Provenance(BaseModel):
 
 
 class ListingTerms(BaseModel):
-    """Demo listing terms. The label is a required Literal so an unlabelled listing cannot be constructed."""
+    """Demo listing terms. The label is a required Literal so an unlabelled listing cannot be constructed.
+
+    두 종류가 한 객체에 섞여 있다. 면적과 월세는 서울교통공사 지하상가 임대정보의 실측
+    분포에서 나왔고, 나머지는 전부 **가정값**이다 (`pipeline/lib/attribute-constants.mjs`).
+    가정값은 매물 카드와 필요자금 계산에만 쓰이며 근거등급을 올리지 않는다 — 등급 B는
+    서울시 상권분석서비스의 실측 집계에서만 나온다.
+
+    부가 속성은 전부 선택이다. 이 열이 없는 저장소(마이그레이션 이전 Supabase)에서 읽어도
+    매물 자체는 그대로 뜨고, 값이 없는 항목만 화면에서 빠진다.
+    """
     listing_kind: Literal["DEMO_SYNTHETIC"]
     deposit_krw: int = Field(ge=0)
     monthly_rent_krw: int = Field(gt=0)
     maintenance_fee_krw: int | None = Field(default=None, ge=0)
     area_m2: float = Field(gt=0)
     floor: int
+    # ── 아래부터 가정값 ──
+    key_money_krw: int | None = Field(default=None, ge=0)
+    exclusive_area_m2: float | None = Field(default=None, gt=0)
+    built_year: int | None = Field(default=None, ge=1900, le=2100)
+    parking_slots: int | None = Field(default=None, ge=0)
+    corner: bool | None = None
+    elevator: bool | None = None
+    floors_total: int | None = Field(default=None, ge=1)
+    frontage_m: float | None = Field(default=None, gt=0)
+    available_from: date | None = None
+
+    @model_validator(mode="after")
+    def area_contract(self):
+        # 전용면적이 계약면적보다 클 수는 없다. 생성기 버그를 여기서 잡는다.
+        if self.exclusive_area_m2 is not None and self.exclusive_area_m2 > self.area_m2:
+            raise ValueError("exclusive area cannot exceed contract area")
+        if self.floors_total is not None and self.floor > self.floors_total:
+            raise ValueError("floor cannot exceed the building's total floors")
+        return self
 
 
 class DistrictSummary(BaseModel):

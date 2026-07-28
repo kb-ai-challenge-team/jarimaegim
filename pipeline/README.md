@@ -18,9 +18,21 @@
 | 보증금 배수 | `ASSUMED_DEPOSIT_MULTIPLE` 상수 | **가정. 실측 아님** |
 | 관리비 비율 | `ASSUMED_MAINTENANCE_FEE_RATE` 상수 | **가정. 실측 아님** |
 | 층 | `ASSUMED_FLOOR` 상수 | **가정. 실측 아님** |
+| 권리금·전용면적·준공년도·주차·코너·엘리베이터·총층수·전면폭·입주가능일 | `pipeline/lib/attribute-constants.mjs` | **가정. 실측 아님** |
 
-보증금·관리비·층은 실측 출처가 없다. 그래서 측정값이 담기는 파일이 아니라 이름이 붙은
-상수 한 곳에 두었다. 가정을 데이터 경로로 흘리면 나중에 어느 숫자가 측정값인지 알 수 없다.
+보증금·관리비·층·부가 속성은 실측 출처가 없다. 그래서 측정값이 담기는 파일이 아니라 이름이
+붙은 상수 한 곳에 두었다. 가정을 데이터 경로로 흘리면 나중에 어느 숫자가 측정값인지 알 수 없다.
+
+## 가정값은 등급을 올리지 않는다
+
+부가 속성(Stage 4)은 **매물 카드와 필요자금 계산에만** 쓰인다. 근거등급 A/B/C/U 에는
+관여하지 않는다 — 등급 B는 서울시 상권분석서비스의 실측 집계에서만 나온다. 개별 상가의
+권리금·전용면적을 공개하는 원천이 없으므로 이 값들로 입지를 판정하면 근거 없는 판단이 된다.
+
+권리금만 예외적으로 계산에 들어간다. `FundingBandInput.key_money_krw` 를 통해 필요자금에
+합산되고, 그 결과가 조달 밴드·손익분기 일매출로 이어진다. **즉 화면의 조달 금액에는 가정값이
+섞여 있다.** 사용자는 입지 화면의 "정밀하게 맞추기"에서 이 값을 직접 고칠 수 있고, 필드에
+"계약 전 직접 확인" 이라고 적혀 있다.
 
 ## 스테이지
 
@@ -30,8 +42,16 @@
 | 1 분포 | `npm run pipeline:build` | `pipeline/raw/` | `data/rent-distribution.seoul.json` |
 | 2 검증 | `npm run pipeline:verify` | Stage 1 산출물 | `data/rent-distribution.verification.md` |
 | 3 합성 | `npm run pipeline:build` | Stage 1 산출물 | `data/listings.seoul.json` |
+| 4 부가속성 | `npm run pipeline:build` | Stage 3 산출물 | `data/listings.seoul.json` (가정값 9개 추가) |
 
-`pipeline:build`가 Stage 1과 3을 순서대로 돌린다. Stage 2는 그 사이에 수동으로 돌린다.
+`pipeline:build`가 Stage 1·3·4를 순서대로 돌린다. Stage 2는 그 사이에 수동으로 돌린다.
+
+Stage 4는 매물 id 로 시드를 만들므로 **배열 순서에 의존하지 않는다.** 매물을 추가하거나
+순서를 바꿔도 기존 매물의 속성은 그대로다. 임대 조건(보증금·월세·관리비·면적·층)은 덮지
+않는다 — 그 값들은 실측 분포에서 나온 것이고 덮으면 출처를 알 수 없게 된다.
+
+Stage 4 이후 `npm run seed:listings` 로 Supabase 에 다시 적재해야 한다. 마이그레이션
+`202607280003_listings_assumed_attributes.sql` 이 선행 조건이다.
 
 테스트: `npm run test:pipeline` (47개) 및
 `cd pipeline/verify && ../../backend/.venv/bin/python -m pytest test_cross_check.py` (9개).

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
-import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
+import type { AnalysisResult, CaseInput, FundingBandResult, ListingTerms } from "@/lib/types";
 import { manwon } from "@/lib/format";
 import type { FlowStep, Jarimaegim, Profile } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
@@ -218,6 +218,22 @@ function BandBanner({ bands }: { bands: FundingBandResult }) {
   </div>;
 }
 
+/** 매물의 가정값 속성. 실측이 아니므로 임대 조건과 같은 줄에 섞지 않고 별도 줄에 둔다.
+ *  값이 없는 항목은 아예 렌더하지 않는다 — 마이그레이션 이전 저장소에서 읽으면 비어 있다. */
+function AssumedTerms({ listing }: { listing: ListingTerms }) {
+  const parts: string[] = [];
+  if (typeof listing.exclusive_area_m2 === "number") parts.push(`전용 ${listing.exclusive_area_m2}㎡`);
+  if (typeof listing.built_year === "number") parts.push(`${listing.built_year}년 준공`);
+  if (typeof listing.floors_total === "number") parts.push(`${listing.floor}/${listing.floors_total}층`);
+  if (typeof listing.frontage_m === "number") parts.push(`전면 ${listing.frontage_m}m`);
+  if (typeof listing.parking_slots === "number") parts.push(listing.parking_slots > 0 ? `주차 ${listing.parking_slots}대` : "주차 불가");
+  if (listing.corner) parts.push("코너");
+  if (listing.elevator) parts.push("엘리베이터");
+  if (listing.available_from) parts.push(`${listing.available_from} 입주`);
+  if (parts.length === 0) return null;
+  return <span className="listing-assumed"><span className="assumed-badge" title="실측 출처가 없어 가정한 값입니다. 계약 전 직접 확인해야 합니다.">가정값</span>{parts.join(" · ")}</span>;
+}
+
 function RecommendStep({ flow }: { flow: Jarimaegim }) {
   const { candidates, locationState, focused, caseData, trace, bands, analysis } = flow;
   const [tuning, setTuning] = useState(false);
@@ -256,7 +272,9 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
     </div>}
 
     {candidates.length > 0 && <>
-      <p className="kb-step-lead">시연용 매물 {candidates.length}곳입니다. 월세 낮은 순이며 적합도 점수가 아닙니다. 실제 임대 매물이 아니고, 개별 점포 생존등급은 근거 A에서만 제공합니다.</p>
+      {/* 정렬 근거를 그대로 말한다. 상권 통계로 판정한 후보가 먼저 오고, 판정하지 못한 후보는
+          월세 순으로 뒤에 붙는다. 뒤로 보낸 것이지 떨어뜨린 것이 아니다. */}
+      <p className="kb-step-lead">시연용 매물 {candidates.length}곳입니다. 업종·우선순위와 서울시 상권분석 집계로 줄 세웠고, 상권 통계를 확인하지 못한 곳은 뒤에 월세 순으로 붙였습니다. 실제 임대 매물이 아니고, 개별 점포 생존등급은 근거 A에서만 제공합니다.</p>
       <ul className="kb-candidates">{candidates.map((candidate, index) => <li key={candidate.id} data-focused={candidate.id === focused ? "true" : undefined}>
         <button className="kb-candidate-main" onClick={() => flow.setFocused(candidate.id)} aria-pressed={candidate.id === focused}>
           <span className="kb-rank">{index + 1}</span>
@@ -264,7 +282,8 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
             <strong>{candidate.name}</strong>
             <small>{candidate.road_address || candidate.address}</small>
             <span className="kb-grade" data-grade={candidate.evidence_grade}>{EVIDENCE_BADGES[candidate.evidence_grade]} · {EVIDENCE_LABELS[candidate.evidence_grade]}</span>
-            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보증금 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월세 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span></span>}
+            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보증금 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월세 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span>{typeof candidate.listing.key_money_krw === "number" && <span>권리금 <strong>{candidate.listing.key_money_krw > 0 ? manwon(candidate.listing.key_money_krw) : "없음"}</strong></span>}</span>}
+            {candidate.listing && <AssumedTerms listing={candidate.listing} />}
           </span>
         </button>
         <ProvenanceBar data={candidate.provenance} />

@@ -26,6 +26,9 @@ export const DEFAULT_PROFILE = {
 
 /** 임대 조건. 월세만 밴드를 바꾸고, 나머지는 필요자금(→현금소진)에만 관여한다.
  *  null 은 "아직 모른다"이고 0 과 다르다 — null 이면 계산하지 않고, 0 이면 0 으로 계산한다. */
+/** 1평 = 3.3058㎡. 매물 면적(㎡)을 필요자금 입력의 평수로 옮길 때 쓴다. */
+export const PYEONG_IN_M2 = 3.3058;
+
 export const DEFAULT_BAND_FORM = {
   area_pyeong: null as number | null,
   deposit_krw: null as number | null,

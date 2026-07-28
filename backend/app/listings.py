@@ -20,7 +20,13 @@ DEFAULT_SEED_PATH = Path(__file__).resolve().parents[2] / "data" / "listings.seo
 LIMITATIONS = [
     "실제 임대 매물이 아니며 계약 대상이 아닙니다.",
     "위치는 실제 상가 좌표이나 면적·월세는 서울교통공사 지하상가 임대정보 분포에서 생성했고, 보증금·관리비·층은 가정값입니다.",
+    "권리금·전용면적·준공년도·주차·코너·전면폭·엘리베이터·총층수·입주가능일은 실측 출처가 없어 가정한 값입니다. 계약 전 직접 확인해야 합니다.",
 ]
+
+# Supabase 에서 읽어 오는 가정값 열. pipeline/lib/attribute-constants.mjs 가 생성하고
+# scripts/seed-listings.mjs 가 적재한다. 세 곳의 목록이 어긋나면 값이 조용히 사라진다.
+ASSUMED_COLUMNS = ("key_money_krw", "exclusive_area_m2", "built_year", "parking_slots",
+                   "corner", "elevator", "floors_total", "frontage_m", "available_from")
 
 
 class ListingService:
@@ -80,6 +86,9 @@ class ListingService:
                 "listing_kind": row["listing_kind"], "deposit_krw": row["deposit_krw"],
                 "monthly_rent_krw": row["monthly_rent_krw"], "maintenance_fee_krw": row["maintenance_fee_krw"],
                 "area_m2": row["area_m2"], "floor": row["floor"],
+                # 부가 속성은 나중에 추가된 열이다. admin_dong 과 같은 이유로 .get 을 쓴다 —
+                # 마이그레이션 이전 테이블에서도 매물 자체는 읽히고 이 항목만 비워진다.
+                **{key: row.get(key) for key in ASSUMED_COLUMNS},
             },
         } for row in rows]
 

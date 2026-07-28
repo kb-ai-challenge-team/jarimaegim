@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, formatKrw } from "./constants";
+import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, PYEONG_IN_M2, formatKrw } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
 import type { AnalysisResult, BandLine, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
@@ -312,11 +312,29 @@ export function useJarimaegim() {
     } finally { setBusy(""); }
   }, [bandForm, caseData, profile, runBands]);
 
-  /** 계획 기준 후보. 처방 단계가 이 값을 소비한다. */
+  /** 계획 기준 후보. 처방 단계가 이 값을 소비한다.
+   *
+   *  후보를 확정하면 그 매물의 임대 조건을 필요자금 입력에 그대로 채운다. "이 후보로
+   *  계획하기"를 눌러 놓고 보증금·월세·권리금을 다시 손으로 옮겨 적게 하는 것은 같은 값을
+   *  두 번 묻는 것이다. 권리금은 가정값이므로 화면이 그렇게 표시하고, 사용자가 그 자리에서
+   *  고칠 수 있다. 채운 뒤 밴드를 다시 계산해야 처방 단계가 확정 후보 기준 금액을 본다. */
   const commitCandidate = useCallback((candidateId: string | null) => {
     setCommitted(candidateId);
     setDocuments({}); setDocNotice("");
-  }, []);
+    if (!candidateId) return;
+    const listing = candidates.find((candidate) => candidate.id === candidateId)?.listing;
+    if (!listing || !caseData) return;
+    const next: BandForm = {
+      ...bandForm,
+      area_pyeong: Number((listing.area_m2 / PYEONG_IN_M2).toFixed(1)),
+      deposit_krw: listing.deposit_krw,
+      monthly_rent_krw: listing.monthly_rent_krw,
+      monthly_maintenance_krw: listing.maintenance_fee_krw ?? 0,
+      key_money_krw: listing.key_money_krw ?? 0
+    };
+    setBandForm(next);
+    void runBands(caseData, next, profile).catch(() => setBandState("error"));
+  }, [bandForm, candidates, caseData, profile, runBands]);
 
   /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다. */
   const prepareDocument = useCallback(async (template: string) => {
