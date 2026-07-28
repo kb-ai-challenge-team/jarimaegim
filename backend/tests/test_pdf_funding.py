@@ -90,6 +90,19 @@ def test_the_section_never_claims_eligibility():
     assert any("자격" in line and "판단한 것이 아닙니다" in line for line in lines)
 
 
+def test_a_product_and_a_program_both_render():
+    lines = selection_section_lines([PRODUCT], [PROGRAM], 0)
+    assert any("KB 소호모바일대출" in line for line in lines)
+    assert any(PRODUCT["official_url"] in line for line in lines)
+    assert any("소상공인 정책자금" in line for line in lines)
+    assert any(PROGRAM["official_url"] in line for line in lines)
+
+
+def test_a_half_disclosed_rate_marks_the_missing_side():
+    lines = selection_section_lines([{**PRODUCT, "rate_min": None}], [], 0)
+    assert any("?~5.2%" in line for line in lines)
+
+
 def test_dropped_items_are_reported_not_swallowed():
     lines = selection_section_lines([PRODUCT], [], 2)
     assert any("2건" in line and "확인되지 않아 제외" in line for line in lines)
