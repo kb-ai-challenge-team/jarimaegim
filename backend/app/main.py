@@ -28,15 +28,18 @@ from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch,
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .retrieval import RetrievalService
+from .industry import resolve as resolve_industry
 from .services import AIService, AnalysisService, CostService, LocationService
+from .trade_area import TradeAreaService, TradeAreaUnavailable
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 repository = Repository(settings)
 locations = LocationService(settings)
-listings_service = ListingService(settings)
-analyses = AnalysisService(listings_service)
+trade_areas = TradeAreaService()
+listings_service = ListingService(settings, trade_areas=trade_areas)
+analyses = AnalysisService(listings_service, trade_areas)
 knowledge = KnowledgeReader(settings)
 retrieval = RetrievalService(settings)
 ai = AIService(settings)
@@ -127,7 +130,11 @@ def analysis_axes() -> dict[str, dict[str, Any]]:
     finlife = bool(settings.finlife_api_key and (settings.finlife_api_url or settings.finlife_api_base_url))
     subsidy = bool((settings.bizinfo_api_key and settings.bizinfo_api_url)
                    or (settings.kstartup_api_key and settings.kstartup_api_url))
-    trade_area_pending = "서울 상권분석 연동 미구현 — 원천 설정 여부와 무관하게 판정하지 않습니다"
+    # 상권 축은 프로파일 파일이 실제로 읽혔을 때만 켠다. 키 설정 여부가 아니라
+    # 판정에 쓸 집계가 메모리에 있느냐가 기준이다.
+    trade_area = trade_areas.available
+    trade_area_pending = "서울 상권분석 프로파일 미생성 — `npm run pipeline:trade-area` 실행 전에는 판정하지 않습니다"
+    trade_area_note = f"{trade_areas.quarter} 기준 행정동 {trade_areas.dong_count}개" if trade_area else None
     return {
         "finance.band": {"enabled": True, "disabled_reason": None,
                          "note": "제도 파라미터 미등록 시 integration_pending을 반환합니다"},
@@ -138,9 +145,12 @@ def analysis_axes() -> dict[str, dict[str, Any]]:
         "finance.subsidy": {"enabled": subsidy,
                             "disabled_reason": None if subsidy else "지원사업 endpoint 미검증",
                             "note": "조달선 상향분 반영은 미구현입니다"},
-        "location.demand": {"enabled": False, "disabled_reason": trade_area_pending, "note": None},
-        "location.competition": {"enabled": False, "disabled_reason": trade_area_pending, "note": None},
-        "location.viability": {"enabled": False, "disabled_reason": trade_area_pending, "note": None},
+        "location.demand": {"enabled": trade_area, "disabled_reason": None if trade_area else trade_area_pending,
+                            "note": trade_area_note},
+        "location.competition": {"enabled": trade_area, "disabled_reason": None if trade_area else trade_area_pending,
+                                 "note": trade_area_note},
+        "location.viability": {"enabled": trade_area, "disabled_reason": None if trade_area else trade_area_pending,
+                               "note": "추정매출은 상권·업종 조합의 일부에만 제공되어 후보마다 판정 여부가 다릅니다" if trade_area else None},
         "location.survival": {"enabled": False, "disabled_reason": "인허가 이력 코호트 미구축", "note": "유일한 A등급 경로입니다"},
         "timing.policy": {"enabled": False, "disabled_reason": "개발·정책 일정 원천 미확보 — 일정 확인 전 판단 유보", "note": None},
     }
@@ -224,7 +234,10 @@ async def search_locations(payload: LocationSearch, session_id: UUID = Depends(c
     case = owned_case(session_id, payload.case_id)
     if payload.district != case.inputs.district or payload.industry != case.inputs.industry:
         raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "확정된 케이스 조건과 검색 조건이 다릅니다."})
-    candidates, status, message = listings_service.search(payload.district, case.inputs.budget_krw, payload.limit)
+    candidates, status, message = listings_service.search(
+        payload.district, case.inputs.budget_krw, payload.limit,
+        industry=case.inputs.industry, priority=case.inputs.priority,
+    )
     return {"candidates": [candidate.model_dump(mode="json") for candidate in candidates], "status": status, "message": message}
 
 
@@ -236,18 +249,25 @@ async def listing_summary():
 
 
 @app.get("/api/v1/listings")
-async def public_listings(district: str = Query(min_length=1, max_length=20), limit: int = Query(default=15, ge=1, le=55)):
-    """Public: one district's demo listings. No session, for the same reason as the summary."""
+async def public_listings(district: str = Query(min_length=1, max_length=20), limit: int = Query(default=15, ge=1, le=55),
+                          industry: str = Query(default="", max_length=120)):
+    """Public: one district's demo listings. No session, for the same reason as the summary.
+
+    업종은 선택이다. 랜딩 지도에서 조건 없이 둘러볼 때는 비어 있고, 그 경우 상권 판정 없이
+    월세 순으로만 나간다.
+    """
     if district not in SEOUL_DISTRICTS:
         raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "서울 25개 자치구 중에서 선택해 주세요."})
-    candidates, status, message = listings_service.search(district, None, limit)
+    candidates, status, message = listings_service.search(district, None, limit, industry=industry)
     return {"candidates": [candidate.model_dump(mode="json") for candidate in candidates], "status": status, "message": message}
 
 
 @app.post("/api/v1/analyses")
 async def create_analysis(payload: AnalysisCreate, session_id: UUID = Depends(current_session)):
-    owned_case(session_id, payload.case_id)
-    return analyses.analyze(payload.candidate_id).model_dump(mode="json")
+    case = owned_case(session_id, payload.case_id)
+    # 업종은 케이스에서 읽는다. 요청 본문으로 받으면 확정된 조건과 다른 업종의 상권 통계를
+    # 붙일 수 있고, 그건 사용자가 확인한 조건이 아니다.
+    return analyses.analyze(payload.candidate_id, case.inputs.industry).model_dump(mode="json")
 
 
 @app.get("/api/v1/analyses/{analysis_id}")
@@ -351,13 +371,38 @@ async def search_knowledge_documents(q: str = Query(min_length=1, max_length=300
     return await retrieval.search(q, kinds=[kind] if kind else None, regions=regions, limit=limit)
 
 
+def case_summary(case: CaseRecord) -> str:
+    """AI에게 넘길 케이스 요약.
+
+    확정한 후보가 있고 그 후보의 상권 집계를 확인했다면 그 **수치까지** 넣는다. 넣지 않으면
+    모델이 아는 것이 업종·지역뿐이라 상권 이야기를 하려 할 때 지어낼 수밖에 없다.
+    수치는 전부 코드가 계산해 여기에 문자열로 박히고, 모델은 그것을 설명만 한다
+    (부록 A 불변조건 4).
+    """
+    parts = [f"업종 {case.inputs.industry}", f"지역 {case.inputs.district}",
+             f"사업단계 {case.inputs.business_stage.value}"]
+    listing_id = case.inputs.committed_listing_id
+    candidate = listings_service.get(listing_id) if listing_id else None
+    if candidate:
+        found = trade_areas.lookup(candidate.admin_dong_code, resolve_industry(case.inputs.industry))
+        if not isinstance(found, TradeAreaUnavailable):
+            signals = trade_areas.signals(found)
+            parts.append(
+                f"확정 후보 {candidate.name}({found['admin_dong']}) — 서울시 상권분석서비스 {trade_areas.quarter} 기준, "
+                f"{found['industry_name']} 점포 {found['store_count']}곳, 상권 위험 수준 {trade_areas.risk_grade(signals)}"
+            )
+            parts.extend(f"{signal.label}: {signal.explanation}" for signal in signals if signal.score_band != "UNKNOWN")
+        else:
+            parts.append(f"확정 후보 {candidate.name}의 상권 통계는 확인하지 못했습니다({found.reason})")
+    return ". ".join(parts) + ". 위 수치는 상권·업종 집계이며 개별 점포의 생존·폐업 확률이 아닙니다. 현재 화면의 공식 출처와 수치 외에는 생성 금지."
+
+
 @app.post("/api/v1/cases/{case_id}/messages")
 async def create_message(case_id: UUID, payload: MessageCreate, session_id: UUID = Depends(current_session)):
     case = owned_case(session_id, case_id)
     if payload.confirmed_case_patch:
         raise HTTPException(422, {"code": "CONSENT_REQUIRED", "message": "이 화면에서는 대화의 조건 변경을 자동 적용하지 않습니다."})
-    summary = f"업종 {case.inputs.industry}, 지역 {case.inputs.district}, 사업단계 {case.inputs.business_stage.value}. 현재 화면의 공식 출처와 수치 외에는 생성 금지."
-    return await ai.explain(payload.content, summary)
+    return await ai.explain(payload.content, case_summary(case))
 
 
 def sse_frame(event: dict[str, Any]) -> str:
@@ -454,7 +499,7 @@ async def create_message_stream(case_id: UUID, payload: MessageCreate, session_i
     if not repository.consume_daily_turn(session_id, settings.ai_daily_request_limit):
         raise HTTPException(429, {"code": "RATE_LIMITED", "message": "오늘 사용할 수 있는 AI 대화 횟수를 모두 사용했습니다."})
 
-    summary = f"업종 {case.inputs.industry}, 지역 {case.inputs.district}, 사업단계 {case.inputs.business_stage.value}. 현재 화면의 공식 출처와 수치 외에는 생성 금지."
+    summary = case_summary(case)
     responder = ai.responder()
 
     async def frames():

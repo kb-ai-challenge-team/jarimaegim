@@ -57,6 +57,30 @@ export interface DistrictSummary {
   longitude: number;
 }
 
+/** 상권 판정 축. backend/app/ranking.py 의 PRIORITY_WEIGHTS 키와 같아야 한다. */
+export type TradeAreaAxis = "demand" | "competition" | "turnover" | "sales" | "cost";
+
+/** 후보가 왜 이 순위인지. score 는 정렬 규칙의 산출물이며 확률도 매출 예측도 아니다. */
+export type TradeAreaFit =
+  | {
+      status: "judged";
+      score: number;
+      judged_axes: TradeAreaAxis[];
+      unjudged_axes: TradeAreaAxis[];
+      store_count?: number | null;
+      trade_area_count?: number | null;
+      reason?: string | null;
+    }
+  | {
+      status: "unavailable";
+      score: null;
+      judged_axes: [];
+      unjudged_axes: TradeAreaAxis[];
+      store_count?: number | null;
+      trade_area_count?: number | null;
+      reason: string;
+    };
+
 export interface Candidate {
   id: string;
   name: string;
@@ -65,15 +89,18 @@ export interface Candidate {
   latitude: number;
   longitude: number;
   distance_m?: number;
+  admin_dong?: string | null;
+  admin_dong_code?: string | null;
   evidence_grade: EvidenceGrade;
   display_label: string;
   context_signals: ContextSignal[];
   provenance: Provenance;
   listing?: ListingTerms | null;
+  trade_area_fit?: TradeAreaFit | null;
 }
 
 export interface ContextSignal {
-  name: "demand" | "competition" | "cost" | "access" | "continuity" | string;
+  name: TradeAreaAxis | "access" | "continuity" | string;
   label: string;
   score_band: "FAVORABLE" | "NEUTRAL" | "CAUTION" | "UNKNOWN";
   direction: "POSITIVE" | "NEUTRAL" | "RISK" | "UNKNOWN";

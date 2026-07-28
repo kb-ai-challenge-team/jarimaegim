@@ -78,6 +78,8 @@ export const EVIDENCE_LABELS = {
 export const SIGNAL_LABELS: Record<string, string> = {
   demand: "수요",
   competition: "경쟁",
+  turnover: "폐업률",
+  sales: "매출",
   cost: "비용",
   access: "접근성",
   continuity: "지속성"

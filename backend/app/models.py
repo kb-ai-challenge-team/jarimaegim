@@ -101,6 +101,30 @@ class DistrictSummary(BaseModel):
     longitude: float
 
 
+class TradeAreaFit(BaseModel):
+    """후보가 왜 이 순위인지. 점수는 정렬 규칙의 산출물이며 확률도 매출 예측도 아니다."""
+
+    status: Literal["judged", "unavailable"]
+    # 0~1. 판정된 축만으로 낸 가중 평균이라 축 개수가 다른 후보끼리도 같은 척도에 놓인다.
+    score: float | None = Field(default=None, ge=0, le=1)
+    judged_axes: list[str] = Field(default_factory=list)
+    unjudged_axes: list[str] = Field(default_factory=list)
+    store_count: int | None = Field(default=None, ge=0)
+    trade_area_count: int | None = Field(default=None, ge=0)
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def fit_contract(self):
+        if self.status == "judged":
+            if self.score is None or not self.judged_axes:
+                raise ValueError("judged fit requires a score and at least one judged axis")
+        elif self.score is not None or self.judged_axes:
+            raise ValueError("unavailable fit must not carry a score")
+        elif not self.reason:
+            raise ValueError("unavailable fit requires a reason")
+        return self
+
+
 class Candidate(BaseModel):
     id: str
     name: str
@@ -109,11 +133,14 @@ class Candidate(BaseModel):
     latitude: float
     longitude: float
     distance_m: int | None = None
+    admin_dong: str | None = None
+    admin_dong_code: str | None = Field(default=None, max_length=16)
     evidence_grade: Literal["A", "B", "C", "U"]
     display_label: str
     context_signals: list[ContextSignal]
     provenance: Provenance
     listing: ListingTerms | None = None
+    trade_area_fit: TradeAreaFit | None = None
 
 
 class AnalysisCreate(BaseModel):

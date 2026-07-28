@@ -20,6 +20,8 @@ function toRow(entry) {
     listing_kind: entry.listing.listing_kind, deposit_krw: entry.listing.deposit_krw,
     monthly_rent_krw: entry.listing.monthly_rent_krw, maintenance_fee_krw: entry.listing.maintenance_fee_krw,
     area_m2: entry.listing.area_m2, floor: entry.listing.floor,
+    // 상권분석 데이터와 만나는 유일한 조인 키. 없는 매물은 null 로 두고 상권 축만 꺼진다.
+    admin_dong: entry.admin_dong ?? null, admin_dong_code: entry.admin_dong_code ?? null,
   };
 }
 

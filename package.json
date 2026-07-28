@@ -24,10 +24,11 @@
     "check:shell": "node scripts/shell-check.mjs",
     "pipeline:collect": "node pipeline/collect/fetch-prices.mjs && node pipeline/collect/fetch-coords.mjs",
     "pipeline:build": "node pipeline/distribution/build-distribution.mjs && node pipeline/synthesize/build-listings.mjs",
+    "pipeline:trade-area": "node pipeline/collect/fetch-trade-area.mjs && node pipeline/collect/fetch-listing-dong.mjs && node pipeline/trade-area/build-trade-area.mjs && node pipeline/trade-area/attach-dong.mjs",
     "pipeline:verify": "backend/.venv/bin/python pipeline/verify/cross_check.py",
     "pipeline:policy-index": "backend/.venv/bin/python pipeline/policy/index.py",
     "seed:listings": "node scripts/seed-listings.mjs",
-    "test:pipeline": "node --test pipeline/lib/*.test.mjs pipeline/distribution/*.test.mjs pipeline/synthesize/*.test.mjs",
+    "test:pipeline": "node --test pipeline/lib/*.test.mjs pipeline/distribution/*.test.mjs pipeline/synthesize/*.test.mjs pipeline/trade-area/*.test.mjs",
     "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {

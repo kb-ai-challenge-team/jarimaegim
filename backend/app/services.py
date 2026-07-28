@@ -68,10 +68,11 @@ class LocationService:
 
 
 class AnalysisService:
-    def __init__(self, location_service: LocationService):
+    def __init__(self, location_service: LocationService, trade_areas: "TradeAreaService | None" = None):
         self.locations = location_service
+        self.trade_areas = trade_areas
 
-    def analyze(self, candidate_id: str) -> AnalysisResult:
+    def analyze(self, candidate_id: str, industry: str = "") -> AnalysisResult:
         candidate = self.locations.get_candidate(candidate_id)
         if not candidate:
             return AnalysisResult(
@@ -81,6 +82,29 @@ class AnalysisService:
                 provenance=Provenance(source_name="원천 확인 불가", industry_scope="확인 불가", spatial_unit="확인 불가", confidence="INSUFFICIENT", limitations=["근거가 없는 결과를 만들지 않았습니다."]),
                 limitations=["검증 가능한 후보 ID가 없습니다."]
             )
+
+        profile = self._profile(candidate, industry)
+        if profile is not None:
+            signals = self.trade_areas.signals(profile)
+            judged = self.trade_areas.judged_count(signals)
+            # 등급 B의 계약: 상권 위험 등급과 표본이 있어야 하고, 개별 생존등급·확률은 있을 수 없다.
+            # models.py 의 evidence_contract 가 이 조합을 다시 검사한다.
+            return AnalysisResult(
+                analysis_id=uuid4(), status="completed", evidence_grade="B", display_label="상권 위험 진단",
+                context_risk_grade=self.trade_areas.risk_grade(signals),
+                confidence="MEDIUM" if judged >= 3 else "LOW",
+                sample_n=profile.get("store_count"), context_signals=signals,
+                provenance=self.trade_areas.provenance(
+                    industry_code=profile["industry_code"], sample_n=profile.get("store_count"),
+                    trade_area_count=profile.get("trade_area_count"),
+                ),
+                limitations=[
+                    f"{profile['admin_dong']} 안의 상권 {profile.get('trade_area_count')}곳을 묶은 집계이며 개별 점포의 실적이 아닙니다.",
+                    "상권×업종 집계이므로 개별 점포 생존등급이나 생존·폐업 확률은 제공하지 않습니다.",
+                    f"판정한 축은 {judged}/4개입니다." if judged < 4 else "네 개 축을 모두 판정했습니다.",
+                ],
+            )
+
         return AnalysisResult(
             analysis_id=uuid4(), status="completed", evidence_grade="C", display_label="입지 환경 신호",
             survival_grade=None, context_risk_grade=None, probability_lower=None, probability_upper=None,
@@ -88,6 +112,15 @@ class AnalysisService:
             context_signals=candidate.context_signals, provenance=candidate.provenance,
             limitations=["공식 위치 좌표만 확인된 상태입니다.", "개별 점포 생존등급이나 생존·폐업 확률을 제공하지 않습니다."]
         )
+
+    def _profile(self, candidate, industry: str):
+        """상권 집계를 붙일 수 있으면 그 dict, 아니면 None. 실패 사유는 등급 C 경로가 흡수한다."""
+        if not self.trade_areas or not industry:
+            return None
+        from .industry import resolve as resolve_industry
+        from .trade_area import TradeAreaUnavailable
+        found = self.trade_areas.lookup(candidate.admin_dong_code, resolve_industry(industry))
+        return None if isinstance(found, TradeAreaUnavailable) else found
 
 
 class CostService:
