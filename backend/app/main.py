@@ -484,6 +484,7 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
                     "fingerprint": result.fingerprint, "reused": result.reused,
                     "halted_at": result.halted_at, "questions": result.questions,
                     "deferred": result.deferred, "proposals": result.proposals,
+                    "reused_units": result.reused_units,
                     "activation": result.activation, "summary": result.summary,
                     "surviving": result.surviving, "dropped": result.dropped,
                     # 축 묶음 하나가 낸 결과. `blocking`·`halted` 는 없다 — 무엇을 멈출지는

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .contracts import AgentStatus, AxisReport
+from .invalidation import condition_digests, invalidated
 from .llm import AgentLLM, RunBudget
 from .registry import AGENT_SPECS, spec
 
@@ -63,6 +64,8 @@ class RunResult:
     summary: dict[str, Any] = field(default_factory=dict)
     halted_at: str | None = None
     reused: bool = False
+    #: 이번 실행에서 다시 돌지 않고 앞 실행의 판정을 그대로 쓴 단위들.
+    reused_units: list[str] = field(default_factory=list)
 
 
 def _fingerprint(conditions: dict[str, Any], candidates: list[dict[str, Any]]) -> str:
@@ -148,6 +151,9 @@ class MainAgent:
         self.llm = llm
         self.budget = budget
         self._last: RunResult | None = None
+        #: 앞 실행의 조건 지문. 무엇이 바뀌었는지는 통짜 해시로는 알 수 없다.
+        self._last_digests: dict[str, str] = {}
+        self._last_candidates: list[str] = []
 
     async def run(self, conditions: dict[str, Any],
                   candidates: list[dict[str, Any]]) -> RunResult:
@@ -169,12 +175,20 @@ class MainAgent:
         yield {"event": "run_start", "total_agents": len(AGENT_SPECS), "fingerprint": fingerprint}
 
         if self._last is not None and self._last.fingerprint == fingerprint:
-            # 같은 조건이면 팀을 다시 돌리지 않는다(가드 2). 재실행은 조건이 바뀔 때만 일어난다.
+            # 같은 조건이면 다시 돌리지 않는다(가드 2). 재실행은 조건이 바뀔 때만 일어난다.
             # 모델 호출도 이 경로에서는 한 번도 일어나지 않는다 — 같은 조건에 다른 답이 나오는
             # 유일한 경로를 막는 것이 이 캐시의 목적이다.
             reused = RunResult(**{**self._last.__dict__, "reused": True})
             yield {"event": "done", "result": reused}
             return
+
+        # 조건이 바뀌었다면 **무엇이** 바뀌었는지까지 본다. 재실행 판정은 메인의 책임이다 —
+        # 축이 스스로 "나는 유효하다"고 말하게 두면 그 판단이 축마다 한 벌씩 생긴다.
+        digests = condition_digests(conditions)
+        candidate_ids = sorted(str(item.get("id")) for item in candidates)
+        stale = invalidated(self._last_digests, digests,
+                            candidates_changed=candidate_ids != self._last_candidates)
+        self._last_digests, self._last_candidates = digests, candidate_ids
 
         if self.budget is not None:
             self.budget.reset()
@@ -196,7 +210,18 @@ class MainAgent:
         # 발화에서 읽어 채운 값이 있으면 후속 팀은 그것까지 반영된 조건을 본다.
         confirmed = settled.conditions or conditions
 
-        prescription = await self.finance.arun(confirmed)
+        # 무효화되지 않은 묶음은 앞 실행의 판정을 그대로 쓴다. 낡은 판정을 새 조건 옆에 남기지
+        # 않으면서도, 자기자본만 고친 사용자가 공시 조회를 다시 기다리지 않게 하는 경계다.
+        #
+        # 재사용 단위가 축 하나가 아니라 묶음인 것은 현재 실행기가 묶음 단위이기 때문이다.
+        # 무효 판정 자체는 축 단위이므로(`invalidation.DEPENDENCIES`), 실행기를 축으로 쪼개면
+        # 이 자리는 그대로 두고 세밀해진다.
+        reused_units: list[str] = []
+        prescription = self._reusable("finance", stale)
+        if prescription is None:
+            prescription = await self.finance.arun(confirmed)
+        else:
+            reused_units.extend(item.key for item in prescription.outcomes)
         for event in self._axis_events(prescription):
             yield event
         reports.append(prescription)
@@ -218,7 +243,8 @@ class MainAgent:
 
         async for event in self._close(fingerprint, reports, surviving=scheduled.surviving,
                                        dropped=list(narrowed.dropped),
-                                       summary=self._summary(prescription), **carried):
+                                       summary=self._summary(prescription),
+                                       reused_units=reused_units, **carried):
             yield event
 
     async def _close(self, fingerprint: str, reports: list[AxisReport], **rest: Any):
@@ -270,6 +296,20 @@ class MainAgent:
         text, removed = strip_unsourced_numbers(narration.text, allowed)
         return {"narrative": text, "narrative_dropped": removed,
                 "narrative_source": narration.source}
+
+    def _reusable(self, key: str, stale: set[str]) -> AxisReport | None:
+        """이 묶음의 축이 하나도 무효가 아니면 앞 실행의 보고를 그대로 돌려준다.
+
+        하나라도 무효면 통째로 다시 돈다 — 묶음 안에서 절반만 갈아 끼우면 같은 보고 안에 서로
+        다른 조건의 판정이 섞이고, 그 뒤로는 무엇이 언제 계산된 것인지 말할 수 없게 된다."""
+        if self._last is None:
+            return None
+        report = next((item for item in self._last.reports if item.key == key), None)
+        if report is None:
+            return None
+        if any(outcome.key in stale for outcome in report.outcomes):
+            return None
+        return report
 
     @staticmethod
     def _axis_events(report: AxisReport):

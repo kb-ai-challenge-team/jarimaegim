@@ -43,6 +43,8 @@ survival     인허가 코드 ↔ 상권분석 코드 매핑을 **제안만** �
 """
 from __future__ import annotations
 
+import asyncio
+
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -166,10 +168,15 @@ class LocationTeam:
             return {}
         industry = conditions.get("industry", "")
         options = self._industry_options(industry)
-        return {"location.demand": await self._select_basis(candidates, conditions),
-                "location.competition": await self._select_scope(industry, options),
-                "location.viability": await self._select_revenue_industry(industry, options),
-                "location.survival": await self._propose_mapping(industry, options)}
+        # 네 축의 선택은 서로를 읽지 않는다. 순차 await 는 지연만 더할 뿐이므로 함께 띄운다.
+        # 예산은 `reserve` 가 선언 순서대로 미리 배정했으므로, 누가 먼저 끝나든 배정은 같다.
+        keys = ["location.demand", "location.competition",
+                "location.viability", "location.survival"]
+        pending = [self._select_basis(candidates, conditions),
+                   self._select_scope(industry, options),
+                   self._select_revenue_industry(industry, options),
+                   self._propose_mapping(industry, options)]
+        return dict(zip(keys, await asyncio.gather(*pending)))
 
     def _judged(self, profile: dict[str, Any], axis: str) -> dict[str, Any] | None:
         """원천이 이미 내린 판정. 있으면 그것이 결론이고, 이 팀은 다시 등급을 매기지 않는다.

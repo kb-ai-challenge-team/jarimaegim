@@ -426,6 +426,9 @@ export interface PrescribeResult {
   /** 없어서 그 수치만 내지 못한 조건 항목. 되묻지 않고 진행했다는 사실을 화면이 말한다. */
   deferred: string[];
   proposals: ConditionProposal[];
+  /** 이번 실행에서 다시 돌지 않고 앞 실행의 판정을 그대로 쓴 축. 조건 한 칸을 고쳤을 때
+   *  영향 없는 축까지 다시 도는 것을 막는다 — 무효 판정은 `invalidation.DEPENDENCIES` 가 한다. */
+  reused_units: string[];
   activation: { total: number; active: number; by_key: Record<string, AgentRunStatus | null> };
   summary: PrescribeSummary;
   surviving: Record<string, unknown>[];

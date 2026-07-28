@@ -239,6 +239,7 @@ export function applyPrescribeFrame(frame: SseEvent, handlers: PrescribeStreamHa
         proposed: (typeof item.proposed === "string" || typeof item.proposed === "number") ? item.proposed : "",
         span: asString(item.span),
       })),
+      reused_units: Array.isArray(frame.data.reused_units) ? frame.data.reused_units.map(item => String(item)) : [],
       activation: { total: Number(activation.total) || 0, active: Number(activation.active) || 0, by_key: (activation.by_key ?? {}) as Record<string, AgentRunStatus | null> },
       summary: (frame.data.summary ?? {}) as PrescribeSummary,
       surviving: asRecordList(frame.data.surviving),

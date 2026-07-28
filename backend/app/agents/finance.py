@@ -33,6 +33,8 @@ finance.kb_products · finance.subsidy 만 모델을 부른다. 공시의 한도
 """
 from __future__ import annotations
 
+import asyncio
+
 from typing import Any
 
 from ..funding import ScenarioParams, compute_bands, compute_capacity
@@ -176,8 +178,9 @@ class FinanceTeam:
         한도와 공고 본문이 **문장**이라 구조화 비교가 안 되는 경우뿐이다."""
         if self.llm is None:
             return {}
-        return {"finance.kb_products": await self._select_products(),
-                "finance.subsidy": await self._select_notices(conditions)}
+        products, notices = await asyncio.gather(
+            self._select_products(), self._select_notices(conditions))
+        return {"finance.kb_products": products, "finance.subsidy": notices}
 
     # ── 서브 1 · 조달 밴드 산출 ────────────────────────────────────────
     def _band(self, conditions: dict[str, Any],

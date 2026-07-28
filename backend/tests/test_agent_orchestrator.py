@@ -172,3 +172,40 @@ async def test_the_integration_outcome_carries_the_same_numbers_as_the_summary()
     main = next(item for report in result.reports for item in report.outcomes if item.key == "main.integrate")
     assert main.data["summary"] == result.summary
     assert main.data["surviving_count"] == len(result.surviving)
+
+
+# ── 부분 무효화 — 바뀐 것만 다시 돈다 ──────────────────────────────────────
+
+async def test_an_identical_rerun_still_reuses_everything():
+    """가드 2 는 그대로다. 부분 무효화는 그 규칙을 세밀하게 만든 것이지 푼 것이 아니다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run(CONDITIONS, CANDIDATES)
+    assert second.reused is True
+
+
+async def test_changing_the_equity_reruns_the_kernel_but_reuses_the_lookups():
+    """자기자본만 고쳤다면 공시·공고를 다시 조회할 이유가 없다 — 금액으로 달라지지 않는다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run({**CONDITIONS, "equity_krw": 200_000_000}, CANDIDATES)
+    assert second.reused is False
+    # 밴드는 금액이 바뀌었으므로 다시 돌았다.
+    assert "finance.band" not in second.reused_units
+
+
+async def test_changing_the_district_reuses_the_finance_group():
+    """자치구는 탐색 공간이다. 조달 밴드도 공시 금리도 자치구로 달라지지 않는다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run({**CONDITIONS, "district": "성동구"}, CANDIDATES)
+    assert "finance.band" in second.reused_units
+    assert "finance.kb_products" in second.reused_units
+
+
+async def test_changing_the_industry_reuses_nothing():
+    """상권 조회 코드도 원가 구조도 공고 대조도 업종에서 갈린다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run({**CONDITIONS, "industry": "치킨"}, CANDIDATES)
+    assert second.reused_units == []

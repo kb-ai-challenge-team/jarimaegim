@@ -57,6 +57,18 @@ class RunBudget:
         self.spent += 1
         return True
 
+    def reserve(self, keys: list[str]) -> set[str]:
+        """선언 순서대로 자리를 **미리** 배정한다. 병렬 실행의 전제다.
+
+        `take()` 는 선착순이다. 축들을 `asyncio.gather` 로 동시에 띄우면 누가 먼저 도착하느냐가
+        이벤트 루프의 스케줄링에 좌우되고, 그러면 상한에 걸리는 축이 실행마다 달라진다 —
+        같은 조건에 같은 결과가 나와야 한다는 가드 2가 거기서 깨진다. 순서를 미리 정해 두면
+        누가 먼저 끝나든 배정은 같다.
+
+        돌려주는 것은 "모델을 불러도 되는 축"이고, 나머지는 결정론 경로로 내려간다."""
+        room = max(0, self.max_calls - self.spent)
+        return set(keys[:room])
+
     def reset(self) -> None:
         """실행이 새로 시작될 때 부른다. 상한은 케이스 평생이 아니라 실행 한 번의 것이다."""
         self.spent = 0
