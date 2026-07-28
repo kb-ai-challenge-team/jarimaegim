@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { CircleHelp, Coins, ExternalLink, FileDown, FileText, Info, Landmark, LoaderCircle, LockKeyhole, MapPin, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, CircleHelp, Coins, ExternalLink, FileDown, FileText, Info, Landmark, LoaderCircle, LockKeyhole, MapPin, ShieldCheck, Sparkles } from "lucide-react";
 import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
 import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
@@ -115,7 +115,18 @@ function rateLabel(product: KbProduct) {
   return `${product.rate_min ?? "?"}~${product.rate_max ?? "?"}%`;
 }
 
-function ProductRow({ product, reasons }: { product: KbProduct; reasons?: string[] }) {
+/** 고르는 것은 문서에 담는다는 뜻이다. 자격 판정도 신청도 아니므로 라벨이 그 말을 그대로 한다. */
+type Selection = { ids: string[]; onToggle: (id: string) => void } | null;
+
+function SelectBox({ id, selection }: { id: string; selection: Selection }) {
+  if (!selection) return null;
+  return <label className="kb-select-row">
+    <input type="checkbox" checked={selection.ids.includes(id)} onChange={() => selection.onToggle(id)} />
+    <span>문서에 담기</span>
+  </label>;
+}
+
+function ProductRow({ product, reasons, selection }: { product: KbProduct; reasons?: string[]; selection?: Selection }) {
   return <li>
     <div className="kb-product-top">
       <strong>{product.name}</strong>
@@ -124,6 +135,7 @@ function ProductRow({ product, reasons }: { product: KbProduct; reasons?: string
     {reasons && reasons.length > 0 && <div className="kb-match-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
     <small>{[product.loan_limit && `한도 ${product.loan_limit}`, product.join_way, product.rate_type].filter(Boolean).join(" · ")}</small>
     <a href={product.official_url} target="_blank" rel="noopener noreferrer">공시 원문 열기 <ExternalLink aria-hidden="true" /></a>
+    <SelectBox id={product.id} selection={selection ?? null} />
   </li>;
 }
 
@@ -132,7 +144,7 @@ const TOP_N = 3;
 
 /** 전국 공고 카탈로그에서 이 케이스와 겹치는 것만 관련도 순으로 추린다.
  *  다른 광역자치단체 공고와 근거 없는 공고는 아예 내보내지 않는다. */
-function ProgramSection({ programs, inputs }: { programs: Program[]; inputs: CaseRecord["inputs"] }) {
+function ProgramSection({ programs, inputs, selection }: { programs: Program[]; inputs: CaseRecord["inputs"]; selection?: Selection }) {
   const matches = useMemo(() => matchPrograms(programs, inputs), [programs, inputs]);
   const shown = matches.slice(0, TOP_N);
   if (matches.length === 0) return <div className="kb-empty compact">
@@ -150,13 +162,14 @@ function ProgramSection({ programs, inputs }: { programs: Program[]; inputs: Cas
       <div className="kb-match-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
       {program.unknown_conditions.length > 0 && <div className="kb-unknown">{program.unknown_conditions.map((condition) => <span key={condition}><CircleHelp aria-hidden="true" />{condition}</span>)}</div>}
       <a href={program.official_url} target="_blank" rel="noopener noreferrer">공식 원문 열기 <ExternalLink aria-hidden="true" /></a>
+      <SelectBox id={program.id} selection={selection ?? null} />
     </li>)}</ul>
     {matches.length > shown.length && <p className="kb-note"><Info aria-hidden="true" />겹치는 {matches.length}건 중 관련도 상위 {shown.length}건만 보여드립니다. 나머지 {matches.length - shown.length}건을 포함한 전체 공고는 왼쪽 <strong>정책</strong> 메뉴에 있습니다.</p>}
   </>;
 }
 
 /** KB국민은행 개인사업자대출 공시. Matched rows lead; rates are the disclosed month's range, never an offer. */
-function KbProductSection({ products, state, inputs, gapKrw }: { products: KbProduct[]; state: LocationState; inputs: CaseRecord["inputs"]; gapKrw: number | null }) {
+function KbProductSection({ products, state, inputs, gapKrw, selection }: { products: KbProduct[]; state: LocationState; inputs: CaseRecord["inputs"]; gapKrw: number | null; selection?: Selection }) {
   const matches = useMemo(() => matchKbProducts(products, inputs, gapKrw), [products, inputs, gapKrw]);
   const shown = matches.slice(0, TOP_N);
   if (state === "loading") return <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />KB 금융상품 공시를 불러오고 있습니다.</div>;
@@ -169,7 +182,7 @@ function KbProductSection({ products, state, inputs, gapKrw }: { products: KbPro
 
     {matches.length > 0 ? <>
       <p className="kb-match-lead"><Sparkles aria-hidden="true" />조건과 가장 많이 겹치는 {shown.length}건입니다. 자격이나 승인 가능성을 판단한 것이 아닙니다.</p>
-      <ul>{shown.map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} />)}</ul>
+      <ul>{shown.map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} selection={selection} />)}</ul>
       {/* 몇 건을 줄였는지 밝힌다. 조용히 자르면 "이게 전부"로 읽힌다. */}
       {matches.length > shown.length && <p className="kb-note"><Info aria-hidden="true" />겹치는 {matches.length}건 중 관련도 상위 {shown.length}건만 보여드립니다. 나머지 {matches.length - shown.length}건을 포함한 전체 공시는 왼쪽 <strong>상품</strong> 메뉴에 있습니다.</p>}
     </> : <div className="kb-empty compact">
@@ -182,67 +195,80 @@ function KbProductSection({ products, state, inputs, gapKrw }: { products: KbPro
   </section>;
 }
 
-/** 처방 단계. 제안서 6·7단계 — 계획 기준 후보 확정 → 자금조달 레포트 → 문서 초안. */
-export function PlanPrescription({ caseData, committed, programs, state, applicationEnabled, bands, kbProducts, kbState, documents, docBusy, docNotice, onPrepareDocument, onBackToLocation }: {
-  caseData: CaseRecord; committed: Candidate | null; programs: Program[]; state: LocationState;
-  applicationEnabled: boolean; bands: FundingBandResult | null; kbProducts: KbProduct[]; kbState: LocationState;
-  documents: Record<string, string>; docBusy: string; docNotice: string;
-  onPrepareDocument: (template: string) => void; onBackToLocation: () => void;
+/** 확정한 후보를 어느 화면에서나 한 줄로 요약한다. 계획의 기준이 무엇인지 잊지 않게 하고,
+ *  바꾸는 경로를 그 자리에 둔다. ProfileBadge 와 자리는 같지만 요약하는 값도 돌아가는 곳도 다르다. */
+function PlanBadge({ committed, onBack }: { committed: Candidate; onBack: () => void }) {
+  const listing = committed.listing;
+  return <div className="kb-plan-badge">
+    <MapPin aria-hidden="true" />
+    <span><strong>{committed.name}</strong><small>{committed.road_address || committed.address}
+      {listing && ` · 보증금 ${formatKrw(listing.deposit_krw)} · 월세 ${formatKrw(listing.monthly_rent_krw)}`}</small></span>
+    <button className="kb-gate-edit" onClick={onBack}>바꾸기</button>
+  </div>;
+}
+
+/** 후보를 확정하지 않으면 부족분이 없고, 부족분이 없으면 이 화면의 질문이 성립하지 않는다. */
+function NoCommitted({ onBackToLocation }: { onBackToLocation: () => void }) {
+  return <div className="kb-step"><div className="kb-empty compact"><MapPin aria-hidden="true" />
+    <strong>계획 기준 후보를 확정하지 않았습니다</strong>
+    <p>입지 단계에서 후보를 하나 확정하면 그 후보의 임대 조건으로 부족분을 계산합니다.</p>
+    <button className="kb-ghost" onClick={onBackToLocation}>입지로 돌아가기</button></div></div>;
+}
+
+/** ④ 조달. 질문은 하나다 — 부족분을 무엇으로 메울 것인가.
+ *  부족분은 새로 계산하지 않는다. 권장 조달선의 차입액(loan_krw)이 이미 그 값이다. */
+export function PlanFunding({ caseData, committed, bands, programs, programState, kbProducts, kbState, applicationEnabled, selected, onToggle, onBackToLocation, onNext }: {
+  caseData: CaseRecord; committed: Candidate | null; bands: FundingBandResult | null;
+  programs: Program[]; programState: LocationState; kbProducts: KbProduct[]; kbState: LocationState;
+  applicationEnabled: boolean; selected: { products: string[]; programs: string[] };
+  onToggle: (kind: "products" | "programs", id: string) => void;
+  onBackToLocation: () => void; onNext: () => void;
 }) {
+  if (!committed) return <NoCommitted onBackToLocation={onBackToLocation} />;
   const recommended = bands?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
-  const loanKrw = recommended ? recommended.loan_krw : null;
+  const equityLine = bands?.bands.find((line) => line.band === "EQUITY_ONLY") ?? null;
+  const gapKrw = recommended ? recommended.loan_krw : null;
+  const pending = !bands || bands.status === "integration_pending";
+  const partial = bands?.status === "partial";
+  const chosen = selected.products.length + selected.programs.length;
+  const catalogEmpty = kbState !== "loading" && programState !== "loading" && kbProducts.length === 0 && programs.length === 0;
+
   return <div className="kb-step">
-    <p className="kb-step-lead">계획 기준 후보와 조달 밴드를 하나의 처방으로 모읍니다. 앞 단계에서 산출한 값을 그대로 재사용하며 다시 계산하지 않으므로 화면 간 수치가 어긋나지 않습니다.</p>
+    <PlanBadge committed={committed} onBack={onBackToLocation} />
 
-    <section className="kb-prescription-block">
-      <h3><span className="kb-prescription-no" aria-hidden="true">1</span>계획 기준 후보</h3>
-      {committed
-        ? <div className="kb-committed"><strong>{committed.name}</strong><small>{committed.road_address || committed.address}</small>
-            <ProvenanceBar data={committed.provenance} /></div>
-        : <div className="kb-empty compact"><MapPin aria-hidden="true" /><strong>계획 기준 후보를 확정하지 않았습니다</strong>
-            <p>입지 단계에서 후보를 하나 확정하면 그 후보를 기준으로 처방을 정리합니다.</p>
-            <button className="kb-ghost" onClick={onBackToLocation}>입지로 돌아가기</button></div>}
+    <section className="kb-gap-card">
+      <dl>
+        <div><dt>필요자금</dt><dd>{bands?.required_capital_krw === null || bands?.required_capital_krw === undefined ? "확인 필요" : formatKrw(bands.required_capital_krw)}</dd></div>
+        {/* 자기자본선은 EQUITY_ONLY 밴드가 이미 들고 있는 값이다. 권장선에서 차입액을 빼는
+            식을 화면에 만들지 않는다 — 산식은 백엔드에만 있어야 두 곳이 갈라지지 않는다. */}
+        <div><dt>자기자본</dt><dd>{equityLine ? formatKrw(equityLine.ceiling_krw) : "확인 필요"}</dd></div>
+      </dl>
+      {pending
+        ? <p className="kb-gap-pending"><Info aria-hidden="true" />{bands?.message || "조달 밴드를 아직 계산하지 못했습니다."}</p>
+        : gapKrw === 0
+          ? <p className="kb-gap-headline">추가 차입 없이 자기자본으로 가능합니다</p>
+          : <p className="kb-gap-headline"><strong>부족분 {formatKrw(gapKrw ?? 0)}</strong>을 무엇으로 메울까요?</p>}
+      {partial && <p className="kb-note"><Info aria-hidden="true" />필요자금은 평수·보증금이 있어야 계산합니다. 위 부족분은 권장 조달선 기준 차입액입니다.</p>}
+      {pending && <p className="kb-note"><Info aria-hidden="true" />부족분을 계산하지 못해 아래 목록은 조건 대조만 했습니다. 금액 대조는 하지 않았습니다.</p>}
     </section>
 
-    <section className="kb-prescription-block">
-      <h3><span className="kb-prescription-no" aria-hidden="true">2</span>자금조달 레포트</h3>
-      {/* 밴드 표는 입지 화면 배너에서 이미 봤다. 여기서 반복하지 않고 확정값만 요약한다. */}
-      {recommended && bands?.break_even
-        ? <dl className="kb-summary">
-            <div><dt>권장 조달선</dt><dd>{formatKrw(recommended.ceiling_krw)}</dd></div>
-            <div><dt>차입 필요액</dt><dd>{formatKrw(recommended.loan_krw)}</dd></div>
-            <div><dt>월 상환</dt><dd>{recommended.monthly_repayment_krw > 0 ? formatKrw(recommended.monthly_repayment_krw) : "0원"}</dd></div>
-            <div className="kb-summary-gap"><dt>넘어야 하는 일매출</dt><dd>{formatKrw(recommended.target_daily_revenue_krw)}</dd></div>
-          </dl>
-        : <div className="kb-empty compact"><Coins aria-hidden="true" /><strong>조달 밴드가 아직 계산되지 않았습니다</strong>
-            <p>{bands?.message || "입지 화면의 '정밀하게 맞추기'에서 필요한 값을 확인할 수 있습니다."}</p></div>}
-      {bands?.status === "partial" && <p className="kb-note"><Info aria-hidden="true" />{bands.message}</p>}
-      {/* 지원사업 연동 여부는 밴드가 계산됐는지와 무관하게 알려야 한다. 조건 안에 두면 고지가 사라진다. */}
-      <p className="kb-note"><Info aria-hidden="true" />지원사업 endpoint 연동 후 조달선에 반영됩니다. 현재 밴드에는 지원금이 포함되지 않았습니다.</p>
-      {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청과 상담 자동 연결은 제공하지 않습니다. 공식 원문으로 이동해 직접 확인해 주세요.</span></div>}
-      <KbProductSection products={kbProducts} state={kbState} inputs={caseData.inputs} gapKrw={loanKrw} />
-      {state === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />공식 공고를 확인하고 있습니다.</div>}
-      {state !== "loading" && programs.length === 0 && <div className="kb-empty compact">
-        <Coins aria-hidden="true" />
-        <strong>표시할 수 있는 공식 공고가 없습니다</strong>
-        <p>검증된 공공 API endpoint와 키가 설정되기 전에는 공고를 만들어 표시하지 않습니다.</p>
-      </div>}
-      {programs.length > 0 && <ProgramSection programs={programs} inputs={caseData.inputs} />}
-    </section>
+    {catalogEmpty
+      ? <div className="kb-empty compact"><Coins aria-hidden="true" />
+          <strong>고를 수단이 없습니다</strong>
+          <p>확인된 KB 공시와 공식 공고가 없어 아무것도 추천하지 않습니다. 문서에는 확정 조건과 계획 기준 후보만 담깁니다.</p></div>
+      : <>
+          <KbProductSection products={kbProducts} state={kbState} inputs={caseData.inputs} gapKrw={gapKrw}
+            selection={{ ids: selected.products, onToggle: (id) => onToggle("products", id) }} />
+          {programState === "loading" && <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />공식 공고를 확인하고 있습니다.</div>}
+          {programs.length > 0 && <ProgramSection programs={programs} inputs={caseData.inputs}
+            selection={{ ids: selected.programs, onToggle: (id) => onToggle("programs", id) }} />}
+        </>}
 
-    <section className="kb-prescription-block">
-      <h3><span className="kb-prescription-no" aria-hidden="true">3</span>문서 초안</h3>
-      {/* 문구는 render_case_pdf 가 실제로 담는 것만 말한다. 지금은 조건과 비보장 고지뿐이다. */}
-      <p className="kb-note"><FileText aria-hidden="true" />현재 초안은 <strong>확정한 조건과 비보장 고지</strong>를 담습니다. 조달 밴드와 출처·기준일은 아직 문서에 포함되지 않습니다.</p>
-      <div className="kb-doc-actions">
-        <button className="kb-ghost" disabled={Boolean(docBusy)} onClick={() => onPrepareDocument("funding")}>
-          {docBusy === "funding" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : <FileDown aria-hidden="true" />}
-          {documents.funding ? "확정 조건 초안 내려받기" : "확정 조건 초안 준비하기"}
-        </button>
-      </div>
-      {docNotice && <p className="kb-inline-notice" role="status">{docNotice}</p>}
-      <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>상담 자동 연결은 제공하지 않습니다. <strong>초안을 내려받아 지점 상담에 가져가시면 됩니다.</strong> 초안은 상담의 입력이며 승인을 보장하지 않습니다.</span></div>
-      <p className="kb-note"><ShieldCheck aria-hidden="true" />문서는 비공개 저장소에 보관하며 현재 익명 세션에서만 내려받을 수 있습니다. 세션은 최대 24시간 유지됩니다.</p>
-    </section>
+    <p className="kb-note"><Info aria-hidden="true" />지원사업 endpoint 연동 후 조달선에 반영됩니다. 현재 밴드에는 지원금이 포함되지 않았습니다.</p>
+    {!applicationEnabled && <div className="kb-callout kb-callout-lock"><LockKeyhole aria-hidden="true" /><span>실제 신청과 상담 자동 연결은 제공하지 않습니다. 고르는 것은 문서에 담는다는 뜻이며 신청이 아닙니다.</span></div>}
+
+    <button className="kb-primary" onClick={onNext}>
+      {chosen > 0 ? `고른 ${chosen}건으로 문서 만들기` : "선택 없이 서류로"} <ArrowRight aria-hidden="true" />
+    </button>
   </div>;
 }
