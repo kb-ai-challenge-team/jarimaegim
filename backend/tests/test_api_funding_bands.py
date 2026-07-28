@@ -87,6 +87,13 @@ def test_computes_three_bands_when_params_are_registered(client, case_id, filled
     assert payload["provenance"]["confidence"] == "LOW"
 
 
+def test_bands_report_the_parameter_grade(client, case_id, filled_params):
+    """검증된 파라미터로 계산하면 시연용 표시가 붙지 않는다."""
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY}).json()
+    assert payload["parameter_status"] == "VERIFIED"
+    assert payload["unverified_params"] == []
+
+
 def test_changing_equity_changes_the_bands(client, case_id, filled_params):
     low = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY}).json()
     high = client.post("/api/v1/funding-bands",

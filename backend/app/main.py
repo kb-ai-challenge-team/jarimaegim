@@ -24,8 +24,9 @@ from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
 from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, CostPlanCreate,
-                     DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
-                     PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
+                     DocumentCreate, FundingBandInput, FundingBandResult, FundingCapacityInput,
+                     FundingCapacityResult, LocationSearch, MessageCreate, PrivacyRequestCreate, Provenance,
+                     RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .retrieval import RetrievalService
@@ -287,12 +288,17 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
                    "제도 파라미터는 실측 검증 전 등록값입니다"]
     if partial:
         limitations.insert(0, f"{' · '.join(missing_capital)}을 입력해야 필요자금과 현금소진을 계산합니다. 추정하지 않습니다")
+    unverified = policy_params.unverified(payload.industry)
+    if unverified:
+        limitations.insert(0, f"미검증 시연용 파라미터로 계산했습니다: {' · '.join(unverified)}")
     provenance = Provenance(source_name="자리매김 조달 밴드 계산", industry_scope=payload.industry,
                             spatial_unit="사용자 입력 조건", source_as_of=policy_params.updated_at,
                             confidence="LOW", limitations=limitations)
     return FundingBandResult(status="partial" if partial else "computed",
                              required_capital_krw=computed["required_capital_krw"],
                              required_capital_band=computed["required_capital_band"],
+                             parameter_status="DEMO" if unverified else "VERIFIED",
+                             unverified_params=unverified,
                              missing_params=missing_capital if partial else [],
                              message=f"{' · '.join(missing_capital)}을 입력하면 현금소진까지 계산합니다." if partial else None,
                              bands=[BandLine(**band) for band in computed["bands"]],
