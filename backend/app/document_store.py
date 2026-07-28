@@ -48,6 +48,38 @@ class DocumentStore:
 LISTING_DEMO_NOTICE = ("실제 임대 매물이 아니며 계약 대상이 아닙니다. 위치는 실제 상가 좌표이나 "
                        "면적·월세는 서울교통공사 지하상가 임대정보 분포에서 생성했고, 보증금·관리비·층은 가정값입니다.")
 
+FUNDING_OMITTED = "조달 밴드를 계산하지 못해 이 문서에는 조달 요약이 없습니다."
+
+
+def krw(value: int | None) -> str:
+    """금액 표기. 없는 값은 0 이 아니라 '확인 필요'다 — 없는 것을 0 으로 적으면 계산된 0 처럼 읽힌다."""
+    return "확인 필요" if value is None else f"{value:,}원"
+
+
+def funding_section_lines(funding: dict[str, Any] | None) -> list[str]:
+    """조달 요약 줄. 첫 줄은 언제나 제목이고, 계산이 없으면 없다는 사실을 그 자리에 적는다.
+
+    화면이 계산한 숫자를 받지 않는다. 호출부가 compute_bands 를 다시 돌린 결과를 넘긴다.
+    """
+    bands = (funding or {}).get("bands") or []
+    line = next((band for band in bands if band["band"] == "RECOMMENDED"), None)
+    if funding is None or line is None:
+        return ["자금조달 요약", FUNDING_OMITTED]
+    lines = ["자금조달 요약",
+             f"권장 조달선: {krw(line['ceiling_krw'])}",
+             f"차입 필요액: {krw(line['loan_krw'])}",
+             f"월 상환: {krw(line['monthly_repayment_krw'])}",
+             f"넘어야 하는 일매출: {krw(line['target_daily_revenue_krw'])}"]
+    required = funding.get("required_capital_krw")
+    lines.append(f"필요자금: {krw(required)}" if required is not None
+                 else "필요자금: 확인 필요 — 평수·보증금을 입력하지 않아 계산하지 않았습니다")
+    assumed = funding.get("assumed") or []
+    if assumed:
+        lines.append(f"위 금액은 시연용 가정값 {len(assumed)}개 항목 위에서 계산했습니다. "
+                     "공고 원문으로 확인한 값이 아니므로 실제 심사 결과와 다릅니다.")
+    lines.append(f"출처: 자리매김 조달 밴드 계산 · 기준일 {funding.get('as_of') or '확인 필요'}")
+    return lines
+
 
 def listing_section_lines(case: dict[str, Any]) -> list[str]:
     """Lines for the committed-listing block; empty when the case has no committed listing.
