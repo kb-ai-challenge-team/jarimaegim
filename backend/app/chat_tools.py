@@ -138,20 +138,38 @@ def _provider_failure(payload: dict[str, Any]) -> str | None:
     `announcements: []` plus `provider_query_failed_count: 1` and a warning. Reading only the row
     list would make us tell the user "no announcements here" when we never managed to look, which
     is the fabrication this project's first rule forbids. Returns the upstream's own message when
-    a query genuinely failed, None when the empty result is real."""
+    a query genuinely failed, None when the empty result is real.
+
+    Every warning is joined rather than the first one picked. presale-mcp unconditionally prepends
+    a fixed advisory to `warnings` for any coordinate/radius search ("Coordinate/radius ApplyHome
+    search is best-effort..."), which is the only call shape this tool uses -- so taking
+    `warnings[0]` reliably returned that permanently-true disclaimer instead of the actual "HTTP
+    401" that came later in the list. Positional selection cannot be trusted against a list whose
+    ordering the upstream owns."""
     metadata = payload.get("metadata")
     if not isinstance(metadata, dict):
         return None
-    failed = metadata.get("provider_query_failed_count") or 0
-    timed_out = metadata.get("provider_query_timeout_count") or 0
-    if not (isinstance(failed, int) and failed > 0) and not (isinstance(timed_out, int) and timed_out > 0):
+    if not (_positive_count(metadata.get("provider_query_failed_count"))
+            or _positive_count(metadata.get("provider_query_timeout_count"))):
         return None
     warnings = metadata.get("warnings")
-    if isinstance(warnings, list):
-        for item in warnings:
-            if isinstance(item, str) and item.strip():
-                return item.strip()
-    return "원천 조회에 실패했습니다."
+    messages = [item.strip() for item in warnings if isinstance(item, str) and item.strip()] if isinstance(warnings, list) else []
+    return " / ".join(dict.fromkeys(messages)) if messages else "원천 조회에 실패했습니다."
+
+
+def _positive_count(value: Any) -> bool:
+    """True when the upstream reported at least one failure. Fails CLOSED on anything it cannot
+    read: a count serialized as a string, or a schema drift that renames the field, must be treated
+    as a possible failure rather than silently waved through as a clean zero -- the same direction
+    the Seoul-scope guard deliberately fails."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return True
 
 
 def _advisories(payload: dict[str, Any]) -> list[str]:

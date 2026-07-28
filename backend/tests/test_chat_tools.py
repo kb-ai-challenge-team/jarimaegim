@@ -616,11 +616,19 @@ def test_every_raw_tool_call_targets_a_name_the_server_actually_has():
 # presale-mcp 는 청약홈이 401 을 돌려줘도 도구 호출 자체는 성공으로 처리하고, 빈 목록과 함께
 # metadata.warnings 에만 실패를 남긴다. 실측으로 확인한 형태 그대로를 픽스처로 쓴다.
 
+# warnings[0] is the fixed best-effort advisory presale-mcp prepends to EVERY coordinate/radius
+# search (dist/index.js bestEffortRadius) -- the only call shape lookup_seoul_presale uses. The
+# real failure message comes after it. An earlier version of this fixture listed only the failure,
+# which let a bug through: _provider_failure returned warnings[0] and the user got the
+# permanently-true disclaimer instead of the 401.
+BEST_EFFORT_ADVISORY = ("Coordinate/radius ApplyHome search is best-effort because ApplyHome does "
+                        "not support radius search; boundary legal-dong omissions are possible.")
+
 FAILED_PRESALE = {**GANGNAM, "search_presale_announcements": {
     "announcements": [], "unlocated_announcements": [], "summary": {"total_found": 0},
     "metadata": {"provider_query_count": 1, "provider_query_failed_count": 1,
                  "provider_query_timeout_count": 0,
-                 "warnings": ["ApplyHome APT API failed: HTTP 401"]}}}
+                 "warnings": [BEST_EFFORT_ADVISORY, "ApplyHome APT API failed: HTTP 401"]}}}
 
 TRUNCATED_NEARBY = {**GANGNAM, "search_by_nearby_keyword": {
     "results": [{"place_name": f"카페{i}"} for i in range(45)],
@@ -641,6 +649,7 @@ async def test_a_failed_presale_query_is_an_error_not_an_empty_result():
     tools, ref = await _resolved(FAILED_PRESALE)
     result = await tools.run("lookup_seoul_presale", {"place_ref": ref})
     assert result["status"] == "error"
+    # The real reason must survive, not just the advisory that precedes it in warnings.
     assert "401" in result["message"]
     assert "확인하지 못했다" in result["message"]
     assert result["citations"]
@@ -668,3 +677,28 @@ async def test_an_untruncated_nearby_search_has_no_completeness_note():
     tools, ref = await _resolved(NEARBY)
     result = await tools.run("scan_nearby_facilities", {"place_ref": ref, "keywords": ["카페"]})
     assert "completeness_note" not in result
+
+
+async def test_a_string_serialized_count_is_still_read_as_a_failure():
+    """A count that arrives as "1" rather than 1 must still be understood. This exercises the
+    coercion path only -- int("1") parses fine, so it does NOT prove the fail-closed branch."""
+    drifted = {**GANGNAM, "search_presale_announcements": {
+        "announcements": [], "summary": {"total_found": 0},
+        "metadata": {"provider_query_failed_count": "1", "warnings": ["ApplyHome APT API failed: HTTP 401"]}}}
+    tools, ref = await _resolved(drifted)
+    result = await tools.run("lookup_seoul_presale", {"place_ref": ref})
+    assert result["status"] == "error"
+
+
+async def test_an_unreadable_count_fails_closed():
+    """The fail-closed branch: a count int() cannot parse at all must be treated as a possible
+    failure, not waved through as a clean zero. Flipping _positive_count's except to return False
+    makes this fail -- reporting `empty`, i.e. claiming there are no announcements when the code
+    could not tell whether the query even ran."""
+    unreadable = {**GANGNAM, "search_presale_announcements": {
+        "announcements": [], "summary": {"total_found": 0},
+        "metadata": {"provider_query_failed_count": {"unexpected": "shape"}, "warnings": []}}}
+    tools, ref = await _resolved(unreadable)
+    result = await tools.run("lookup_seoul_presale", {"place_ref": ref})
+    assert result["status"] == "error"
+    assert "확인하지 못했다" in result["message"]
