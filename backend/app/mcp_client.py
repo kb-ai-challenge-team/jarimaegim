@@ -58,7 +58,12 @@ class MCPClient:
         # A single tool call against an already-initialized session -- a plain HTTP-backed
         # lookup, not a cold start. Kept short since a slow answer here is a data-provider
         # problem the model should hear about promptly, not a startup cost to absorb.
-        self.call_timeout_s = 8.0
+        # 15s, not the 8s this started as. Measured against the live upstreams: get_complex_trades
+        # and the Kakao searches answer in ~3s, but get_complex_info (K-apt) takes 4.3s when given
+        # bjd_code+name and 7.7s when it has to resolve a complex_query -- from a laptop. Production
+        # sits further from the API and regularly crossed 8s, so a tool that works locally reported
+        # a timeout to real users. A turn is still bounded overall: 12 raw calls inside a 90s turn.
+        self.call_timeout_s = 15.0
 
     @property
     def available(self) -> bool:
