@@ -60,6 +60,50 @@ test("tool_end with a missing status also folds to error", () => {
   assert.equal(handlers.calls.toolEnd[0].status, "error");
 });
 
+// --- tool_end display payload: the image the model never sees (chat_stream.py's _for_model
+// trims it out of `messages`) must still reach the browser via `display`. Deleting the
+// `asToolDisplay`/`asImageDataUri` wiring in lib/api.ts (or reverting to a bare cast) makes these
+// fail: either the field goes missing, or an unsafe value would pass straight through unvalidated.
+
+const PNG_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+test("tool_end with a valid PNG data URI surfaces it as display.image_url", () => {
+  const handlers = recorder();
+  applyChatStreamFrame({ event: "tool_end", data: { call_id: "c1", tool: "get_location_map_image", status: "ok", display: { image_url: PNG_DATA_URI } } }, handlers);
+  assert.deepEqual(handlers.calls.toolEnd[0].display, { image_url: PNG_DATA_URI });
+});
+
+test("tool_end with no display field at all does not grow the activity with a display key", () => {
+  const handlers = recorder();
+  applyChatStreamFrame({ event: "tool_end", data: { call_id: "c1", tool: "lookup_seoul_presale", status: "ok" } }, handlers);
+  assert.equal("display" in handlers.calls.toolEnd[0], false);
+});
+
+test("tool_end rejects an svg data URI even though it is technically an image", () => {
+  const handlers = recorder();
+  applyChatStreamFrame({ event: "tool_end", data: { call_id: "c1", tool: "get_location_map_image", status: "ok", display: { image_url: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" } } }, handlers);
+  assert.equal("display" in handlers.calls.toolEnd[0], false);
+});
+
+test("tool_end rejects a non-data-URI scheme masquerading as an image field", () => {
+  const handlers = recorder();
+  applyChatStreamFrame({ event: "tool_end", data: { call_id: "c1", tool: "get_location_map_image", status: "ok", display: { image_url: "javascript:alert(1)" } } }, handlers);
+  assert.equal("display" in handlers.calls.toolEnd[0], false);
+});
+
+test("tool_end rejects a data URI with a non-base64 payload", () => {
+  const handlers = recorder();
+  applyChatStreamFrame({ event: "tool_end", data: { call_id: "c1", tool: "get_location_map_image", status: "ok", display: { image_url: "data:image/png;base64,not base64 at all!!" } } }, handlers);
+  assert.equal("display" in handlers.calls.toolEnd[0], false);
+});
+
+test("tool_end rejects an oversized data URI", () => {
+  const handlers = recorder();
+  const huge = "data:image/png;base64," + "A".repeat(2_000_001);
+  applyChatStreamFrame({ event: "tool_end", data: { call_id: "c1", tool: "get_location_map_image", status: "ok", display: { image_url: huge } } }, handlers);
+  assert.equal("display" in handlers.calls.toolEnd[0], false);
+});
+
 test("delta forwards the text field as-is", () => {
   const handlers = recorder();
   const settled = applyChatStreamFrame({ event: "delta", data: { text: "안녕하세요" } }, handlers);

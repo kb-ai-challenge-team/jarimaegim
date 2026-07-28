@@ -1,4 +1,4 @@
-import type { AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, Program, RetrievalResponse, StatusResponse } from "./types";
+import type { AnalysisResult, Candidate, CaseInput, CaseRecord, ChatStreamHandlers, ChatToolActivity, ChatToolDisplay, Citation, CostPlan, DistrictSummary, DocumentRecord, FundingBandInput, FundingBandResult, KbProduct, Program, RetrievalResponse, StatusResponse } from "./types";
 import { createSseParser, type SseEvent } from "./sse";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
@@ -72,6 +72,31 @@ function toToolStatus(value: unknown): ChatToolActivity["status"] {
   return typeof value === "string" && TOOL_ACTIVITY_STATUSES.has(value as ChatToolActivity["status"]) ? (value as ChatToolActivity["status"]) : "error";
 }
 
+// A `data:` URI arriving over `tool_end` is untrusted input -- it came from an upstream (Naver's
+// static map, via presale-mcp) through this process, not from a trusted local asset, and it is
+// about to become an <img src>. Accept only exactly `data:image/<raster format>;base64,<base64>`:
+// no `image/svg+xml` (unlike raster formats, SVG can carry embedded script content and must not be
+// treated as equivalent just because it's also "an image"), no other scheme (`data:text/html`,
+// `javascript:`, ...), and no bare/malformed base64. A length ceiling guards against an
+// upstream -- misbehaving or compromised -- handing back something absurd; get_static_map's own
+// schema caps images at 1024x1024, so a well-behaved response is far under this. Anything that
+// fails validation is dropped silently, never rendered and never surfaced as an error: product
+// rule 1 says show nothing rather than fabricate, and "no map this time" is the honest read of a
+// rejected payload, not a broken one.
+const IMAGE_DATA_URI = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+const MAX_IMAGE_DATA_URI_LENGTH = 2_000_000;
+
+function asImageDataUri(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_IMAGE_DATA_URI_LENGTH) return undefined;
+  return IMAGE_DATA_URI.test(value) ? value : undefined;
+}
+
+function asToolDisplay(value: unknown): ChatToolDisplay | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const imageUrl = asImageDataUri((value as Record<string, unknown>).image_url);
+  return imageUrl ? { image_url: imageUrl } : undefined;
+}
+
 /** Pure, network-free interpretation of one already-parsed SSE frame. Exported so
  * scripts/chat-stream-dispatch.test.mjs can exercise every branch -- including malformed frames --
  * without a real fetch/ReadableStream. Returns true once the turn is over (a `done` frame reached);
@@ -89,6 +114,8 @@ export function applyChatStreamFrame(frame: SseEvent, handlers: ChatStreamHandle
     // this by call_id with the label captured from that call's earlier tool_start.
     const activity: ChatToolActivity = { call_id: asString(frame.data.call_id), tool: asString(frame.data.tool), label: "", status: toToolStatus(frame.data.status) };
     if (typeof frame.data.summary === "string") activity.summary = frame.data.summary;
+    const display = asToolDisplay(frame.data.display);
+    if (display) activity.display = display;
     handlers.onToolEnd(activity);
     return false;
   }

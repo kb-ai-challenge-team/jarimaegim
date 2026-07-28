@@ -260,13 +260,25 @@ export interface Citation {
   tool: string;
 }
 
+/** The browser-only payload chat_stream.py's `_for_browser()` extracts alongside `tool_end` --
+ * exactly the fields `_for_model()` withholds from the model because they're too large to re-send
+ * every round (today: get_location_map_image's base64 `image_url`). Every field is optional
+ * because different tools populate different ones; `image_url` is the only one lib/api.ts
+ * currently recognizes and validates (see `asImageDataUri`) -- an unrecognized key or a value that
+ * fails validation is dropped rather than passed through. */
+export interface ChatToolDisplay {
+  image_url?: string;
+}
+
 /** Mirrors chat_stream.py's `tool_start`/`tool_end` SSE payloads, merged by `call_id`.
  *
  * `tool_start` carries {call_id, tool, label} and no status -- the client synthesizes
  * `status: "running"` itself, which is why "running" is not in chat_tools.TOOL_STATUSES.
  * `tool_end` carries {call_id, tool, status, summary, citations} and no label -- callers must
  * look up the label from the matching `tool_start` entry by call_id; lib/api.ts's chatStream
- * cannot invent one that was never on the wire.
+ * cannot invent one that was never on the wire. `tool_end` also *optionally* carries `display`
+ * (see ChatToolDisplay) -- absent entirely for the common case of a tool whose result has nothing
+ * oversized to show.
  *
  * The eight non-"running" values are exactly chat_tools.TOOL_STATUSES (backend/app/chat_tools.py).
  * "not_implemented" is included for that reason even though no handler currently returns it (see
@@ -279,6 +291,7 @@ export interface ChatToolActivity {
   label: string;
   status: "running" | "ok" | "empty" | "error" | "out_of_scope" | "invalid_place_ref" | "not_found" | "unknown_tool" | "not_implemented";
   summary?: string;
+  display?: ChatToolDisplay;
 }
 
 /** Handlers for api.chatStream(). Read this before wiring up a message panel (Task 14):

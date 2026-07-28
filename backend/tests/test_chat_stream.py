@@ -460,6 +460,29 @@ async def test_the_model_is_told_what_was_withheld_not_that_the_call_failed():
     assert '"status": "ok"' in tool_content
 
 
+async def test_tool_end_carries_the_oversized_field_the_model_never_sees():
+    """This is the gap being closed: get_location_map_image's base64 image_url reaches nobody
+    today unless tool_end carries it. Deleting the `display` construction in chat_stream.py's
+    run() (or the `_for_browser` call feeding it) makes this fail."""
+    events, _ = await _run_with(_big_image_result())
+    tool_end = [event for event in events if event["event"] == "tool_end"][0]
+    assert tool_end["data"]["display"]["image_url"] == _big_image_result()["image_url"]
+
+
+async def test_an_ordinary_tool_result_does_not_grow_the_tool_end_frame_with_a_display_key():
+    """No field of an ordinary result is large enough to need a browser-only display payload --
+    tool_end must not carry a `display` key at all here, empty or otherwise. Forcing `display` to
+    always be present (even as {}) would grow every tool_end frame for no reason, which is exactly
+    the 'don't blindly ship' instruction this asymmetry exists to satisfy."""
+    ordinary = {"status": "ok", "items": [{"house_nm": "강남OO아파트"}], "citations": []}
+    tools = FakeToolset({"lookup_seoul_presale": ordinary})
+    llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "lookup_seoul_presale", "arguments": {}}]},
+                   {"text": "확인했습니다.", "tool_calls": []}])
+    events = await collect(ChatStreamer(llm, tools, StreamLimits()))
+    tool_end = [event for event in events if event["event"] == "tool_end"][0]
+    assert "display" not in tool_end["data"]
+
+
 async def test_an_ordinary_result_passes_through_untouched():
     ordinary = {"status": "ok", "items": [{"house_nm": "강남OO아파트"}], "citations": []}
     tools = FakeToolset({"lookup_seoul_presale": ordinary})

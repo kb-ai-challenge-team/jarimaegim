@@ -133,9 +133,20 @@ class ChatStreamer:
                     if key not in seen:
                         seen.add(key)
                         citations.append(item)
+                # tool_end's audience is the browser, not the model -- `display` carries exactly
+                # the fields _for_model() below withholds (see that function's docstring for why
+                # they're too big to re-send every round), and nothing else. Ordinary small fields
+                # (item lists, notes, scope_note) are deliberately NOT duplicated here: the model
+                # already turns those into `summary`/prose, and `citations` already carries their
+                # provenance, so echoing the rows a second time on this event would be pure noise
+                # on the wire, not new information the UI lacks. `display` is omitted entirely
+                # (not sent as `{}`) when there is nothing oversized, so a tool like
+                # lookup_seoul_presale never grows this frame.
+                display = _for_browser(result)
                 yield _event("tool_end", call_id=call.get("id"), tool=name,
                              status=result.get("status", "ok"), summary=_summarize(result),
-                             citations=result.get("citations") or [])
+                             citations=result.get("citations") or [],
+                             **({"display": display} if display else {}))
                 messages.append({"role": "tool", "tool_call_id": call.get("id"),
                                  "content": f"<<<TOOL_RESULT\n{json.dumps(_for_model(result), ensure_ascii=False)}\nTOOL_RESULT>>>"})
             if truncated:
@@ -192,6 +203,19 @@ def _for_model(result: dict[str, Any]) -> dict[str, Any]:
         else:
             trimmed[key] = value
     return trimmed
+
+
+def _for_browser(result: dict[str, Any]) -> dict[str, Any]:
+    """The browser-facing counterpart of `_for_model`, above. Same field, opposite audience: the
+    string fields that are too large to re-send to the model on every remaining round (today,
+    get_location_map_image's base64 image_url) are exactly -- and only -- the ones the browser
+    needs, because a UI renders a result once rather than replaying the whole conversation. Uses
+    the identical size threshold as `_for_model` on purpose: a future tool that returns something
+    large gets picked up here automatically, without anyone maintaining a second list of "which
+    tools have images". Returns {} (never partial garbage) when nothing qualifies, so callers can
+    treat an empty dict as "no display payload" and skip adding the key to the frame at all."""
+    return {key: value for key, value in result.items()
+            if isinstance(value, str) and len(value) > _MODEL_FIELD_CHAR_BUDGET}
 
 
 def _summarize(result: dict[str, Any]) -> str:
