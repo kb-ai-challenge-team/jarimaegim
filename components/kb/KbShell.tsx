@@ -65,7 +65,9 @@ export function KbShell() {
       {aiActive && <JarimaegimPanel flow={flow} onClose={() => setPanelOpen(false)} />}
       {view === "policy" && <KbPolicyPanel flow={flow} />}
       {view === "product" && <KbProductPanel flow={flow} />}
-      {aiActive && flow.traceOpen && <AgentRunOverlay trace={flow.trace} inputs={flow.form} onRetry={flow.retrySearch} onDismiss={flow.dismissTrace}
+      {/* 자기자본은 form 이 아니라 금융 프로필이 소유한다. form.equity_krw 는 0 으로 남으므로
+          start() 가 케이스에 싣는 값과 같은 출처에서 읽어 칩에 넘긴다. */}
+      {aiActive && flow.traceOpen && <AgentRunOverlay trace={flow.trace} inputs={{ ...flow.form, equity_krw: flow.profile.equity_krw }} onRetry={flow.retrySearch} onDismiss={flow.dismissTrace}
         onEditConditions={() => { flow.dismissTrace(); flow.setStep("confirm"); }} />}
     </div>}
 
