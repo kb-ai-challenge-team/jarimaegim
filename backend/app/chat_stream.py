@@ -121,7 +121,15 @@ class ChatStreamer:
                 # run-wide list as the final citation set for the whole answer. Two different
                 # audiences -- per-step vs. whole-answer -- not accidental duplication.
                 for item in result.get("citations") or []:
-                    key = (item.get("source_name", ""), item.get("official_url", ""))
+                    # `tool` is part of the key, not just source+url. Several tools legitimately
+                    # cite the same generic landing page -- resolve_seoul_place and
+                    # scan_nearby_facilities both point at https://map.kakao.com/ because neither
+                    # upstream returns a per-record permalink. Keying on source+url alone collapsed
+                    # them, so a turn that looked up a place AND searched around it ended up citing
+                    # only the place lookup, leaving the facility list -- the actual substance of
+                    # the answer -- with no provenance of its own. Observed live: three tool_end
+                    # citations, two survived into `done`.
+                    key = (item.get("source_name", ""), item.get("official_url", ""), item.get("tool", ""))
                     if key not in seen:
                         seen.add(key)
                         citations.append(item)

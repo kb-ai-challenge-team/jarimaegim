@@ -469,3 +469,35 @@ async def test_an_ordinary_result_passes_through_untouched():
     tool_message = [item for item in llm.prompts[1][0] if item.get("role") == "tool"][0]
     assert "강남OO아파트" in tool_message["content"]
     assert "생략" not in tool_message["content"]
+
+
+# --- 서로 다른 도구가 같은 일반 URL 을 인용하는 경우 -------------------------------------------
+# 카카오 도구들은 레코드별 퍼머링크가 없어 전부 https://map.kakao.com/ 을 가리킨다. source+url
+# 만으로 중복 판정하면 장소조회와 주변검색 중 하나가 통째로 사라진다 -- 실측에서 tool_end 3건
+# 중 done 에 2건만 남았다.
+def _kakao_citation(tool, title):
+    return {"title": title, "official_url": "https://map.kakao.com/", "source_name": "카카오 로컬",
+            "collected_at": "2026-07-28T00:00:00+00:00", "tool": tool}
+
+
+async def test_two_tools_citing_the_same_landing_page_both_survive():
+    tools = FakeToolset({
+        "resolve_seoul_place": {"status": "ok", "citations": [_kakao_citation("resolve_seoul_place", "장소")]},
+        "scan_nearby_facilities": {"status": "ok", "citations": [_kakao_citation("scan_nearby_facilities", "주변")]},
+    })
+    llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "resolve_seoul_place", "arguments": {}},
+                                               {"id": "c2", "name": "scan_nearby_facilities", "arguments": {}}]},
+                   {"text": "확인했습니다.", "tool_calls": []}])
+    events = await collect(ChatStreamer(llm, tools, StreamLimits()))
+    cited_tools = [c["tool"] for c in events[-1]["data"]["citations"]]
+    assert cited_tools == ["resolve_seoul_place", "scan_nearby_facilities"], cited_tools
+
+
+async def test_the_same_tool_citing_the_same_page_twice_still_collapses():
+    """Dedup must still do its job within one tool -- widening the key must not disable it."""
+    same = _kakao_citation("scan_nearby_facilities", "주변")
+    tools = FakeToolset({"scan_nearby_facilities": {"status": "ok", "citations": [same, dict(same)]}})
+    llm = FakeLLM([{"text": "", "tool_calls": [{"id": "c1", "name": "scan_nearby_facilities", "arguments": {}}]},
+                   {"text": "확인했습니다.", "tool_calls": []}])
+    events = await collect(ChatStreamer(llm, tools, StreamLimits()))
+    assert len(events[-1]["data"]["citations"]) == 1
