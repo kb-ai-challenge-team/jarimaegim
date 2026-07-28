@@ -116,7 +116,7 @@ def test_prescribe_streams_team_progress_then_a_result(client, case_id, filled_p
 def test_each_team_reports_before_the_next_one_starts(client, case_id, filled_params):
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
     teams = [frame["data"]["team"] for frame in frames(response) if frame["event"] == "team_start"]
-    assert teams == ["condition", "finance", "location", "timing"]
+    assert teams == ["condition", "finance", "location", "timing", "main"]
 
 
 def test_every_agent_end_names_the_agent_and_its_status(client, case_id, filled_params):

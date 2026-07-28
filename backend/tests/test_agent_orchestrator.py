@@ -60,12 +60,12 @@ def agent(params=FULL, *, timing=None, location=None):
 
 def test_a_complete_run_reports_every_team_in_order():
     result = agent().run(CONDITIONS, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "finance", "location", "timing"]
+    assert [report.team for report in result.reports] == ["condition", "finance", "location", "timing", "main"]
 
 
 def test_unsettled_conditions_stop_before_the_finance_team_runs():
     result = agent().run({**CONDITIONS, "industry": ""}, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition"]
+    assert [report.team for report in result.reports] == ["condition", "main"]
     assert result.halted_at == "condition"
     assert result.questions
     assert result.surviving == []
@@ -74,7 +74,7 @@ def test_unsettled_conditions_stop_before_the_finance_team_runs():
 def test_a_missing_band_stops_before_the_location_team_runs():
     # 팀 계약 — 기준선 없이는 후보를 판정할 수 없으므로 후속 전체 중단.
     result = agent(EMPTY).run(CONDITIONS, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "finance"]
+    assert [report.team for report in result.reports] == ["condition", "finance", "main"]
     assert result.halted_at == "finance"
     assert result.surviving == []
 
@@ -98,8 +98,8 @@ def test_the_finance_team_runs_once_regardless_of_candidate_count():
 def test_the_run_reports_how_many_of_the_twelve_agents_are_active():
     result = agent().run(CONDITIONS, CANDIDATES)
     assert result.activation["total"] == 12
-    # 조건 2 + 밴드 + 스트레스 = 4. 상권·생존·타이밍·KB·지원금은 원천이 없다.
-    assert result.activation["active"] == 4
+    # 조건 2 + 밴드 + 스트레스 + 메인 통합 = 5. 상권·생존·타이밍·KB·지원금은 원천이 없다.
+    assert result.activation["active"] == 5
     assert result.activation["by_key"]["location.demand"] == AgentStatus.INTEGRATION_PENDING
 
 
@@ -133,3 +133,27 @@ def test_the_summary_only_repeats_numbers_the_teams_produced():
 def test_the_summary_is_empty_when_the_run_halted():
     result = agent(EMPTY).run(CONDITIONS, CANDIDATES)
     assert result.summary == {}
+
+
+def test_the_main_agent_reports_its_own_integration_as_the_twelfth_outcome():
+    # 메인도 일을 한다 — 팀 보고를 모아 수치 카드를 만든다. 그 결과를 스스로 내지 않으면
+    # 화면에는 11개만 도착하고 12번째 칸이 영원히 비어 있게 된다.
+    result = agent().run(CONDITIONS, CANDIDATES)
+    keys = [item.key for report in result.reports for item in report.outcomes]
+    assert keys[-1] == "main.integrate"
+    assert len(keys) == 12
+
+
+def test_the_main_agent_marks_itself_withheld_when_the_run_halted():
+    result = agent(EMPTY).run(CONDITIONS, CANDIDATES)
+    main = [item for report in result.reports for item in report.outcomes if item.key == "main.integrate"]
+    assert len(main) == 1
+    assert main[0].status is AgentStatus.WITHHELD
+    assert main[0].message
+
+
+def test_the_integration_outcome_carries_the_same_numbers_as_the_summary():
+    result = agent().run(CONDITIONS, CANDIDATES)
+    main = next(item for report in result.reports for item in report.outcomes if item.key == "main.integrate")
+    assert main.data["summary"] == result.summary
+    assert main.data["surviving_count"] == len(result.surviving)

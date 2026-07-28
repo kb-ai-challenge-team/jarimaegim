@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .contracts import AgentStatus, TeamReport
-from .registry import AGENT_SPECS
+from .registry import AGENT_SPECS, spec
 
 
 @dataclass(frozen=True)
@@ -86,17 +86,15 @@ class MainAgent:
         yield from self._team_events(settled)
         reports.append(settled)
         if settled.halted:
-            yield {"event": "done",
-                   "result": self._finish(fingerprint, reports, halted_at="condition",
-                                          questions=list(settled.questions))}
+            yield from self._close(fingerprint, reports, halted_at="condition",
+                                   questions=list(settled.questions))
             return
 
         prescription = self.finance.run(conditions)
         yield from self._team_events(prescription)
         reports.append(prescription)
         if prescription.halted:
-            yield {"event": "done",
-                   "result": self._finish(fingerprint, reports, halted_at="finance")}
+            yield from self._close(fingerprint, reports, halted_at="finance")
             return
 
         # 권장 밴드로 자동 진행한다 — 사용자를 여기서 세우지 않는다(제안서 04장).
@@ -108,10 +106,30 @@ class MainAgent:
         yield from self._team_events(scheduled)
         reports.append(scheduled)
 
-        yield {"event": "done",
-               "result": self._finish(fingerprint, reports, surviving=scheduled.surviving,
-                                      dropped=list(narrowed.dropped),
-                                      summary=self._summary(prescription))}
+        yield from self._close(fingerprint, reports, surviving=scheduled.surviving,
+                               dropped=list(narrowed.dropped),
+                               summary=self._summary(prescription))
+
+    def _close(self, fingerprint: str, reports: list[TeamReport], **rest: Any):
+        """메인 에이전트가 마지막으로 자기 보고를 낸다.
+
+        메인도 일을 한다 — 팀 보고를 모아 수치 카드를 만드는 것이 그 일이고, 제안서 03장에서
+        12개 중 하나로 세어진다. 스스로 결과를 내지 않으면 화면에는 11개만 도착한다.
+        멈춘 실행에서는 통합할 것이 없으므로 `ok` 가 아니라 유보다 — 통합했다고 말하면
+        존재하지 않는 종합 판단이 있었던 것처럼 읽힌다."""
+        halted_at = rest.get("halted_at")
+        summary = rest.get("summary") or {}
+        surviving = rest.get("surviving") or []
+        dropped = rest.get("dropped") or []
+        outcome = spec("main.integrate").outcome(
+            AgentStatus.WITHHELD if halted_at else AgentStatus.OK,
+            message=(f"{halted_at} 단계에서 멈춰 종합할 팀 보고가 없습니다." if halted_at else None),
+            data={"summary": summary, "surviving_count": len(surviving),
+                  "dropped_count": len(dropped)})
+        report = TeamReport(team="main", name="메인 에이전트", outcomes=[outcome], blocking=False)
+        yield from self._team_events(report)
+        reports.append(report)
+        yield {"event": "done", "result": self._finish(fingerprint, reports, **rest)}
 
     @staticmethod
     def _team_events(report: TeamReport):
