@@ -314,6 +314,41 @@ export interface ChatStreamHandlers {
   onDone(result: { message: string; citations: Citation[]; integration_status: string }): void;
 }
 
+/** 제안서 03장의 12개 에이전트 선언. `GET /api/v1/agents` 가 주는 모양. */
+export interface AgentSpec {
+  key: string;
+  team: "main" | "condition" | "finance" | "location" | "timing";
+  name: string;
+  source_name: string;
+  produces: string;
+  evidence_grade: EvidenceGrade | null;
+}
+
+/** 백엔드 `AgentStatus` 와 짝을 이룬다. 유니온을 열어 두는 이유는, 백엔드가 어휘를 넓혔을 때
+ * 모르는 값을 실패로 접으면 판정에 성공한 축을 고장난 것처럼 보이게 만들기 때문이다. */
+export type AgentRunStatus = "ok" | "integration_pending" | "withheld" | "failed" | (string & {});
+
+export interface AgentProgress { team: string; key: string; name: string; status: AgentRunStatus; message?: string }
+
+export interface PrescribeResult {
+  fingerprint?: string;
+  reused: boolean;
+  halted_at: string | null;
+  questions: { field: string; label: string }[];
+  activation: { total: number; active: number; by_key: Record<string, AgentRunStatus | null> };
+  summary: Record<string, number | null>;
+  surviving: Record<string, unknown>[];
+  dropped: (Record<string, unknown> & { reason?: string })[];
+}
+
+/** `done` 은 언제나 마지막 프레임이고 `error` 는 던져진다 — chat 스트림과 같은 규칙이다. */
+export interface PrescribeStreamHandlers {
+  onRunStart(info: { total_agents: number; fingerprint: string }): void;
+  onTeamStart(team: { team: string; name: string; agent_count: number }): void;
+  onAgentEnd(agent: AgentProgress): void;
+  onDone(result: PrescribeResult): void;
+}
+
 export type FundingBandKey = "EQUITY_ONLY" | "RECOMMENDED" | "MAXIMUM" | "OUT_OF_RANGE";
 
 /** 평수·보증금은 필요자금(→현금소진)에만 쓰이므로 없어도 밴드 상한과 손익분기는 계산된다. */
