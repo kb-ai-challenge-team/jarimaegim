@@ -294,6 +294,11 @@ class FundingCapacityResult(BaseModel):
             raise ValueError("unverified parameters must mark the result as DEMO")
         if self.status == "computed" and self.maximum_line_krw < self.equity_line_krw:
             raise ValueError("maximum line cannot fall below the equity line")
+        if self.status == "integration_pending":
+            if not self.missing_params:
+                raise ValueError("integration_pending result requires missing_params")
+            if self.equity_line_krw or self.borrowing_headroom_krw or self.maximum_line_krw:
+                raise ValueError("integration_pending result must not carry computed lines")
         return self
 
 

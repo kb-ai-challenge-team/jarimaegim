@@ -19,7 +19,7 @@ from .chat_tools import ChatToolset, PlaceRegistry
 from .config import get_settings
 from .districts import SEOUL_DISTRICTS
 from .document_store import DocumentStore, render_case_pdf
-from .funding import compute_bands
+from .funding import CAPACITY_ENTRIES, compute_bands, compute_capacity
 from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
@@ -308,6 +308,38 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
                                                   contribution_margin_ratio=computed["contribution_margin_ratio"],
                                                   assumptions=assumptions),
                              provenance=provenance)
+
+
+RECOMMENDED_LINE_PENDING = ("권장 조달선은 업종과 희망 월세를 받은 뒤 스트레스 테스트로 계산합니다. "
+                            "지금은 추정하지 않습니다.")
+
+
+@app.post("/api/v1/funding-capacity", response_model=FundingCapacityResult)
+async def create_funding_capacity(payload: FundingCapacityInput, session_id: UUID = Depends(current_session)):
+    """1단계의 완결점. 케이스 이전에 돌며 금융 프로필만으로 나오는 세 줄을 돌려준다."""
+    missing = policy_params.missing_of(CAPACITY_ENTRIES)
+    if missing:
+        return FundingCapacityResult(
+            status="integration_pending", missing_params=missing,
+            recommended_line_pending=RECOMMENDED_LINE_PENDING,
+            message="조달 한도 파라미터가 아직 등록되지 않았습니다. 등록 전에는 추정하지 않습니다.")
+    computed = compute_capacity(policy_params, equity_krw=payload.equity_krw,
+                                existing_debt_krw=payload.existing_debt_krw)
+    unverified = policy_params.unverified_of(CAPACITY_ENTRIES)
+    limitations = ["최대 조달선은 신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다",
+                   "권장 조달선은 업종 파라미터와 희망 월세가 있어야 계산됩니다"]
+    if unverified:
+        limitations.insert(0, f"미검증 시연용 파라미터로 계산했습니다: {' · '.join(unverified)}")
+    if computed["borrowing_headroom_krw"] == 0 and payload.existing_debt_krw > 0:
+        limitations.append("기존 대출 잔액이 한도를 모두 소진해 추가 차입 여력이 없습니다")
+    provenance = Provenance(source_name="자리매김 조달 여력 계산", industry_scope="업종 무관",
+                            spatial_unit="사용자 입력 금융 프로필", source_as_of=policy_params.updated_at,
+                            confidence="LOW", limitations=limitations)
+    return FundingCapacityResult(status="computed", **computed,
+                                 parameter_status="DEMO" if unverified else "VERIFIED",
+                                 unverified_params=unverified,
+                                 recommended_line_pending=RECOMMENDED_LINE_PENDING,
+                                 provenance=provenance)
 
 
 @app.get("/api/v1/programs")

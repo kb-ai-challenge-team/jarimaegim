@@ -149,3 +149,17 @@ def test_pending_result_needs_no_numbers():
                                    recommended_line_pending=PENDING_TEXT,
                                    message="한도 파라미터가 등록되지 않았습니다.")
     assert result.maximum_line_krw == 0
+
+
+def test_pending_capacity_must_say_what_is_missing():
+    """미등록 사유를 밝히지 않는 대기 응답은 만들 수 없어야 한다 — 밴드 결과와 같은 엄격함을 지킨다."""
+    with pytest.raises(ValidationError):
+        FundingCapacityResult(status="integration_pending",
+                              recommended_line_pending=PENDING_TEXT, message="x")
+
+
+def test_pending_capacity_must_not_carry_numbers():
+    with pytest.raises(ValidationError):
+        FundingCapacityResult(status="integration_pending", maximum_line_krw=1,
+                              missing_params=["loan.guarantee_ceiling_krw"],
+                              recommended_line_pending=PENDING_TEXT, message="x")
