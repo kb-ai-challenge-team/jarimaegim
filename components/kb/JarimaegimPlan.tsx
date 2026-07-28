@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { CircleHelp, Coins, ExternalLink, FileDown, FileText, Info, Landmark, LoaderCircle, LockKeyhole, MapPin, ShieldCheck, Sparkles } from "lucide-react";
 import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
 import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
@@ -128,26 +128,23 @@ function ProductRow({ product, reasons }: { product: KbProduct; reasons?: string
 
 /** KB국민은행 개인사업자대출 공시. Matched rows lead; rates are the disclosed month's range, never an offer. */
 function KbProductSection({ products, state, inputs, gapKrw }: { products: KbProduct[]; state: LocationState; inputs: CaseRecord["inputs"]; gapKrw: number | null }) {
-  const [expanded, setExpanded] = useState(false);
   const matches = useMemo(() => matchKbProducts(products, inputs, gapKrw), [products, inputs, gapKrw]);
   if (state === "loading") return <div className="kb-loading"><LoaderCircle className="kb-spin" aria-hidden="true" />KB 금융상품 공시를 불러오고 있습니다.</div>;
   if (products.length === 0) return null;
 
-  const matchedIds = new Set(matches.map((match) => match.product.id));
-  const rest = products.filter((product) => !matchedIds.has(product.id));
+  // 처방은 이 케이스에 대한 답이다. 조건과 겹치지 않는 상품은 답이 아니므로 여기서 보여주지 않는다.
+  // 전체 공시는 상품 탭에 그대로 있으므로 감추는 것이 아니라 자리를 옮기는 것이다.
   return <section className="kb-products">
-    <header><Landmark aria-hidden="true" /><div><strong>KB 금융상품</strong><small>개인사업자대출 {products.length}건 · 기준월 {products[0].source_as_of || "확인 필요"}</small></div></header>
+    <header><Landmark aria-hidden="true" /><div><strong>KB 금융상품</strong><small>개인사업자대출 공시 {products.length}건 대조 · 기준월 {products[0].source_as_of || "확인 필요"}</small></div></header>
 
     {matches.length > 0 ? <>
       <p className="kb-match-lead"><Sparkles aria-hidden="true" />입력한 조건이 공시 문구와 겹치는 {matches.length}건입니다. 자격이나 승인 가능성을 판단한 것이 아닙니다.</p>
-      <ul>{matches.slice(0, 5).map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} />)}</ul>
-    </> : <p className="kb-note"><Info aria-hidden="true" />현재 조건과 겹치는 공시 문구가 없어 전체 목록만 표시합니다.</p>}
-
-    {expanded && <>
-      <p className="kb-match-lead kb-match-rest">조건과 겹치지 않는 나머지 {rest.length}건</p>
-      <ul>{rest.map((product) => <ProductRow key={product.id} product={product} />)}</ul>
-    </>}
-    {rest.length > 0 && <button className="kb-ghost" onClick={() => setExpanded(!expanded)}>{expanded ? "접기" : `나머지 ${rest.length}건 보기`}</button>}
+      <ul>{matches.map((match) => <ProductRow key={match.product.id} product={match.product} reasons={match.reasons} />)}</ul>
+    </> : <div className="kb-empty compact">
+      <Landmark aria-hidden="true" />
+      <strong>현재 조건과 겹치는 공시 문구가 없습니다</strong>
+      <p>대조한 {products.length}건 중 조건에 걸리는 상품이 없어 아무것도 추천하지 않습니다. 전체 공시는 왼쪽 <strong>상품</strong> 메뉴에서 볼 수 있습니다.</p>
+    </div>}
 
     <p className="kb-note"><Info aria-hidden="true" />조건 일치는 입력값과 공시 문구의 텍스트 대조입니다. 실제 승인 금리·한도와 자격은 KB국민은행에서 직접 확인해야 합니다.</p>
   </section>;

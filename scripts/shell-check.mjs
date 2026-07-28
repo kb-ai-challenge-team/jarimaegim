@@ -190,6 +190,20 @@ const docResponse = page.waitForResponse((r) => r.url().includes("/api/v1/docume
 await panel.locator(".kb-doc-actions button").first().click();
 const documentResponse = await docResponse;
 await page.waitForTimeout(1200);
+// 처방에 뜬 상품은 전부 추천 근거를 달고 있어야 한다. 근거 없는 행이 하나라도 있으면
+// 조건과 무관한 공시가 다시 새어 들어온 것이다.
+const productRows = await panel.locator(".kb-products ul li").count();
+let rowsWithReason = 0;
+for (const row of await panel.locator(".kb-products ul li").all()) {
+  if (await row.locator(".kb-match-reasons span").count() > 0) rowsWithReason += 1;
+}
+const recommendation = {
+  productRows,
+  everyRowHasReason: rowsWithReason === productRows,
+  // "나머지 N건 보기"가 되살아나면 비추천 상품이 다시 화면에 들어온다.
+  noBulkExpander: await panel.getByRole("button", { name: /나머지 \d+건 보기/ }).count() === 0
+};
+
 const prescription = {
   blocks: blocks.length,
   committedShown: candidateCount === 0 || await panel.locator(".kb-committed").count() > 0,
@@ -227,7 +241,7 @@ const productTab = {
   noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
 };
 
-const result = { stepper, overview, drilldown, returned, profile, persistence, condition, flowOrder, lease, bands, location, cost, funding, prescription, policyTab, productTab, axes, errors };
+const result = { stepper, overview, drilldown, returned, profile, persistence, condition, flowOrder, lease, bands, location, cost, funding, recommendation, prescription, policyTab, productTab, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 const expected = ["조건", "입지", "처방"];
@@ -242,6 +256,7 @@ if (errors.length || !stepperOk
   || !location.rendered || !location.evidenceInline || !cost.bandTableShown
   || !funding.safeState || !funding.subsidyGapDisclosed
   || !location.committable || (location.candidateCount > 0 && location.demoBadges === 0)
+  || !recommendation.everyRowHasReason || !recommendation.noBulkExpander
   || prescription.blocks !== 3 || !prescription.committedShown || !prescription.noDuplicateBandTable
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest
