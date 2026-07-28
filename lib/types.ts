@@ -154,6 +154,10 @@ export interface Program {
   unknown_conditions: string[];
   official_url: string;
   source_as_of?: string;
+  /** 임베딩에 들어간 공고 본문. 관련도 대조에만 쓰고 화면에 그대로 뿌리지 않는다. */
+  match_text?: string;
+  /** 원천이 준 지원지역. 주지 않으면 null 이고, 그때는 본문 대조로 떨어진다. */
+  regions?: string[] | null;
 }
 
 /** KB국민은행 개인사업자대출 공시 (FSS 금융상품 한눈에). Rates are disclosure-month averages, not offers. */

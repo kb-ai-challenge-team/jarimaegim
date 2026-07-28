@@ -50,13 +50,18 @@ def test_program_catalog_items_keep_the_frontend_contract():
     body = client.get("/api/v1/programs/catalog").json()
     assert body["status"] in {"success", "integration_pending"}
     for item in body["items"]:
+        # match_text·regions 는 관련도 대조용으로 함께 싣는다. 화면에 그대로 뿌리지 않는다.
         assert set(item) == {"id", "category", "title", "organization", "status",
                              "application_period", "matched_conditions",
-                             "unknown_conditions", "official_url", "source_as_of"}
+                             "unknown_conditions", "official_url", "source_as_of",
+                             "match_text", "regions"}
         # 유니온 밖의 값이 새면 UI가 렌더하지 못한다.
         assert item["status"] in {"ELIGIBLE_PRECHECK", "CONDITIONAL", "MANUAL_CHECK",
                                   "CLOSED", "UNKNOWN"}
         assert item["category"] in {"GOVERNMENT", "POLICY_FUND", "GUARANTEE", "PRIVATE"}
+        assert isinstance(item["match_text"], str)
+        # 원천이 지역을 주지 않으면 null 이다. 빈 배열로 채워 "지역 없음"을 단정하지 않는다.
+        assert item["regions"] is None or isinstance(item["regions"], list)
 
 
 def test_kb_product_items_keep_the_frontend_contract():

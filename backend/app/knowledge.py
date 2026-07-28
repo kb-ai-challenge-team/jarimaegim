@@ -40,10 +40,22 @@ class KnowledgeReader:
             return []
 
     def _select(self, kind: str) -> list[dict[str, Any]]:
-        response = (self._client.table(TABLE).select("display,application_end")
+        # body_text·regions 를 함께 싣는다. 제목만으로는 지원지역과 신청대상을 알 수 없어
+        # 관련도 판정이 제목에 그 말이 적혔는지에 좌우된다. regions 는 원천이 주지 않으면
+        # null 이고 그때는 본문으로 떨어진다 — 없는 지역을 채워 넣지 않는다.
+        response = (self._client.table(TABLE).select("display,application_end,body_text,regions")
                     .eq("kind", kind).neq("status", "CLOSED")
                     .order("application_end", desc=False).limit(LIST_LIMIT).execute())
-        return [row["display"] for row in (response.data or []) if row.get("display")]
+        items: list[dict[str, Any]] = []
+        for row in (response.data or []):
+            display = row.get("display")
+            if not display:
+                continue
+            # 관련도 판정이 필요한 것은 공고뿐이다. KB상품은 공시 문구가 display 안에 다 들어 있다.
+            if kind == "PROGRAM":
+                display = {**display, "match_text": row.get("body_text") or "", "regions": row.get("regions")}
+            items.append(display)
+        return items
 
     async def freshness(self) -> dict[str, Any]:
         if self._client is None:
