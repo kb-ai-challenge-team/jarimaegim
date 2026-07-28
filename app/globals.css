@@ -838,7 +838,10 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-doc-preview li{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border:1px solid var(--kb-line);border-radius:10px}
 .kb-doc-preview strong{font-size:11.5px;font-weight:700;color:var(--kb-sub)}
 .kb-doc-preview span{font-size:12px;line-height:1.55;color:var(--kb-ink)}
-.kb-consent{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid var(--kb-blue-soft);border-radius:10px;background:var(--kb-blue-soft);font-size:12px;line-height:1.5;color:var(--kb-ink);cursor:pointer}
+/* 테두리와 배경을 같은 색으로 두면 경계가 사라진다 — blue-soft 는 흰 패널과 1.03:1 이라
+   면만으로는 카드가 보이지 않는다. .kb-ai-cta 와 같이 면은 blue-soft, 선은 line-2 로 나눈다.
+   PDF 앞에 선 유일한 확인 절차이므로 테두리가 있는 물건으로 읽혀야 한다. */
+.kb-consent{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid var(--kb-line-2);border-radius:10px;background:var(--kb-blue-soft);font-size:12px;line-height:1.5;color:var(--kb-ink);cursor:pointer}
 .kb-consent input{width:16px;height:16px;flex:none;margin:1px 0 0;accent-color:var(--kb-blue)}
 .kb-linklike{border:0;background:none;padding:0;color:var(--kb-blue);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
 .kb-summary dt small{display:block;font-weight:400;font-size:9.5px;color:var(--muted,#6b7280)}
