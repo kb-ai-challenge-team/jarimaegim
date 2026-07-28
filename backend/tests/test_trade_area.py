@@ -176,3 +176,17 @@ def test_industry_mapping_tolerates_spacing_and_case():
     assert resolve(" 카 페 ") == "CS100010"
     assert resolve("Cafe") == "CS100010"
     assert resolve("cs100010") == "CS100010"
+
+
+def test_grade_b_provenance_still_discloses_the_listing_assumptions(service):
+    """등급이 B로 오르면 provenance 가 상권 출처로 통째로 바뀐다.
+
+    같은 카드에는 권리금 같은 가정값 임대 조건이 함께 뜨므로, 매물 쪽 한계가 사라지면
+    가정값이 실측 출처만 달고 나가게 된다 (부록 A 불변조건 3).
+    """
+    provenance = service.provenance(
+        industry_code="CS100010", sample_n=30, trade_area_count=2,
+        extra_limitations=["권리금·전용면적은 실측 출처가 없어 가정한 값입니다."],
+    )
+    assert any("권리금" in limitation for limitation in provenance.limitations)
+    assert any("상권 경계" in limitation for limitation in provenance.limitations)

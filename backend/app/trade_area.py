@@ -170,7 +170,15 @@ class TradeAreaService:
         """업종별 서울 기준선(행정동 값들의 중앙값). 순위 계산이 비교 대상으로 쓴다."""
         return self._benchmarks.get(industry_code) if industry_code else None
 
-    def provenance(self, *, industry_code: str | None, sample_n: int | None, trade_area_count: int | None) -> Provenance:
+    def provenance(self, *, industry_code: str | None, sample_n: int | None, trade_area_count: int | None,
+                   extra_limitations: tuple[str, ...] | list[str] = ()) -> Provenance:
+        """상권 집계의 출처.
+
+        `extra_limitations` 는 이 출처를 매물 카드에 붙일 때 쓴다. 등급이 C에서 B로 오르면
+        후보의 provenance 가 통째로 이것으로 바뀌는데, 같은 카드에는 상권 실측 집계와
+        시연용·가정값 임대 조건이 **함께** 표시된다. 매물 쪽 한계를 여기 얹지 않으면
+        권리금 같은 가정값이 실측 출처만 달고 나가게 된다(부록 A 불변조건 3).
+        """
         return Provenance(
             source_name=self._payload.get("source_name", "서울시 우리마을가게 상권분석서비스"),
             official_url="https://data.seoul.go.kr/dataList/datasetList.do",
@@ -183,6 +191,7 @@ class TradeAreaService:
             limitations=[
                 *self._payload.get("limitations", []),
                 f"이 행정동에서 집계에 포함된 상권은 {trade_area_count}개입니다." if trade_area_count else "집계 상권 수를 확인하지 못했습니다.",
+                *extra_limitations,
             ],
         )
 

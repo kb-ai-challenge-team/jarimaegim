@@ -151,6 +151,7 @@ class ListingService:
             "provenance": self.trade_areas.provenance(
                 industry_code=profile["industry_code"], sample_n=profile.get("store_count"),
                 trade_area_count=profile.get("trade_area_count"),
+                extra_limitations=LIMITATIONS,
             ),
         })
 
@@ -196,6 +197,9 @@ class ListingService:
                 "provenance": self.trade_areas.provenance(
                     industry_code=profile["industry_code"], sample_n=profile.get("store_count"),
                     trade_area_count=profile.get("trade_area_count"),
+                    # 같은 카드에 상권 실측과 가정값 임대 조건이 함께 뜬다. 매물 쪽 한계를
+                    # 얹지 않으면 권리금 같은 가정값이 실측 출처만 달고 나간다.
+                    extra_limitations=LIMITATIONS,
                 ),
                 "trade_area_fit": TradeAreaFit(
                     status="judged", score=round(total, 4), judged_axes=judged_axes, unjudged_axes=unjudged_axes,
