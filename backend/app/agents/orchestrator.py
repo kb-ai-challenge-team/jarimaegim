@@ -50,7 +50,7 @@ class RunResult:
     activation: dict[str, Any]
     surviving: list[dict[str, Any]] = field(default_factory=list)
     dropped: list[dict[str, Any]] = field(default_factory=list)
-    questions: list[dict[str, str]] = field(default_factory=list)
+    questions: list[dict[str, Any]] = field(default_factory=list)
     #: 없어서 그 수치만 못 낸 항목. 되묻지 않고 진행했다는 사실을 화면이 말할 수 있어야 한다.
     deferred: list[str] = field(default_factory=list)
     #: 발화가 확정된 값과 어긋나 올라온 변경 제안. 적용되지 않은 상태로 전달된다.

@@ -93,3 +93,26 @@ def resolve(industry: str) -> str | None:
 
 def display_name(code: str) -> str:
     return INDUSTRY_NAMES.get(code, code)
+
+
+#: 되묻기에 함께 보여줄 후보 수. 목록이 길면 사용자가 고르지 않고 아무거나 누른다.
+SUGGESTION_LIMIT = 6
+
+#: 겹치는 별칭이 없을 때 보여줄 대표 업종. 빈 목록은 "고칠 방법이 없다"로 읽힌다.
+_FALLBACK_SUGGESTIONS = ("카페", "한식", "치킨", "미용실", "편의점", "학원")
+
+
+def suggest(industry: str) -> list[str]:
+    """정규화에 실패한 입력에 대해 **표시용** 후보를 고른다. 매칭이 아니다.
+
+    `resolve()` 가 부분 문자열 매칭을 하지 않는 이유와 이 함수가 존재하는 이유는 같다 —
+    '스터디카페'를 '카페'로 **자동으로 붙이면** 전혀 다른 업종의 원가율과 폐업률이 그 사람의
+    판단 근거가 된다. 그래서 여기서는 고를 수 있는 것을 보여 주기만 하고, 무엇이 선택되는지는
+    사용자가 정한다. 이 반환값이 조건에 자동으로 들어가는 경로는 없다.
+    """
+    key = normalise(industry)
+    if not key:
+        return []
+    near = [alias for alias in _ALIASES if alias in key or key in alias]
+    ordered = near + [item for item in _FALLBACK_SUGGESTIONS if item not in near]
+    return ordered[:SUGGESTION_LIMIT]

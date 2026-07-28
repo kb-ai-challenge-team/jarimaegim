@@ -64,7 +64,28 @@ test("a halted run still settles and names where it stopped", () => {
 test("a run halted at the condition layer forwards its questions", () => {
   const handlers = recorder();
   applyPrescribeFrame({ event: "done", data: { halted_at: "condition", questions: [{ field: "industry", label: "업종" }] } }, handlers);
-  assert.deepEqual(handlers.calls.done[0].questions, [{ field: "industry", label: "업종" }]);
+  // 서버가 안 보낸 키는 빈 값으로 채운다. 되묻기 항목의 모양이 두 가지면 화면이 매번 어느
+  // 쪽인지 확인해야 하고, 한쪽에만 있는 키를 읽다 조용히 undefined 가 된다.
+  assert.deepEqual(handlers.calls.done[0].questions,
+    [{ field: "industry", label: "업종", reason: "MISSING", message: "", options: [] }]);
+});
+
+test("an unmappable industry forwards its recovery reason and candidates", () => {
+  const handlers = recorder();
+  applyPrescribeFrame({ event: "done", data: { halted_at: "condition", questions: [{
+    field: "industry", label: "업종", reason: "UNMAPPED_INDUSTRY",
+    message: "'스터디카페' 은(는) 상권 통계의 업종 코드로 이어지지 않아 입지 판단을 할 수 없습니다. 가까운 업종을 골라 주세요.",
+    options: ["카페", "학원"]
+  }] } }, handlers);
+  const question = handlers.calls.done[0].questions[0];
+  assert.equal(question.reason, "UNMAPPED_INDUSTRY");
+  assert.deepEqual(question.options, ["카페", "학원"]);
+});
+
+test("an unknown question reason degrades to MISSING rather than passing through", () => {
+  const handlers = recorder();
+  applyPrescribeFrame({ event: "done", data: { questions: [{ field: "industry", label: "업종", reason: "SOMETHING_ELSE" }] } }, handlers);
+  assert.equal(handlers.calls.done[0].questions[0].reason, "MISSING");
 });
 
 test("team_end is accepted and ignored, not treated as the end of the run", () => {

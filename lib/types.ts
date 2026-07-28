@@ -377,6 +377,19 @@ export type AgentRunStatus = "ok" | "integration_pending" | "withheld" | "failed
  *  형태는 에이전트마다 다르므로 읽는 쪽이 필요한 필드만 좁혀서 꺼내 쓴다. */
 export interface AgentProgress { team: string; key: string; name: string; status: AgentRunStatus; message?: string; data?: Record<string, unknown> }
 
+/** 되묻기 항목.
+ *
+ *  `MISSING` 은 값이 비어 계산이 성립하지 않는 것이고, `UNMAPPED_INDUSTRY` 는 값은 있지만
+ *  상권 통계의 업종 코드로 이어지지 않는 것이다 — 후자는 확인 절차가 아니라 실패 복구이며,
+ *  `options` 는 **표시용** 후보일 뿐 코드가 자동으로 붙이지 않는다(유사 매칭 금지). */
+export interface ConditionQuestion {
+  field: string;
+  label: string;
+  reason: "MISSING" | "UNMAPPED_INDUSTRY";
+  message: string;
+  options: string[];
+}
+
 /** 발화가 이미 확정된 값과 어긋나 올라온 변경 제안. 적용되지 않은 상태로 온다 —
  *  조건 변경은 재실행을 유발하므로 사용자가 모르는 사이에 일어나면 안 된다. */
 export interface ConditionProposal { field: string; current: string | number | null; proposed: string | number; span: string }
@@ -401,7 +414,7 @@ export interface PrescribeResult {
   fingerprint?: string;
   reused: boolean;
   halted_at: string | null;
-  questions: { field: string; label: string }[];
+  questions: ConditionQuestion[];
   /** 없어서 그 수치만 내지 못한 조건 항목. 되묻지 않고 진행했다는 사실을 화면이 말한다. */
   deferred: string[];
   proposals: ConditionProposal[];

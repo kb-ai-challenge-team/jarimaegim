@@ -72,3 +72,30 @@ def test_a_zero_equity_counts_as_missing_rather_than_as_an_answer():
     """0 원을 확정된 자기자본으로 읽으면 여력 커널이 0 을 진짜 답으로 낸다."""
     report = layer().run({**FULL, "equity_krw": 0})
     assert report.halted is True
+
+
+# ── 업종 정규화 실패는 값이 있어도 복구를 요구한다 ────────────────────────
+
+def test_an_unmappable_industry_halts_even_though_the_field_is_filled():
+    """'스터디카페'는 값이 있지만 코드로 정규화되지 않는다. 그대로 진행하면 입지 네 축이
+    통째로 꺼진 채 아무 설명 없이 빈 결과가 나온다."""
+    report = layer().run({**FULL, "industry": "스터디카페"})
+    assert report.halted is True
+    assert [item["field"] for item in report.questions] == ["industry"]
+
+
+def test_the_recovery_question_offers_normalisable_candidates():
+    """제시는 하되 붙이지는 않는다. 코드가 '스터디카페'를 '커피-음료'에 자동으로 이어 붙이면
+    그것이 바로 유사 매칭이고, 전혀 다른 업종의 원가율로 손익분기를 계산하게 된다."""
+    question = layer().run({**FULL, "industry": "스터디카페"}).questions[0]
+    assert question["reason"] == "UNMAPPED_INDUSTRY"
+    assert "카페" in question["options"]
+
+
+def test_a_mappable_industry_produces_no_recovery_question():
+    assert layer().run({**FULL, "industry": "카페"}).questions == []
+
+
+def test_the_unmapped_industry_is_never_silently_replaced():
+    report = layer().run({**FULL, "industry": "스터디카페"})
+    assert report.conditions["industry"] == "스터디카페"

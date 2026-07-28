@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..condition_parse import amount_from
+from ..industry import resolve as resolve_industry, suggest as suggest_industry
 from .contracts import AgentStatus, TeamReport
 from .llm import AgentLLM, ChoiceSchema, Decision, Pick, Records, Span
 from .registry import spec
@@ -100,7 +101,8 @@ def resolve_mention(field_name: str, span: str) -> Any | None:
 
 @dataclass(frozen=True)
 class ConditionReport(TeamReport):
-    questions: list[dict[str, str]] = field(default_factory=list)
+    #: 되묻기 항목. `options` 가 리스트라 값 타입이 str 하나가 아니다.
+    questions: list[dict[str, Any]] = field(default_factory=list)
     settled: bool = False
     #: 발화에서 읽어 채운 값까지 반영된 조건. 후속 팀은 이것을 받는다.
     conditions: dict[str, Any] = field(default_factory=dict)
@@ -177,8 +179,21 @@ class ConditionLayer:
                       "missing": [key for key, _ in blocking_gaps if key == "equity_krw"]}),
         ]
 
+        # 업종이 채워져 있어도 코드로 정규화되지 않으면 입지 네 축이 통째로 꺼진다. 값이 있으니
+        # 차단 검사는 통과하고, 사용자는 왜 아무 판정도 없는지 알 수 없다. 확인 절차가 아니라
+        # 실패 복구이므로 여기서만 되묻는다.
+        unmapped = (not blocking_gaps
+                    and not _blank(merged.get("industry"))
+                    and resolve_industry(str(merged["industry"])) is None)
+
         questions = self._questions(blocking_gaps, asked)
-        settled = not blocking_gaps
+        if unmapped:
+            questions = [{"field": "industry", "label": "업종",
+                          "reason": "UNMAPPED_INDUSTRY",
+                          "message": (f"'{merged['industry']}' 은(는) 상권 통계의 업종 코드로 "
+                                      "이어지지 않아 입지 판단을 할 수 없습니다. 가까운 업종을 골라 주세요."),
+                          "options": suggest_industry(str(merged["industry"]))}]
+        settled = not blocking_gaps and not unmapped
         return ConditionReport(
             team=self.team, name=self.name, outcomes=outcomes, blocking=True,
             questions=questions, settled=settled, conditions=merged,
@@ -276,9 +291,12 @@ class ConditionLayer:
                                 if key != "utterance" and not _blank(value)}})
 
     @staticmethod
-    def _questions(gaps: list[tuple[str, str]], asked: Decision) -> list[dict[str, str]]:
+    def _questions(gaps: list[tuple[str, str]], asked: Decision) -> list[dict[str, Any]]:
         """모델은 순서와 개수만 정한다. 비어 있지 않은 항목은 골라도 질문이 되지 않는다."""
         labels = dict(gaps)
         chosen = [key for key in asked.chosen.get("ask", []) if key in labels]
         ordered = chosen or [key for key, _ in gaps]
-        return [{"field": key, "label": labels[key]} for key in ordered][:QUESTION_LIMIT]
+        # `reason`·`message`·`options` 를 빈 값으로라도 채운다. 되묻기 항목의 모양이 두 가지면
+        # 화면이 어느 쪽인지 매번 확인해야 하고, 한쪽에만 있는 키를 읽다 조용히 undefined 가 된다.
+        return [{"field": key, "label": labels[key], "reason": "MISSING",
+                 "message": "", "options": []} for key in ordered][:QUESTION_LIMIT]
