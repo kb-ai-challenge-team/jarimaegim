@@ -254,7 +254,8 @@ export function PlanFunding({ caseData, committed, bands, programs, programState
           : gapKrw === 0
             ? <p className="kb-gap-headline">추가 차입 없이 자기자본으로 가능합니다</p>
             : <p className="kb-gap-headline"><strong>부족분 {formatKrw(gapKrw)}</strong>을 무엇으로 메울까요?</p>}
-      {partial && <p className="kb-note"><Info aria-hidden="true" />필요자금은 평수·보증금이 있어야 계산합니다. 위 부족분은 권장 조달선 기준 차입액입니다.</p>}
+      {/* "위 부족분"을 가리키므로 부족분을 실제로 찍었을 때만 단다. 위가 확인 필요면 가리킬 것이 없다. */}
+      {partial && gapKrw !== null && <p className="kb-note"><Info aria-hidden="true" />필요자금은 평수·보증금이 있어야 계산합니다. 위 부족분은 권장 조달선 기준 차입액입니다.</p>}
       {pending && <p className="kb-note"><Info aria-hidden="true" />부족분을 계산하지 못해 아래 목록은 조건 대조만 했습니다. 금액 대조는 하지 않았습니다.</p>}
     </section>
 
