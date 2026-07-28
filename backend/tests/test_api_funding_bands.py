@@ -63,19 +63,16 @@ def test_rejects_a_case_owned_by_another_session(client):
     assert response.status_code == 404
 
 
-def test_returns_integration_pending_while_parameters_are_unregistered(client, case_id):
-    """미등록 파라미터가 남아 있는 동안은 추정하지 않고 누락 목록을 돌려준다.
-
-    특정 키를 단정하지 않는다 — 등록이 진행되면 목록이 줄어드는 것이 정상이고,
-    지켜야 하는 규칙은 "누락이 있으면 계산하지 않고 무엇이 빈지 알려준다"는 것이다.
-    """
-    response = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY})
+def test_returns_integration_pending_for_an_unregistered_industry(client, case_id):
+    """미등록 업종이 남아 있는 동안은 추정하지 않고 누락 목록을 돌려준다."""
+    response = client.post("/api/v1/funding-bands",
+                           json={"case_id": case_id, **{**BODY, "industry": "우주정거장"}})
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "integration_pending"
     assert payload["bands"] == []
     assert payload["break_even"] is None
-    assert len(payload["missing_params"]) > 0
+    assert "industries.우주정거장" in payload["missing_params"]
     assert payload["message"]
 
 

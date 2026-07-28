@@ -119,3 +119,40 @@ def test_shipped_config_still_reports_what_is_missing():
     for key in gaps:
         assert key.startswith("loan.") or key.startswith("stress.") \
             or key.startswith("working_capital.") or key.startswith("industries."), key
+
+
+def test_shipped_entries_state_verification_explicitly():
+    """verified 를 빼먹으면 미검증 값이 검증된 값으로 조용히 통과한다. 명시를 강제한다."""
+    raw = _shipped_config()
+    for key, entry in raw["entries"].items():
+        assert isinstance(entry.get("verified"), bool), f"{key} 에 verified 가 없습니다"
+    for name, profile in (raw.get("industries") or {}).items():
+        assert isinstance(profile.get("verified"), bool), f"industries.{name} 에 verified 가 없습니다"
+
+
+def test_shipped_demo_values_say_so_in_their_source():
+    raw = _shipped_config()
+    for key, entry in raw["entries"].items():
+        if entry.get("verified") is False:
+            assert "시연용" in (entry.get("source") or ""), f"{key} 출처가 시연용임을 밝히지 않습니다"
+
+
+def test_shipped_industries_all_have_a_positive_contribution_margin():
+    """공헌이익률이 0 이하면 compute_bands 가 ValueError 로 죽는다."""
+    raw = _shipped_config()
+    for name, profile in (raw.get("industries") or {}).items():
+        margin = 1.0 - profile["cogs_ratio"] - profile["labor_ratio"]
+        assert margin > 0, f"industries.{name} 의 공헌이익률이 {margin} 입니다"
+
+
+def test_shipped_config_computes_bands_for_every_registered_industry():
+    """등록해 놓고 계산이 안 되면 등록한 의미가 없다."""
+    from app.funding import compute_bands
+    params = PolicyParams(_shipped_config())
+    for name in (_shipped_config().get("industries") or {}):
+        assert params.missing(name) == []
+        result = compute_bands(params, industry=name, area_pyeong=15.0, deposit_krw=50_000_000,
+                               monthly_rent_krw=2_500_000, monthly_maintenance_krw=300_000,
+                               key_money_krw=0, fitout_krw=None, equity_krw=100_000_000,
+                               existing_debt_krw=0, other_monthly_fixed_krw=1_000_000)
+        assert len(result["bands"]) == 3
