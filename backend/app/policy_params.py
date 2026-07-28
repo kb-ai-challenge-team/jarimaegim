@@ -60,9 +60,13 @@ class PolicyParams:
     def _profile(self, industry: str) -> dict[str, Any] | None:
         return self._lookup(industry)[1]
 
+    def missing_of(self, keys: tuple[str, ...]) -> list[str]:
+        """주어진 키 중 값이 없는 것. 산출마다 필요한 키가 다르므로 목록을 받는다 —
+        조달 여력은 보증·정책자금 한도만 있으면 나오고, 밴드는 그보다 많이 요구한다."""
+        return [key for key in keys if (self._entries.get(key) or {}).get("value") is None]
+
     def missing(self, industry: str) -> list[str]:
-        gaps = [key for key in REQUIRED_ENTRIES
-                if (self._entries.get(key) or {}).get("value") is None]
+        gaps = self.missing_of(REQUIRED_ENTRIES)
         key, profile = self._lookup(industry)
         if not profile:
             gaps.append(f"industries.{key}")
@@ -83,10 +87,15 @@ class PolicyParams:
             raise KeyError(f"industries.{key}")
         return profile
 
+    def assumed_of(self, keys: tuple[str, ...]) -> list[str]:
+        """주어진 키 중 시연용 가정인 것. 산출마다 쓰는 값이 다르므로 범위를 받는다 —
+        조달 여력은 보증·정책자금 한도만 쓰고, 밴드는 그보다 많이 쓴다. 실제로 쓰지 않은
+        값까지 '시연용'이라 말하면 고지가 넓어져 어느 수치가 가정인지 알 수 없게 된다."""
+        return [key for key in keys if (self._entries.get(key) or {}).get("basis") == DEMO_ASSUMPTION]
+
     def assumed(self, industry: str) -> list[str]:
         """이번 계산에 쓰이는 값 중 시연용 가정인 항목들. 없으면 빈 목록."""
-        names = [key for key in REQUIRED_ENTRIES
-                 if (self._entries.get(key) or {}).get("basis") == DEMO_ASSUMPTION]
+        names = self.assumed_of(REQUIRED_ENTRIES)
         key, profile = self._lookup(industry)
         if profile and profile.get("basis") == DEMO_ASSUMPTION:
             names.append(f"industries.{key}")

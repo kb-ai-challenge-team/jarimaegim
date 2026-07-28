@@ -33,6 +33,21 @@ for (const viewport of viewports) {
     const slug = route === "/" ? "landing" : route.split("?")[0].replaceAll("/", "-").replace(/^-/, "");
     await page.screenshot({ path: outputPath(`${viewport.name}-${slug}.png`), fullPage: true });
     results.push({ viewport: viewport.name, route, ...geometry });
+    // /kb 는 1단계 첫 화면(프로필)만 보여준다. 단계의 완결점인 조달 여력까지 밀어 한 장 더 찍는다.
+    if (route === "/kb") {
+      await page.locator(".kb-profile-form input").nth(0).fill("50000000");
+      await page.getByRole("button", { name: /확정하고 조달 여력 보기/ }).click();
+      await page.waitForSelector(".kb-capacity, .kb-step > .kb-note", { timeout: 20000 });
+      const capacity = await page.evaluate(() => ({
+        title: document.title,
+        viewportWidth: document.documentElement.clientWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        main: Boolean(document.querySelector("main")),
+        horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+      }));
+      await page.screenshot({ path: outputPath(`${viewport.name}-kb-capacity.png`), fullPage: true });
+      results.push({ viewport: viewport.name, route: "/kb (조달 여력)", ...capacity });
+    }
   }
   await context.request.post(base + "/api/v1/sessions/anonymous", { data: { retention_notice_accepted: true } });
   const created = await context.request.post(base + "/api/v1/cases", { data: { title: "마포구 카페 처음 창업", inputs: { industry: "카페", district: "마포구", budget_krw: 100000000, equity_krw: 70000000, business_stage: "PRE_OPEN", startup_type: "INDEPENDENT", priority: "STABILITY" } } });

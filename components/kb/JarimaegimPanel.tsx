@@ -1,44 +1,39 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, Quote, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
-import { parseCaseText } from "@/lib/parse-case";
-import type { AnalysisResult, CaseInput, FundingBandResult, ListingTerms } from "@/lib/types";
+import type { AnalysisResult, CaseInput, ConditionKey, FundingBandResult, ListingTerms } from "@/lib/types";
 import { manwon } from "@/lib/format";
 import type { FlowStep, Jarimaegim, Profile } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
 import { PlanPrescription, PlanTuning, runwayLabel } from "./JarimaegimPlan";
 
-// 금융 프로필은 스텝이 아니라 진입 관문이다. 스테퍼는 조건 → 입지 → 처방 셋뿐이다.
+// 금융 프로필은 관문이 아니라 1단계다. profile·capacity 가 ①, ask·confirm 이 ②에 매핑된다.
 const STEPS: { id: FlowStep; label: string }[] = [
-  { id: "ask", label: "조건" }, { id: "recommend", label: "입지" }, { id: "prescribe", label: "처방" }
+  { id: "profile", label: "자금" }, { id: "ask", label: "조건" },
+  { id: "recommend", label: "입지" }, { id: "prescribe", label: "처방" }
 ];
-const EXAMPLES = ["마포구에서 카페를 준비하고 있어요", "성동구에 2호점 낼 자리 찾고 있어요", "관악구 분식점 자리를 알아보는 중이에요"];
-// 확인 화면이 물을 수 있는 전부. 답이 후보를 바꾸는 항목만 남기며 "최대 3"의 상한도 여기서 온다.
-type AskKey = "industry" | "monthly_rent_krw";
-const ASK_FIELDS: { key: AskKey; label: string; note: string }[] = [
-  { key: "industry", label: "업종", note: "검색 질의어와 업종 파라미터를 정합니다" },
-  { key: "monthly_rent_krw", label: "희망 월세", note: "권장 조달선과 목표 매출을 정합니다" }
-];
+const STEP_OF: Record<FlowStep, FlowStep> = {
+  profile: "profile", capacity: "profile", ask: "ask", confirm: "ask",
+  recommend: "recommend", prescribe: "prescribe"
+};
 
 export function JarimaegimPanel({ flow, onClose }: { flow: Jarimaegim; onClose: () => void }) {
-  const onGate = flow.step === "profile";
-  const stepIndex = Math.max(0, STEPS.findIndex((step) => step.id === (flow.step === "confirm" ? "ask" : flow.step)));
+  const stepIndex = Math.max(0, STEPS.findIndex((step) => step.id === STEP_OF[flow.step]));
   return <div className="kb-ai-panel">
     <header className="kb-ai-head">
       <span className="kb-ai-badge" aria-hidden="true">AI</span>
       <div><strong>자리매김 AI</strong><small>서울 창업 입지 · 자금조달 도우미</small></div>
       <button className="kb-icon-button" onClick={onClose} aria-label="자리매김 AI 닫기"><X aria-hidden="true" /></button>
     </header>
-    {onGate
-      ? <p className="kb-gate-rail"><span aria-hidden="true">0</span>금융 프로필 — 시작 전 한 번만 확인합니다</p>
-      : <ol className="kb-stepper">{STEPS.map((step, index) => <li key={step.id} data-state={index < stepIndex ? "done" : index === stepIndex ? "current" : "todo"}>
-          <span aria-hidden="true">{index < stepIndex ? <Check /> : index + 1}</span>{step.label}
-        </li>)}</ol>}
+    <ol className="kb-stepper">{STEPS.map((step, index) => <li key={step.id} data-state={index < stepIndex ? "done" : index === stepIndex ? "current" : "todo"}>
+      <span aria-hidden="true">{index < stepIndex ? <Check /> : index + 1}</span>{step.label}
+    </li>)}</ol>
     <div className="kb-ai-scroll">
       {flow.error && <div className="kb-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{flow.error}</span><button onClick={() => flow.setError("")} aria-label="알림 닫기"><X aria-hidden="true" /></button></div>}
       {flow.step === "profile" && <ProfileStep flow={flow} />}
+      {flow.step === "capacity" && <CapacityStep flow={flow} />}
       {flow.step === "ask" && <AskStep flow={flow} />}
       {flow.step === "confirm" && <ConfirmStep flow={flow} />}
       {flow.step === "recommend" && <RecommendStep flow={flow} />}
@@ -86,7 +81,7 @@ function ProfileStep({ flow }: { flow: Jarimaegim }) {
       {money("other_monthly_fixed_krw", "월 고정지출", "생활비 등 사업 외 고정지출")}
     </div>
 
-    <button className="kb-primary" onClick={flow.confirmProfile} disabled={!ready}>확정하고 조건 입력으로 <ArrowRight aria-hidden="true" /></button>
+    <button className="kb-primary" onClick={flow.confirmProfile} disabled={!ready}>확정하고 조달 여력 보기 <ArrowRight aria-hidden="true" /></button>
     {!ready && <p className="kb-note"><CircleHelp aria-hidden="true" />자기자본을 채워야 조달 밴드를 계산할 수 있습니다.</p>}
 
     <div className="kb-reuse">
@@ -98,7 +93,7 @@ function ProfileStep({ flow }: { flow: Jarimaegim }) {
         <li>세션이 만료돼 다시 들어와도 이 화면을 건너뜁니다</li>
       </ul>
     </div>
-    <p className="kb-note"><Info aria-hidden="true" />업종 · 자치구 · 희망 임대조건은 마이데이터에 없습니다. 다음 화면에서 받습니다.</p>
+    <p className="kb-note"><Info aria-hidden="true" />업종 · 자치구 · 희망 임대조건은 마이데이터에 없습니다. 조달 여력을 확인한 뒤 다음 단계에서 받습니다.</p>
     {/* 저장 위치와 지우는 방법을 같은 자리에서 말한다. 금액을 남긴다는 사실을 묻어 두지 않는다. */}
     <p className="kb-note"><ShieldCheck aria-hidden="true" />별도 계정 없이 익명 세션으로 진행합니다. 이 세 항목은 <strong>이 브라우저에만</strong> 저장해 다음 방문에 다시 묻지 않고, 서버에는 조건을 확정해 케이스를 만들 때만 전송합니다.</p>
     {profileRestored && <button className="kb-ghost" onClick={flow.forgetProfile}><Trash2 aria-hidden="true" /> 이 브라우저에 저장된 값 지우기</button>}
@@ -117,26 +112,88 @@ function ProfileBadge({ flow }: { flow: Jarimaegim }) {
   </div>;
 }
 
-function AskStep({ flow }: { flow: Jarimaegim }) {
-  const [text, setText] = useState("");
-  const submit = () => { const value = text.trim(); if (!value) return; flow.interpret(value, parseCaseText(value)); };
+/** 1단계의 완결점. 자금을 입력한 대가로 "얼마까지 가능한가"를 돌려준다.
+ *  권장 조달선은 여기서 내지 않는다 — 스트레스 테스트가 업종과 월 고정비를 요구하기 때문이고,
+ *  그 사실을 빈칸이 아니라 문장으로 말하는 것이 2단계로 넘어가는 동기가 된다. */
+function CapacityStep({ flow }: { flow: Jarimaegim }) {
+  const { capacity, capacityState } = flow;
+  const demo = capacity?.parameter_status === "DEMO";
   return <div className="kb-step">
     <ProfileBadge flow={flow} />
-    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{flow.messages[0].text}</p></div>
-    <label className="kb-field kb-field-block"><span>상황 설명</span>
-      <textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} placeholder="예: 마포구에서 카페를 준비 중이에요"
-        onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} />
-    </label>
-    <button className="kb-primary" onClick={submit} disabled={!text.trim()}>조건으로 정리하기 <ArrowRight aria-hidden="true" /></button>
-    <div className="kb-examples"><span>이렇게 물어보세요</span>{EXAMPLES.map((example) => <button key={example} onClick={() => setText(example)}>{example}</button>)}</div>
-    <button className="kb-ghost" onClick={() => flow.interpret("직접 조건을 입력할게요", {})}>직접 입력으로 시작 <ChevronRight aria-hidden="true" /></button>
+    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>확정하신 자금으로 <strong>지금 검토할 수 있는 규모</strong>를 계산했습니다. 여기까지가 1단계입니다.</p></div>
+
+    {capacityState === "loading" && <div className="kb-skeletons">{[0, 1].map((row) => <div key={row} className="kb-skeleton" />)}</div>}
+
+    {capacityState === "error" && <div className="kb-empty">
+      <AlertCircle aria-hidden="true" /><strong>조달 여력을 계산하지 못했습니다</strong>
+      <p>연결 상태를 확인한 뒤 다시 시도해 주세요. 조건 입력은 그대로 진행할 수 있습니다.</p>
+      <button className="kb-ghost" onClick={() => flow.loadCapacity(flow.profile)}><RefreshCw aria-hidden="true" /> 다시 계산</button>
+    </div>}
+
+    {capacity && capacity.status === "computed" && <section className="kb-capacity">
+      {demo && <p className="kb-capacity-demo"><span className="demo-badge">시연용</span>미검증 시연용 제도 파라미터로 계산했습니다. 실제 심사 결과가 아닙니다.</p>}
+      <ul className="kb-capacity-lines">
+        <li><span>자기자본선</span><strong>{formatKrw(capacity.equity_line_krw)}</strong><small>차입 없이 지금 쓸 수 있는 규모</small></li>
+        <li><span>차입 여력</span><strong>{formatKrw(capacity.borrowing_headroom_krw)}</strong><small>보증·정책자금 한도에서 기존 대출 잔액을 뺀 값</small></li>
+        <li data-lead="true"><span>최대 조달선</span><strong>{formatKrw(capacity.maximum_line_krw)}</strong><small>신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다</small></li>
+      </ul>
+      {capacity.borrowing_headroom_krw === 0 && flow.profile.existing_debt_krw > 0 && <p className="kb-note"><Info aria-hidden="true" />기존 대출 잔액이 한도를 모두 소진해 추가 차입 여력이 없습니다. 최대 조달선이 자기자본선과 같습니다.</p>}
+      <div className="kb-capacity-locked">
+        <LockKeyhole aria-hidden="true" />
+        <div><strong>권장 조달선은 아직 계산하지 않았습니다</strong><p>{capacity.recommended_line_pending}</p></div>
+      </div>
+      {/* ProvenanceBar 는 한계 문구를 접어 두므로, 사용자가 반드시 봐야 하는 사실은 위처럼 펼쳐 둔다. */}
+      {capacity.provenance && <ProvenanceBar data={capacity.provenance} />}
+    </section>}
+
+    {capacity && capacity.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />{capacity.message}</p>}
+
+    <button className="kb-primary" onClick={() => flow.setStep("ask")}>조건 입력으로 <ArrowRight aria-hidden="true" /></button>
+    <button className="kb-ghost" onClick={() => flow.setStep("profile")}>금액 고치기</button>
   </div>;
 }
 
-/** 확정된 값은 출처를 붙인 칩으로 보여주고, 비어 있는 필수 항목만 묻는다.
- *  묻는 항목은 답이 후보를 바꾸는 것으로 한정하며 최대 3개를 넘지 않는다. */
+const EXAMPLES = [
+  "마포구에서 카페 준비 중이고 월세는 300 정도 생각해요",
+  "성동구에 2호점 낼 자리 찾고 있어요. 임대료 부담이 제일 걱정이에요",
+  "관악구 분식점 자리요. 처음 창업이라 안정적인 곳이면 좋겠어요"
+];
+
+function AskStep({ flow }: { flow: Jarimaegim }) {
+  const [text, setText] = useState(flow.interpretText);
+  const busy = flow.busy === "interpret";
+  const submit = () => { const value = text.trim(); if (value && !busy) void flow.interpret(value); };
+  return <div className="kb-step">
+    <ProfileBadge flow={flow} />
+    <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>어떤 업종으로 서울 어디에 자리를 잡을지, 희망 월세까지 편하게 말씀해 주세요. 말씀하신 내용을 조건으로 정리해 확인받겠습니다.</p></div>
+    <label className="kb-field kb-field-block"><span>상황 설명</span>
+      <textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} placeholder="예: 마포구에서 카페 준비 중이고 월세는 300 정도 생각해요" disabled={busy}
+        onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} />
+    </label>
+    <button className="kb-primary" onClick={submit} disabled={!text.trim() || busy}>{busy ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}조건으로 정리하기 <ArrowRight aria-hidden="true" /></button>
+    <div className="kb-examples"><span>이렇게 말씀해 보세요</span>{EXAMPLES.map((example) => <button key={example} onClick={() => setText(example)} disabled={busy}>{example}</button>)}</div>
+    <button className="kb-ghost" onClick={flow.startManual} disabled={busy}>직접 입력으로 시작 <ChevronRight aria-hidden="true" /></button>
+  </div>;
+}
+
+// 확인 화면이 한 줄씩 보여주는 조건 전부. 순서가 화면 순서다.
+const CONFIRM_ROWS: { key: ConditionKey; label: string }[] = [
+  { key: "industry", label: "업종" }, { key: "district", label: "자치구" },
+  { key: "monthly_rent_krw", label: "희망 월세" }, { key: "business_stage", label: "사업단계" },
+  { key: "startup_type", label: "창업형태" }, { key: "priority", label: "우선순위" }
+];
+
+/** 답이 후보를 바꾸는 항목만 비었을 때 묻는다. 최대 3을 넘지 않는다. */
+type AskKey = "industry" | "monthly_rent_krw";
+const ASK_FIELDS: { key: AskKey; label: string; note: string }[] = [
+  { key: "industry", label: "업종", note: "검색 질의어와 업종 파라미터를 정합니다" },
+  { key: "monthly_rent_krw", label: "희망 월세", note: "권장 조달선과 목표 매출을 정합니다" }
+];
+
+/** "이 조건이 맞나요?" — 값과 함께 무엇에서 그렇게 읽었는지를 같은 줄에 놓는다.
+ *  금융 프로필 칩은 여기 없다. 자금은 1단계에서 끝났고 상단 배지가 요약과 수정 경로를 맡는다. */
 function ConfirmStep({ flow }: { flow: Jarimaegim }) {
-  const { form, bandForm, profile, parsedKeys, setField, setBandField } = flow;
+  const { form, bandForm, proposal, edited, setField, setBandField } = flow;
   const [editing, setEditing] = useState(false);
   const filled = (key: AskKey) => key === "industry" ? Boolean(form.industry.trim()) : bandForm.monthly_rent_krw > 0;
   const blanks = ASK_FIELDS.filter((ask) => !filled(ask.key)).map((ask) => ask.key);
@@ -148,24 +205,40 @@ function ConfirmStep({ flow }: { flow: Jarimaegim }) {
   if (blanks.some((key) => !asked.includes(key))) setAsked(ASK_FIELDS.map((ask) => ask.key).filter((key) => asked.includes(key) || blanks.includes(key)));
   const asks = ASK_FIELDS.filter((ask) => asked.includes(ask.key));
   const ready = blanks.length === 0;
-  const source = (key: keyof CaseInput) => parsedKeys.has(key) ? "발화" : "직접 입력";
+
+  const shown = (key: ConditionKey): string => {
+    if (key === "monthly_rent_krw") return bandForm.monthly_rent_krw > 0 ? formatKrw(bandForm.monthly_rent_krw) : "—";
+    if (key === "industry") return form.industry.trim() || "—";
+    if (key === "district") return form.district;
+    if (key === "business_stage") return STAGE_LABELS[form.business_stage];
+    if (key === "startup_type") return TYPE_LABELS[form.startup_type];
+    return PRIORITY_LABELS[form.priority];
+  };
+  /** 출처는 네 가지다. 사용자가 고쳤으면 그것이 이기고, 아니면 제안이 어디서 왔는지를 따른다. */
+  const source = (key: ConditionKey): string => {
+    if (edited.has(key)) return "직접 입력";
+    const field = proposal?.fields[key];
+    if (!field || field.value === null) return "기본값";
+    return proposal?.source === "AI" ? "AI 추론" : "규칙 추출";
+  };
+  const evidence = (key: ConditionKey): string | null => edited.has(key) ? null : proposal?.fields[key]?.evidence ?? null;
 
   return <div className="kb-step">
     <ProfileBadge flow={flow} />
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{blanks.length > 0
-      ? <>후보를 바꾸는 항목 <strong>{blanks.length}개</strong>만 더 알려주시면 바로 찾아드릴게요.</>
-      : <>필요한 조건이 모두 확정됐습니다. 바로 후보를 찾을 수 있습니다.</>}</p></div>
+      ? <>말씀을 이렇게 읽었습니다. <strong>{blanks.length}개</strong>만 더 알려주시면 바로 찾아드릴게요.</>
+      : <><strong>이 조건이 맞나요?</strong> 맞으면 이대로 후보를 찾고, 다르면 고쳐 주세요.</>}</p></div>
 
     <section className="kb-condcard">
-      <h3><Check aria-hidden="true" />지금 확정된 조건</h3>
-      <div className="kb-chips">
-        {form.industry.trim() && <span className="kb-chip">업종 <strong>{form.industry}</strong><small>{source("industry")}</small></span>}
-        <span className="kb-chip">자치구 <strong>{form.district}</strong><small>{source("district")}</small></span>
-        <span className="kb-chip">자기자본 <strong>{formatKrw(profile.equity_krw)}</strong><small>금융 프로필</small></span>
-        <span className="kb-chip">기존부채 <strong>{formatKrw(profile.existing_debt_krw)}</strong><small>금융 프로필</small></span>
-        <span className="kb-chip">월 고정지출 <strong>{formatKrw(profile.other_monthly_fixed_krw)}</strong><small>금융 프로필</small></span>
-        {bandForm.monthly_rent_krw > 0 && <span className="kb-chip">희망 월세 <strong>{formatKrw(bandForm.monthly_rent_krw)}</strong><small>직접 입력</small></span>}
-      </div>
+      <h3><Check aria-hidden="true" />이 조건이 맞나요?</h3>
+      <ul className="kb-condrows">{CONFIRM_ROWS.map((row) => <li key={row.key}>
+        <span className="kb-condrow-label">{row.label}</span>
+        <strong className="kb-condrow-value">{shown(row.key)}</strong>
+        <small className="kb-condrow-source">{source(row.key)}</small>
+        <span className="kb-condrow-evidence">{evidence(row.key)
+          ? <><Quote aria-hidden="true" />{evidence(row.key)}</>
+          : <em>—</em>}</span>
+      </li>)}</ul>
     </section>
 
     {asks.length > 0 && <section className="kb-askbox">
@@ -182,7 +255,7 @@ function ConfirmStep({ flow }: { flow: Jarimaegim }) {
     </section>}
 
     <div className="kb-disclosure" data-open={editing}>
-      <button onClick={() => setEditing(!editing)}><span>조건 고치기</span><small>업종 · 자치구 · 사업단계 · 창업형태 · 우선순위 <ChevronRight aria-hidden="true" /></small></button>
+      <button onClick={() => setEditing(!editing)}><span>아니요, 고칠게요</span><small>업종 · 자치구 · 사업단계 · 창업형태 · 우선순위 <ChevronRight aria-hidden="true" /></small></button>
       {editing && <div className="kb-disclosure-body">
         <label className="kb-field"><span>업종</span><input value={form.industry} onChange={(event) => setField("industry", event.target.value)} placeholder="예: 카페" /></label>
         <label className="kb-field"><span>자치구</span><select value={form.district} onChange={(event) => setField("district", event.target.value)}>{SEOUL_DISTRICTS.map((district) => <option key={district} value={district}>{district}</option>)}</select></label>
@@ -192,7 +265,8 @@ function ConfirmStep({ flow }: { flow: Jarimaegim }) {
       </div>}
     </div>
 
-    <button className="kb-primary" onClick={flow.start} disabled={!ready || flow.busy === "case"}>{flow.busy === "case" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}이 조건으로 입지 찾기</button>
+    <button className="kb-primary" onClick={flow.start} disabled={!ready || flow.busy === "case"}>{flow.busy === "case" ? <LoaderCircle className="kb-spin" aria-hidden="true" /> : null}네, 맞아요 · 이 조건으로 입지 찾기</button>
+    <button className="kb-ghost" onClick={() => flow.setStep("ask")}><RotateCcw aria-hidden="true" /> 다시 말할게요</button>
     <p className="kb-note"><Check aria-hidden="true" />여기가 마지막 입력 화면입니다. 다음은 곧바로 후보 목록이고, 조달 금액 결정은 후보를 본 뒤에 합니다.</p>
   </div>;
 }

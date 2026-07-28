@@ -64,12 +64,11 @@ def test_rejects_a_case_owned_by_another_session(client):
 
 
 def test_returns_integration_pending_while_parameters_are_unregistered(client, case_id, monkeypatch):
-    """미등록 파라미터가 남아 있으면 추정하지 않고 누락 목록을 돌려준다.
+    """제도 파라미터가 비면 추정하지 않고 누락 목록을 돌려준다.
 
-    지켜야 하는 규칙은 "누락이 있으면 계산하지 않고 무엇이 빈지 알려준다"이지
-    "지금 파라미터가 비어 있다"가 아니다. 그래서 등록 상태에 기대지 않고 빈 파라미터를
-    직접 주입해 규칙만 확인한다 — 실제 config 가 채워져도 이 규칙은 살아 있어야 한다.
-    """
+    지켜야 하는 규칙은 "누락이 있으면 계산하지 않고 무엇이 빈지 알려준다"이지 "지금 파라미터가
+    비어 있다"가 아니다. 그래서 등록 상태에 기대지 않고 빈 파라미터를 직접 주입해 규칙만
+    확인한다 — 실제 config 가 채워져도 이 규칙은 살아 있어야 한다."""
     import app.main as main
     from app.policy_params import PolicyParams
 
@@ -80,7 +79,20 @@ def test_returns_integration_pending_while_parameters_are_unregistered(client, c
     assert payload["status"] == "integration_pending"
     assert payload["bands"] == []
     assert payload["break_even"] is None
-    assert len(payload["missing_params"]) > 0
+    assert payload["missing_params"]
+    assert payload["message"]
+
+
+def test_returns_integration_pending_for_an_unregistered_industry(client, case_id):
+    """업종 프로파일이 없으면 비슷한 업종으로 대신 계산하지 않는다. 누락은 업종 단위로도 성립한다."""
+    response = client.post("/api/v1/funding-bands",
+                           json={"case_id": case_id, **{**BODY, "industry": "우주정거장"}})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "integration_pending"
+    assert payload["bands"] == []
+    assert payload["break_even"] is None
+    assert "industries.우주정거장" in payload["missing_params"]
     assert payload["message"]
 
 
@@ -104,6 +116,13 @@ def test_computes_three_bands_when_params_are_registered(client, case_id, filled
     assert [band["band"] for band in payload["bands"]] == ["EQUITY_ONLY", "RECOMMENDED", "MAXIMUM"]
     assert payload["break_even"]["target_daily_revenue_krw"] > 0
     assert payload["provenance"]["confidence"] == "LOW"
+
+
+def test_bands_report_the_parameter_grade(client, case_id, filled_params):
+    """검증된 파라미터로 계산하면 시연용 표시가 붙지 않는다."""
+    payload = client.post("/api/v1/funding-bands", json={"case_id": case_id, **BODY}).json()
+    assert payload["parameter_status"] == "VERIFIED"
+    assert payload["unverified_params"] == []
 
 
 def test_changing_equity_changes_the_bands(client, case_id, filled_params):

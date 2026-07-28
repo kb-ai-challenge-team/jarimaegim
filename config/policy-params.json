@@ -500,6 +500,28 @@
       "source": "시연용 가정값 — 실측 통계 아님. 업종별 원가·인건비 구조를 시연용으로 정한 값이다.",
       "label": "시연용 가정 — 업종 원가 구조",
       "as_of": "2026-07-28"
+    },
+    "무인점포": {
+      "display_name": "무인점포",
+      "cogs_ratio": 0.65,
+      "labor_ratio": 0.05,
+      "fitout_krw_per_pyeong": 1900000,
+      "operating_days_per_month": 30,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 서울시 상권분석서비스의 서비스업종 코드로 잡히지 않는 상위 분류라 이름 키로 등록한다. 조건 추출이 이 이름을 낼 수 있으므로 값이 없으면 추출은 되는데 밴드가 막힌다.",
+      "as_of": "2026-07-28",
+      "label": "시연용 가정 — 업종 원가 구조"
+    },
+    "일반음식점": {
+      "display_name": "일반음식점",
+      "cogs_ratio": 0.4,
+      "labor_ratio": 0.25,
+      "fitout_krw_per_pyeong": 2400000,
+      "operating_days_per_month": 26,
+      "basis": "DEMO_ASSUMPTION",
+      "source": "시연용 가정값 — 실측 통계 아님. 서울시 상권분석서비스의 서비스업종 코드로 잡히지 않는 상위 분류라 이름 키로 등록한다. 조건 추출이 이 이름을 낼 수 있으므로 값이 없으면 추출은 되는데 밴드가 막힌다.",
+      "as_of": "2026-07-28",
+      "label": "시연용 가정 — 업종 원가 구조"
     }
   }
 }

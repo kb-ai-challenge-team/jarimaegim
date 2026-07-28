@@ -207,6 +207,7 @@ export function PlanPrescription({ caseData, committed, programs, state, applica
     <section className="kb-prescription-block">
       <h3><span className="kb-prescription-no" aria-hidden="true">2</span>자금조달 레포트</h3>
       {/* 밴드 표는 입지 화면 배너에서 이미 봤다. 여기서 반복하지 않고 확정값만 요약한다. */}
+      {bands?.parameter_status === "DEMO" && <p className="kb-capacity-demo"><span className="demo-badge">시연용</span>미검증 시연용 제도 파라미터로 계산한 값입니다. 실제 심사 결과가 아닙니다.</p>}
       {recommended && bands?.break_even
         ? <dl className="kb-summary">
             <div><dt>권장 조달선</dt><dd>{formatKrw(recommended.ceiling_krw)}</dd></div>

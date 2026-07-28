@@ -65,6 +65,8 @@ export function KbShell() {
       {aiActive && <JarimaegimPanel flow={flow} onClose={() => setPanelOpen(false)} />}
       {view === "policy" && <KbPolicyPanel flow={flow} />}
       {view === "product" && <KbProductPanel flow={flow} />}
+      {/* 자기자본은 form 이 아니라 금융 프로필이 소유한다. runInputs 가 start() 와 같은 출처에서
+          읽어 둔 값이므로, 칩에 그것을 그대로 넘겨야 화면과 케이스가 어긋나지 않는다. */}
       {aiActive && flow.traceOpen && <AgentRunOverlay trace={flow.trace} inputs={flow.runInputs} onRetry={flow.retrySearch} onDismiss={flow.dismissTrace}
         onEditConditions={() => { flow.dismissTrace(); flow.setStep("confirm"); }} />}
     </div>}

@@ -109,16 +109,19 @@ const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
 });
 const bandsBody = await bandsResponse.json();
 // 지켜야 하는 규칙은 "파라미터가 비면 추정하지 않는다"이지 "지금 파라미터가 비어 있다"가
-// 아니다. 제도 파라미터를 등록하면 밴드가 나오는 것이 정상이고, 그때는 대신 그 값이 어떤
-// 근거 위에 서 있는지를 반드시 밝혀야 한다. 두 경로 모두를 안전 상태로 인정한다.
-const bandsPending = bandsBody.status === "integration_pending"
-  && bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0;
-const bandsDisclosed = ["computed", "partial"].includes(bandsBody.status)
-  && bandsBody.bands.length > 0
-  && (bandsBody.provenance?.limitations ?? []).some((line) => line.includes("시연용 가정값"))
-  && bandsBody.provenance?.confidence === "INSUFFICIENT";
-const bands = { pendingSafeState: bandsPending || bandsDisclosed, status: bandsBody.status,
-                disclosesAssumedBasis: bandsDisclosed };
+// 아니다. 등록되면 계산하는 것이 정상이고, 그때는 그 값이 어떤 근거 위에 서 있는지를 반드시
+// 밝혀야 한다 — 값을 숨기는 대신 값의 성격을 밝히는 것이 부록 A 불변조건 1을 지키는 방식이다.
+const bandsDisclosed = bandsBody.bands.length === 3
+  && (bandsBody.parameter_status === "DEMO") === (bandsBody.unverified_params.length > 0)
+  && (bandsBody.parameter_status !== "DEMO"
+      || (bandsBody.provenance.limitations.some(item => item.includes("시연용"))
+          && bandsBody.provenance.confidence === "INSUFFICIENT"));
+const bands = {
+  safeState: bandsBody.status === "integration_pending"
+    ? bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0
+    : bandsDisclosed,
+  status: bandsBody.status, disclosesAssumedBasis: bandsDisclosed
+};
 
 const statusBody = await (await page.request.get(`${base}/api/v1/status`)).json();
 const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis => axis.enabled || Boolean(axis.disabled_reason)) };
@@ -169,13 +172,12 @@ const copilot = {
   streamEndpointUsed: Boolean(streamResponse) && streamResponse.ok() && /event-stream/.test(streamResponse.headers()["content-type"] || "")
 };
 
-// KB 셸의 새 흐름 — 금융 프로필(스텝 0) → 조건 → 입지. 세션을 섞지 않도록 새 컨텍스트에서 돈다.
+// KB 셸의 새 흐름 — ① 자금(프로필 → 여력) → ② 조건(발화 → 확인) → ③ 입지. 세션을 섞지 않도록 새 컨텍스트에서 돈다.
 const kbContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const kb = await kbContext.newPage();
 kb.on("pageerror", error => errors.push(`kb-page:${error.message}`));
 await kb.goto(`${base}/kb`, { waitUntil: "networkidle" });
 
-const gateVisible = await kb.locator(".kb-gate-rail").isVisible();
 // 마이데이터는 게이트 off 가 기본이다. 잠긴 사실을 숨기지 않고 수동 입력이 같은 항목을 채워야 한다.
 const mydataGate = {
   buttonDisabled: await kb.getByRole("button", { name: "마이데이터 연결하고 자동 입력" }).isDisabled(),
@@ -183,34 +185,59 @@ const mydataGate = {
   manualAdapter: await kb.locator(".kb-profile-form input").count() === 3
 };
 
-await kb.locator(".kb-profile-form input").nth(0).fill("100000000");
-await kb.getByRole("button", { name: /확정하고 조건 입력으로/ }).click();
-await kb.locator(".kb-field-block textarea").fill("강남구에서 카페를 준비 중이에요");
-await kb.getByRole("button", { name: /조건으로 정리하기/ }).click();
-await kb.waitForSelector(".kb-condcard");
+await kb.locator(".kb-profile-form input").nth(0).fill("50000000");
+await kb.getByRole("button", { name: /확정하고 조달 여력 보기/ }).click();
+await kb.waitForSelector(".kb-capacity, .kb-step > .kb-note, .kb-empty", { timeout: 20000 });
 
-// 자기자본은 프로필이 이미 들고 있으므로 조건 화면이 다시 묻지 않는다. 남는 질문은 희망 월세 하나다.
-const chips = await kb.locator(".kb-chip").allTextContents();
-const conditionStep = {
-  askCount: await kb.locator(".kb-askbox .kb-field").count(),
-  equityCarried: chips.some(chip => chip.includes("자기자본") && chip.includes("금융 프로필")),
-  // "준비 중이에요"의 "중"이 중구로 새지 않아야 한다.
-  districtParsed: chips.some(chip => chip.includes("자치구") && chip.includes("강남구"))
+// ① 자금은 여력을 돌려주고 끝난다. 값을 냈다면 시연용 파라미터임을 반드시 밝혀야 한다.
+const capacityShown = await kb.locator(".kb-capacity").count() > 0;
+const capacityStep = {
+  // 계산했거나, 못 했으면 왜 못 했는지를 말했거나 — 둘 중 하나여야 한다.
+  resolved: capacityShown || await kb.locator(".kb-step > .kb-note").count() > 0,
+  demoLabelled: !capacityShown || await kb.locator(".kb-capacity .demo-badge").count() > 0,
+  // 권장 조달선을 여기서 지어내지 않고 잠금 사유를 밝혀야 한다.
+  recommendedDeferred: !capacityShown || await kb.locator(".kb-capacity-locked").count() > 0,
+  // 자금 화면에 조건 입력이 섞이면 단계 분리가 무너진 것이다.
+  noConditionInputs: await kb.locator(".kb-condcard, .kb-askbox").count() === 0
 };
 
-await kb.locator(".kb-askbox input").first().fill("2500000");
-await kb.getByRole("button", { name: "이 조건으로 입지 찾기" }).click();
-await kb.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 30000 });
+await kb.getByRole("button", { name: /^조건 입력으로/ }).click();
+await kb.locator(".kb-field-block textarea").fill("강남구에서 카페를 준비 중이고 월세는 250 정도 생각해요");
+await kb.getByRole("button", { name: /조건으로 정리하기/ }).click();
+await kb.waitForSelector(".kb-condrows", { timeout: 20000 });
+
+// ② 조건은 발화를 읽어 되돌려주고 확인을 받는다. 금융 입력은 이 화면에 없어야 한다.
+const rows = await kb.locator(".kb-condrows li").allTextContents();
+const conditionStep = {
+  rowCount: rows.length,
+  // "준비 중이에요"의 "중"이 중구로 새지 않아야 한다.
+  districtParsed: rows.some(row => row.includes("자치구") && row.includes("강남구")),
+  rentParsed: rows.some(row => row.includes("희망 월세") && row.includes("250")),
+  // 키가 없는 환경에서는 규칙 추출로 내려가되 출처를 숨기지 않아야 한다.
+  sourceLabelled: rows.some(row => row.includes("AI 추론") || row.includes("규칙 추출")),
+  // 추출한 값에는 사용자 발화 인용이 붙어야 한다.
+  evidenceShown: await kb.locator(".kb-condrow-evidence svg").count() > 0,
+  // 단계 분리 회귀 방지 — 자금 항목이 조건 화면의 입력으로 돌아오면 안 된다.
+  noProfileChips: !rows.some(row => row.includes("자기자본") || row.includes("기존부채") || row.includes("월 고정지출"))
+};
+
+const askCount = await kb.locator(".kb-askbox .kb-field").count();
+if (askCount > 0) await kb.locator(".kb-askbox input").first().fill("2500000");
+await kb.getByRole("button", { name: /네, 맞아요/ }).click();
+await kb.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 40000 });
 
 const stepperLabels = await kb.locator(".kb-stepper li").allTextContents();
 const bandBannerShown = await kb.locator(".kb-band-banner").count() > 0;
 const kbFlow = {
-  gateVisible,
   stepCount: stepperLabels.length,
-  // 자금·근거가 별도 스텝으로 남아 있으면 재설계가 되돌아간 것이다.
-  stepsAreThree: stepperLabels.length === 3 && !stepperLabels.some(label => label.includes("자금") || label.includes("근거")),
+  // 자금이 별도 단계로 서 있어야 하고, 근거는 여전히 단계가 아니어야 한다.
+  stepsAreFour: stepperLabels.length === 4
+    && stepperLabels.some(label => label.includes("자금"))
+    && !stepperLabels.some(label => label.includes("근거")),
   candidates: await kb.locator(".kb-candidates li").count(),
   tuningInPlace: await kb.getByRole("button", { name: /정밀하게 맞추기/ }).count() > 0,
+  // 밴드를 냈다면 시연용 파라미터로 계산했다는 사실이 접힌 곳이 아니라 배너에 보여야 한다.
+  bandDemoLabelled: !bandBannerShown || await kb.locator(".kb-band-banner .demo-badge").count() > 0,
   // 제도 파라미터가 미등록이면 밴드를 지어내지 않고 사유를 밝혀야 한다.
   // 진행 오버레이에도 같은 문구가 남으므로 패널 본문 쪽 고지만 센다.
   bandSafeState: bandBannerShown || await kb.locator(".kb-step > .kb-note", { hasText: "파라미터가 아직 등록되지" }).count() > 0
@@ -225,10 +252,11 @@ if (kbFlow.candidates > 0) {
   kbFlow.evidenceInline = true;
 }
 
-const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, mydataGate, conditionStep, errors };
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, mydataGate, capacityStep, conditionStep, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
-if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.pendingSafeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
-if (!kbFlow.gateVisible || !kbFlow.stepsAreThree || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.evidenceInline) process.exitCode = 1;
+if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.safeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
+if (!kbFlow.stepsAreFour || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.bandDemoLabelled || !kbFlow.evidenceInline) process.exitCode = 1;
 if (!mydataGate.buttonDisabled || !mydataGate.lockExplained || !mydataGate.manualAdapter) process.exitCode = 1;
-if (conditionStep.askCount !== 1 || !conditionStep.equityCarried || !conditionStep.districtParsed) process.exitCode = 1;
+if (!capacityStep.resolved || !capacityStep.demoLabelled || !capacityStep.recommendedDeferred || !capacityStep.noConditionInputs) process.exitCode = 1;
+if (conditionStep.rowCount !== 6 || !conditionStep.districtParsed || !conditionStep.rentParsed || !conditionStep.sourceLabelled || !conditionStep.evidenceShown || !conditionStep.noProfileChips) process.exitCode = 1;

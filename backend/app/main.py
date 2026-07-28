@@ -24,15 +24,20 @@ from .agents.timing import TimingTeam
 from .agents.trade_area_adapter import TradeAreaProfiles
 from .chat_stream import ChatStreamer, StreamLimits
 from .chat_tools import ChatToolset, PlaceRegistry
+from .condition_interpret import sanitize as sanitize_conditions
+from .condition_parse import parse_conditions
 from .config import get_settings
+from .districts import SEOUL_DISTRICTS
 from .document_store import DocumentStore, render_case_pdf
-from .funding import compute_bands
+from .funding import CAPACITY_ENTRIES, compute_bands, compute_capacity
 from .knowledge import EMPTY_PRODUCTS, EMPTY_PROGRAMS, KnowledgeReader
 from .listings import ListingService
 from .mcp_client import MCPClient, MCPUnavailable
-from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord, ConditionInterpret, CostPlanCreate,
-                     DocumentCreate, FundingBandInput, FundingBandResult, LocationSearch, MessageCreate,
-                     PrescribeRequest, PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
+from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch, CaseRecord,
+                     ConditionInterpretRequest, ConditionInterpretResult, CostPlanCreate,
+                     DocumentCreate, FundingBandInput, FundingBandResult, FundingCapacityInput,
+                     FundingCapacityResult, LocationSearch, MessageCreate, PrescribeRequest,
+                     PrivacyRequestCreate, Provenance, RetrievalResponse, SessionCreate)
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .retrieval import RetrievalService
@@ -57,8 +62,6 @@ policy_params = PolicyParams.load(settings.policy_params_path)
 
 app = FastAPI(title="자리매김 API", version="1.0.0", docs_url="/api/v1/docs" if settings.app_env != "production" else None, redoc_url=None, openapi_url="/api/v1/openapi.json" if settings.app_env != "production" else None)
 app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Idempotency-Key", "If-Match", "Last-Event-ID"])
-
-SEOUL_DISTRICTS = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"}
 
 
 #: SSE 응답이 중간 계층에서 모이지 않게 하는 헤더 묶음.
@@ -362,6 +365,8 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
     return FundingBandResult(status="partial" if partial else "computed",
                              required_capital_krw=computed["required_capital_krw"],
                              required_capital_band=computed["required_capital_band"],
+                             parameter_status="DEMO" if assumed else "VERIFIED",
+                             unverified_params=assumed,
                              missing_params=missing_capital if partial else [],
                              message=f"{' · '.join(missing_capital)}을 입력하면 현금소진까지 계산합니다." if partial else None,
                              bands=[BandLine(**band) for band in computed["bands"]],
@@ -420,22 +425,6 @@ async def list_agents():
     return agent_roster()
 
 
-@app.post("/api/v1/conditions/interpret")
-async def interpret_conditions(payload: ConditionInterpret, session_id: UUID = Depends(current_session)):
-    """발화를 조건으로 읽는다 — condition.location 의 추출 경로를 케이스 생성 전에 한 번 쓴다.
-
-    모델은 발화의 어느 조각이 어느 항목인지 가리키기만 하고, 그 조각이 발화에 그대로 있는지
-    확인한 뒤 금액·평수는 코드가 읽는다. 그래서 이 응답에 들어오는 수치는 사용자가 실제로 말한
-    것이며, 모델이 지어낸 값이 조건 카드에 채워질 수 있는 경로가 없다.
-
-    호출 상한이 1인 것은 이 요청이 추출 한 번이기 때문이다. 키가 없으면 빈 패치를 돌려주고
-    화면은 정규식이 채운 값을 그대로 쓴다 — 실패가 아니라 설계된 축소 경로다."""
-    layer = ConditionLayer(llm=AgentLLM(ai.responder(settings.agent_model),
-                                        budget=RunBudget(max_calls=1)))
-    patch, decision = await layer.interpret({**payload.known, "utterance": payload.utterance})
-    return {"patch": patch, "decision": decision.as_data()}
-
-
 @app.post("/api/v1/cases/{case_id}/prescribe")
 async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID = Depends(current_session)):
     """메인 에이전트 1회 실행. 팀·에이전트 단위 진행을 SSE 로 중계한다."""
@@ -486,6 +475,53 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
                              "message": "분석을 완료하지 못했습니다.", "retryable": True}})
 
     return StreamingResponse(frames(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+RECOMMENDED_LINE_PENDING = ("권장 조달선은 업종과 희망 월세를 받은 뒤 스트레스 테스트로 계산합니다. "
+                            "지금은 추정하지 않습니다.")
+
+
+@app.post("/api/v1/funding-capacity", response_model=FundingCapacityResult)
+async def create_funding_capacity(payload: FundingCapacityInput, session_id: UUID = Depends(current_session)):
+    """1단계의 완결점. 케이스 이전에 돌며 금융 프로필만으로 나오는 세 줄을 돌려준다."""
+    missing = policy_params.missing_of(CAPACITY_ENTRIES)
+    if missing:
+        return FundingCapacityResult(
+            status="integration_pending", missing_params=missing,
+            recommended_line_pending=RECOMMENDED_LINE_PENDING,
+            message="조달 한도 파라미터가 아직 등록되지 않았습니다. 등록 전에는 추정하지 않습니다.")
+    computed = compute_capacity(policy_params, equity_krw=payload.equity_krw,
+                                existing_debt_krw=payload.existing_debt_krw)
+    unverified = policy_params.assumed_of(CAPACITY_ENTRIES)
+    limitations = ["최대 조달선은 신용평가·보증 심사 전 추정치이며 확정 한도가 아닙니다",
+                   "권장 조달선은 업종 파라미터와 희망 월세가 있어야 계산됩니다"]
+    if unverified:
+        limitations.insert(0, f"미검증 시연용 파라미터로 계산했습니다: {' · '.join(unverified)}")
+    if computed["borrowing_headroom_krw"] == 0 and payload.existing_debt_krw > 0:
+        limitations.append("기존 대출 잔액이 한도를 모두 소진해 추가 차입 여력이 없습니다")
+    provenance = Provenance(source_name="자리매김 조달 여력 계산", industry_scope="업종 무관",
+                            spatial_unit="사용자 입력 금융 프로필", source_as_of=policy_params.updated_at,
+                            confidence="LOW", limitations=limitations)
+    return FundingCapacityResult(status="computed", **computed,
+                                 parameter_status="DEMO" if unverified else "VERIFIED",
+                                 unverified_params=unverified,
+                                 recommended_line_pending=RECOMMENDED_LINE_PENDING,
+                                 provenance=provenance)
+
+
+@app.post("/api/v1/conditions/interpret", response_model=ConditionInterpretResult)
+async def interpret_conditions(payload: ConditionInterpretRequest,
+                               session_id: UUID = Depends(current_session)):
+    """발화를 조건 제안으로 바꾼다. 케이스를 만들지 않으며, 확인 화면의 승인이 있어야 조건이 된다.
+
+    AI 경로와 규칙 경로가 같은 sanitize 게이트를 지난다. AI 가 없거나 실패하면 규칙 경로로
+    내려가며, 두 경로 모두 evidence 가 사용자 원문의 부분문자열임을 검증받는다."""
+    proposed = await ai.interpret_conditions(payload.text)
+    source = "AI" if proposed is not None else "RULE"
+    if proposed is None:
+        proposed = parse_conditions(payload.text)
+    result = sanitize_conditions(payload.text, proposed)
+    return ConditionInterpretResult(source=source, **result)
 
 
 @app.get("/api/v1/programs")
