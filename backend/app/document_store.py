@@ -126,7 +126,11 @@ def listing_section_lines(case: dict[str, Any]) -> list[str]:
     return ["선택한 자리 (시연용 생성 데이터)", f"매물 ID: {listing_id}", LISTING_DEMO_NOTICE]
 
 
-def render_case_pdf(case: dict[str, Any], document: dict[str, Any]) -> bytes:
+def render_case_pdf(case: dict[str, Any], document: dict[str, Any], *,
+                    funding: dict[str, Any] | None = None,
+                    products: list[dict[str, Any]] | None = None,
+                    programs: list[dict[str, Any]] | None = None,
+                    dropped: int = 0) -> bytes:
     from io import BytesIO
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -154,6 +158,14 @@ def render_case_pdf(case: dict[str, Any], document: dict[str, Any]) -> bytes:
     lines = listing_section_lines(case)
     if lines:
         heading, *body = lines
+        story.append(Spacer(1, 16))
+        story.append(Paragraph(heading, styles["Heading2"]))
+        story.extend(Paragraph(line, styles["BodyText"]) for line in body)
+    # 조달 요약과 고른 수단은 언제나 제목 + 최소 한 줄을 돌려주므로 빈 검사가 필요 없다.
+    # 계산하지 못했다는 사실도 문서에 남아야 하기 때문에 그렇게 설계했다.
+    for section in (funding_section_lines(funding),
+                    selection_section_lines(products or [], programs or [], dropped)):
+        heading, *body = section
         story.append(Spacer(1, 16))
         story.append(Paragraph(heading, styles["Heading2"]))
         story.extend(Paragraph(line, styles["BodyText"]) for line in body)

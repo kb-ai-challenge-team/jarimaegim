@@ -1,4 +1,4 @@
-from app.document_store import FUNDING_OMITTED, funding_section_lines, selection_section_lines
+from app.document_store import FUNDING_OMITTED, funding_section_lines, render_case_pdf, selection_section_lines
 
 RECOMMENDED = {"band": "RECOMMENDED", "ceiling_krw": 120_000_000, "loan_krw": 40_000_000,
                "monthly_repayment_krw": 780_000, "target_daily_revenue_krw": 620_000}
@@ -112,3 +112,18 @@ def test_everything_dropped_still_produces_the_section():
     lines = selection_section_lines([], [], 3)
     assert lines[0] == "고른 조달 수단"
     assert any("3건" in line for line in lines)
+
+
+CASE = {"id": "22222222-2222-2222-2222-222222222222", "title": "강남구 카페", "version": 2,
+        "inputs": {"industry": "카페", "district": "강남구", "committed_listing_id": "demo-강남구-0001"}}
+DESCRIPTOR = {"document_id": "d-1", "template": "funding"}
+
+
+def test_the_pdf_still_renders_with_only_two_arguments():
+    assert render_case_pdf(CASE, DESCRIPTOR).startswith(b"%PDF")
+
+
+def test_the_pdf_renders_with_funding_and_a_selection():
+    payload = render_case_pdf(CASE, DESCRIPTOR, funding=computed(),
+                              products=[PRODUCT], programs=[PROGRAM], dropped=1)
+    assert payload.startswith(b"%PDF")
