@@ -108,7 +108,17 @@ const bandsResponse = await page.request.post(`${base}/api/v1/funding-bands`, {
           existing_debt_krw: 0, other_monthly_fixed_krw: 1000000 }
 });
 const bandsBody = await bandsResponse.json();
-const bands = { pendingSafeState: bandsBody.status === "integration_pending" && bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0 };
+// 지켜야 하는 규칙은 "파라미터가 비면 추정하지 않는다"이지 "지금 파라미터가 비어 있다"가
+// 아니다. 제도 파라미터를 등록하면 밴드가 나오는 것이 정상이고, 그때는 대신 그 값이 어떤
+// 근거 위에 서 있는지를 반드시 밝혀야 한다. 두 경로 모두를 안전 상태로 인정한다.
+const bandsPending = bandsBody.status === "integration_pending"
+  && bandsBody.bands.length === 0 && bandsBody.missing_params.length > 0;
+const bandsDisclosed = ["computed", "partial"].includes(bandsBody.status)
+  && bandsBody.bands.length > 0
+  && (bandsBody.provenance?.limitations ?? []).some((line) => line.includes("시연용 가정값"))
+  && bandsBody.provenance?.confidence === "INSUFFICIENT";
+const bands = { pendingSafeState: bandsPending || bandsDisclosed, status: bandsBody.status,
+                disclosesAssumedBasis: bandsDisclosed };
 
 const statusBody = await (await page.request.get(`${base}/api/v1/status`)).json();
 const axes = { disabledCarryReason: Object.values(statusBody.axes).every(axis => axis.enabled || Boolean(axis.disabled_reason)) };

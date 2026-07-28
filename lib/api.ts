@@ -208,6 +208,9 @@ export function applyPrescribeFrame(frame: SseEvent, handlers: PrescribeStreamHa
   if (frame.event === "agent_end") {
     const agent: AgentProgress = { team: asString(frame.data.team), key: asString(frame.data.key), name: asString(frame.data.name), status: asString(frame.data.status, "unknown") };
     if (typeof frame.data.message === "string") agent.message = frame.data.message;
+    // 에이전트가 낸 값을 그대로 실어 보낸다. 화면은 여기 담긴 수치를 인용만 하고 다시 계산하지
+    // 않는다 — 조달 밴드 줄이 "완료" 대신 자기가 낸 상한과 목표 일매출을 적을 수 있게 하는 통로다.
+    if (frame.data.data && typeof frame.data.data === "object") agent.data = frame.data.data as Record<string, unknown>;
     handlers.onAgentEnd(agent);
     return false;
   }

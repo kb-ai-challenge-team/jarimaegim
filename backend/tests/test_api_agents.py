@@ -67,6 +67,18 @@ def filled_params(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "policy_params", PolicyParams.load(path))
 
 
+@pytest.fixture
+def empty_params(monkeypatch):
+    """제도 파라미터가 하나도 등록되지 않은 상태.
+
+    저장소에는 이제 값이 등록되어 있으므로(config/policy-params.json), 미등록 동작을 시험하려면
+    비어 있는 상태를 명시적으로 만들어야 한다. 등록 여부에 따라 결과가 달라지는 것이 이 제품의
+    설계이므로 두 상태 모두 고정한다."""
+    import app.main as main
+    from app.policy_params import PolicyParams
+    monkeypatch.setattr(main, "policy_params", PolicyParams({}))
+
+
 def frames(response) -> list[dict]:
     out = []
     for block in response.text.split("\n\n"):
@@ -147,12 +159,22 @@ def test_the_done_frame_carries_activation_and_the_summary(client, case_id, fill
     assert done["summary"]["recommended_ceiling_krw"] > 0
 
 
-def test_unregistered_parameters_halt_the_run_at_the_finance_team(client, case_id):
-    # 저장소의 실제 상태 — 파라미터 4개가 비어 있으므로 밴드를 그릴 수 없다.
+def test_unregistered_parameters_halt_the_run_at_the_finance_team(client, case_id, empty_params):
+    # 기준선을 그리지 못하면 후속 전체가 멈춘다 — 조달 상한을 모르는 채로 후보를 판정할 수 없다.
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
     done = frames(response)[-1]["data"]
     assert done["halted_at"] == "finance"
     assert done["summary"] == {}
+
+
+def test_the_registered_parameters_in_this_repository_let_the_run_reach_every_team(client, case_id):
+    # 저장소의 실제 상태 — 제도·업종 파라미터가 등록되어 있으므로 실행이 끝까지 간다.
+    # 픽스처 없이 도는 유일한 처방 테스트이고, 등록값이 다시 비면 여기서 먼저 깨진다.
+    response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
+    done = frames(response)[-1]["data"]
+    assert done["halted_at"] is None
+    assert done["summary"]["recommended_ceiling_krw"] > 0
+    assert len([frame for frame in frames(response) if frame["event"] == "agent_end"]) == 12
 
 
 def test_the_chat_cannot_reach_this_endpoint_with_a_case_patch(client, case_id, filled_params):

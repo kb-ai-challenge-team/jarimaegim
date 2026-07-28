@@ -85,3 +85,21 @@ test("an unknown event name is a forward-compatible no-op, not a crash", () => {
   assert.equal(applyPrescribeFrame({ event: "something_new", data: {} }, handlers), false);
   assert.deepEqual(handlers.calls, { runStart: [], teamStart: [], agentEnd: [], done: [] });
 });
+
+test("agent_end forwards the agent's own numbers so a settled row can quote them", () => {
+  // 조달 밴드 줄은 "완료"만 적기에는 아까운 줄이다 — 백엔드가 이미 낸 수치를 그대로 인용한다.
+  // 인용이 성립하려면 그 수치가 이벤트에 실려 와야 하고, 화면이 다시 계산해서는 안 된다.
+  const handlers = recorder();
+  applyPrescribeFrame({ event: "agent_end", data: {
+    team: "finance", key: "finance.band", name: "조달 밴드 산출", status: "ok",
+    data: { bands: [{ band: "RECOMMENDED", ceiling_krw: 145000000, target_daily_revenue_krw: 320000 }] },
+  } }, handlers);
+  const recommended = handlers.calls.agentEnd[0].data.bands.find((line) => line.band === "RECOMMENDED");
+  assert.equal(recommended.ceiling_krw, 145000000);
+});
+
+test("an agent_end without data leaves the field absent rather than inventing an empty shape", () => {
+  const handlers = recorder();
+  applyPrescribeFrame({ event: "agent_end", data: { key: "timing.policy", status: "integration_pending" } }, handlers);
+  assert.equal(handlers.calls.agentEnd[0].data, undefined);
+});

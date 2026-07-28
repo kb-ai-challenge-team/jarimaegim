@@ -39,6 +39,10 @@ export interface Provenance {
   limitations: string[];
 }
 
+/** 면적·월세는 서울교통공사 실측 분포에서, 나머지는 전부 가정값이다.
+ *  가정값은 매물 카드와 필요자금 계산에만 쓰이며 근거등급을 올리지 않는다 —
+ *  등급 B는 서울시 상권분석서비스의 실측 집계에서만 나온다.
+ *  backend/app/models.py 의 ListingTerms 와 필드 단위로 일치해야 한다. */
 export interface ListingTerms {
   listing_kind: "DEMO_SYNTHETIC";
   deposit_krw: number;
@@ -46,6 +50,17 @@ export interface ListingTerms {
   maintenance_fee_krw?: number | null;
   area_m2: number;
   floor: number;
+  // ── 아래부터 가정값. 전부 선택이며, 없으면 화면에서 해당 항목만 빠진다 ──
+  key_money_krw?: number | null;
+  exclusive_area_m2?: number | null;
+  built_year?: number | null;
+  parking_slots?: number | null;
+  corner?: boolean | null;
+  elevator?: boolean | null;
+  floors_total?: number | null;
+  frontage_m?: number | null;
+  /** ISO date (YYYY-MM-DD) */
+  available_from?: string | null;
 }
 
 /** One landing-map pin per covered district, shown before any condition is entered. */
@@ -57,6 +72,30 @@ export interface DistrictSummary {
   longitude: number;
 }
 
+/** 상권 판정 축. backend/app/ranking.py 의 PRIORITY_WEIGHTS 키와 같아야 한다. */
+export type TradeAreaAxis = "demand" | "competition" | "turnover" | "sales" | "cost";
+
+/** 후보가 왜 이 순위인지. score 는 정렬 규칙의 산출물이며 확률도 매출 예측도 아니다. */
+export type TradeAreaFit =
+  | {
+      status: "judged";
+      score: number;
+      judged_axes: TradeAreaAxis[];
+      unjudged_axes: TradeAreaAxis[];
+      store_count?: number | null;
+      trade_area_count?: number | null;
+      reason?: string | null;
+    }
+  | {
+      status: "unavailable";
+      score: null;
+      judged_axes: [];
+      unjudged_axes: TradeAreaAxis[];
+      store_count?: number | null;
+      trade_area_count?: number | null;
+      reason: string;
+    };
+
 export interface Candidate {
   id: string;
   name: string;
@@ -65,15 +104,18 @@ export interface Candidate {
   latitude: number;
   longitude: number;
   distance_m?: number;
+  admin_dong?: string | null;
+  admin_dong_code?: string | null;
   evidence_grade: EvidenceGrade;
   display_label: string;
   context_signals: ContextSignal[];
   provenance: Provenance;
   listing?: ListingTerms | null;
+  trade_area_fit?: TradeAreaFit | null;
 }
 
 export interface ContextSignal {
-  name: "demand" | "competition" | "cost" | "access" | "continuity" | string;
+  name: TradeAreaAxis | "access" | "continuity" | string;
   label: string;
   score_band: "FAVORABLE" | "NEUTRAL" | "CAUTION" | "UNKNOWN";
   direction: "POSITIVE" | "NEUTRAL" | "RISK" | "UNKNOWN";
@@ -239,6 +281,7 @@ export interface AnalysisAxis {
 export interface ChatDailyTurnsLimit {
   /** false 면 한도를 세지 않는다. 그때 per_session 은 null 이며 숫자를 표시하면 안 된다. */
   enabled: boolean;
+  /** null 이면 한도 없음. 음수 설정값을 그대로 내보내면 한도로 오해되므로 서버가 null 로 바꿔 보낸다. */
   per_session: number | null;
   scope: string;
   note: string;
@@ -330,7 +373,9 @@ export interface AgentSpec {
  * 모르는 값을 실패로 접으면 판정에 성공한 축을 고장난 것처럼 보이게 만들기 때문이다. */
 export type AgentRunStatus = "ok" | "integration_pending" | "withheld" | "failed" | (string & {});
 
-export interface AgentProgress { team: string; key: string; name: string; status: AgentRunStatus; message?: string }
+/** `data` 는 그 에이전트가 실제로 산출한 값이다. 화면은 인용만 하고 다시 계산하지 않는다 —
+ *  형태는 에이전트마다 다르므로 읽는 쪽이 필요한 필드만 좁혀서 꺼내 쓴다. */
+export interface AgentProgress { team: string; key: string; name: string; status: AgentRunStatus; message?: string; data?: Record<string, unknown> }
 
 export interface PrescribeResult {
   fingerprint?: string;

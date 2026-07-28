@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertCircle, ArrowRight, Check, ChevronRight, CircleHelp, Info, Landmark, LoaderCircle, LockKeyhole, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { EVIDENCE_BADGES, EVIDENCE_LABELS, PRIORITY_LABELS, SEOUL_DISTRICTS, SIGNAL_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import { parseCaseText } from "@/lib/parse-case";
-import type { AnalysisResult, CaseInput, FundingBandResult } from "@/lib/types";
+import type { AnalysisResult, CaseInput, FundingBandResult, ListingTerms } from "@/lib/types";
 import { manwon } from "@/lib/format";
 import type { FlowStep, Jarimaegim, Profile } from "@/lib/use-jarimaegim";
 import { ProvenanceBar } from "../ProvenanceBar";
@@ -201,6 +201,18 @@ function ChipRow({ label, value, options, onSelect }: { label: string; value: st
   return <div className="kb-chiprow"><span>{label}</span><div>{Object.entries(options).map(([key, text]) => <button key={key} type="button" aria-pressed={value === key} onClick={() => onSelect(key)}>{text}</button>)}</div></div>;
 }
 
+/** 밴드 한 줄. 제목과 수치를 같은 줄에 밀어 넣지 않고 위아래로 나눈다.
+ *
+ *  좌우 두 칸으로 두면 좁은 패널에서 양쪽이 폭을 다투다가 '늘리 / 면' 처럼 낱말 가운데가
+ *  끊긴다. 한국어는 기본 줄바꿈 규칙이 글자 단위라 이런 절단이 그대로 나온다. 제목을 한 줄로
+ *  세우고 수치는 아래 줄에 항목 단위로 흘려 보내면 어느 쪽도 잘리지 않는다. */
+function BandRow({ label, facts, tone }: { label: React.ReactNode; facts: string[]; tone?: "primary" }) {
+  return <div className="kb-band-banner-line" data-tone={tone}>
+    <p className="kb-band-banner-line-head">{label}</p>
+    <p className="kb-band-banner-facts">{facts.map((fact) => <span key={fact}>{fact}</span>)}</p>
+  </div>;
+}
+
 /** 확장·축소를 같은 비중으로 보여준다. 한쪽만 노출하면 대출 권유가 된다. */
 function BandBanner({ bands }: { bands: FundingBandResult }) {
   const equity = bands.bands.find((line) => line.band === "EQUITY_ONLY");
@@ -208,14 +220,46 @@ function BandBanner({ bands }: { bands: FundingBandResult }) {
   const maximum = bands.bands.find((line) => line.band === "MAXIMUM");
   if (!equity || !recommended || !maximum) return null;
   const partial = bands.status === "partial";
-  const describe = (line: typeof equity) => `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)} · 소진 ${runwayLabel(line, partial)}`;
+  // 사실을 한 문자열로 이어 붙이면 좁은 패널에서 '스트레스 실/패' 처럼 낱말 가운데가 끊긴다.
+  // 항목별로 쪼개 두면 각 항목이 통째로 줄을 넘어간다.
+  const facts = (line: typeof equity) => [
+    `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"}`,
+    `목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`,
+    `소진 ${runwayLabel(line, partial)}`,
+    ...(line.stress_pass ? [] : ["스트레스 실패"])
+  ];
   return <div className="kb-band-banner">
-    <div className="kb-band-banner-row"><span><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</span><span>{describe(recommended)}</span></div>
-    <div className="kb-band-banner-row kb-band-banner-source"><span>자기자본 {formatKrw(equity.ceiling_krw)} + 차입 {formatKrw(recommended.loan_krw)}</span><span>금융 프로필에서 자동 반영</span></div>
-    <div className="kb-band-banner-row"><span>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</span><span>{describe(equity)}</span></div>
-    <div className="kb-band-banner-row"><span>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</span><span>{describe(maximum)}{maximum.stress_pass ? "" : " · 스트레스 실패"}</span></div>
+    <BandRow tone="primary" label={<><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</>} facts={facts(recommended)} />
+    <p className="kb-band-banner-source"><span>자기자본 {formatKrw(equity.ceiling_krw)} + 차입 {formatKrw(recommended.loan_krw)}</span><span>금융 프로필에서 자동 반영</span></p>
+    <BandRow label={<>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</>} facts={facts(equity)} />
+    <BandRow label={<>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</>} facts={facts(maximum)} />
+    {/* 이 배너는 화면에서 가장 구체적인 금액을 보여 주는 자리다. 그 숫자가 시연용 가정값
+        위에 서 있다면 숫자 옆에서 말해야 한다 — API 응답에만 있고 화면에 없으면 고지한 게
+        아니다. 파라미터가 전부 공시값으로 바뀌면 이 줄은 저절로 사라진다. */}
+    {assumedNotice(bands) && <p className="kb-band-banner-warning"><AlertCircle aria-hidden="true" />{assumedNotice(bands)}</p>}
     <p className="kb-band-banner-note">아래 목록은 보증금이 권장 조달선을 넘는 매물을 제외한 결과입니다. 밴드별로 열리는 상권 수는 상권 임대 수준 데이터 연동 후 제공합니다.</p>
   </div>;
+}
+
+/** 조달 밴드가 시연용 가정값 위에 서 있으면 그 고지 문장을 돌려준다. 아니면 null. */
+function assumedNotice(bands: FundingBandResult): string | null {
+  return bands.provenance?.limitations.find((line) => line.includes("시연용 가정값")) ?? null;
+}
+
+/** 매물의 가정값 속성. 실측이 아니므로 임대 조건과 같은 줄에 섞지 않고 별도 줄에 둔다.
+ *  값이 없는 항목은 아예 렌더하지 않는다 — 마이그레이션 이전 저장소에서 읽으면 비어 있다. */
+function AssumedTerms({ listing }: { listing: ListingTerms }) {
+  const parts: string[] = [];
+  if (typeof listing.exclusive_area_m2 === "number") parts.push(`전용 ${listing.exclusive_area_m2}㎡`);
+  if (typeof listing.built_year === "number") parts.push(`${listing.built_year}년 준공`);
+  if (typeof listing.floors_total === "number") parts.push(`${listing.floor}/${listing.floors_total}층`);
+  if (typeof listing.frontage_m === "number") parts.push(`전면 ${listing.frontage_m}m`);
+  if (typeof listing.parking_slots === "number") parts.push(listing.parking_slots > 0 ? `주차 ${listing.parking_slots}대` : "주차 불가");
+  if (listing.corner) parts.push("코너");
+  if (listing.elevator) parts.push("엘리베이터");
+  if (listing.available_from) parts.push(`${listing.available_from} 입주`);
+  if (parts.length === 0) return null;
+  return <span className="listing-assumed"><span className="assumed-badge" title="실측 출처가 없어 가정한 값입니다. 계약 전 직접 확인해야 합니다.">가정값</span>{parts.join(" · ")}</span>;
 }
 
 function RecommendStep({ flow }: { flow: Jarimaegim }) {
@@ -233,7 +277,7 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
     <div className="kb-bubble"><Sparkles aria-hidden="true" /><p>{trace.state === "running"
       ? `${conditions} 시연용 매물 데이터를 확인하는 중입니다. 아래에서 지금 어떤 단계를 거치고 있는지 확인할 수 있습니다.`
       : trace.state === "failed" ? `${conditions} 조건의 확인이 중간에 멈췄습니다. 어느 단계에서 멈췄는지 아래에 그대로 남겨 두었습니다.`
-      : caseData ? `${caseData.inputs.district} 시연용 매물을 월세 낮은 순으로 확인했습니다. 업종은 후보 선별에 쓰이지 않았습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
+      : caseData ? `${caseData.inputs.district} 시연용 매물을 ${caseData.inputs.industry} 업종의 서울시 상권분석 집계로 확인했습니다. 지도의 마커와 아래 목록이 같은 후보입니다.` : "조건을 확정하면 후보를 찾습니다."}</p></div>
 
     {bands && bands.status !== "integration_pending" && <BandBanner bands={bands} />}
     {bands?.status === "integration_pending" && <p className="kb-note"><Info aria-hidden="true" />{bands.message}</p>}
@@ -251,12 +295,14 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
     {trace.state !== "running" && locationState !== "loading" && locationState !== "error" && candidates.length === 0 && <div className="kb-empty">
       <Search aria-hidden="true" />
       <strong>{locationState === "integration_pending" ? "시연용 매물 데이터 연결을 기다리고 있습니다" : "현재 조건에서 표시할 후보가 없습니다"}</strong>
-      <p>{locationState === "integration_pending" ? "매물 데이터가 연결되면 후보를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "시연용 매물이 준비된 자치구인지, 총예산이 보증금보다 낮지 않은지 확인해 주세요. 업종은 후보 선별에 쓰이지 않습니다."}</p>
+      <p>{locationState === "integration_pending" ? "매물 데이터가 연결되면 후보를 불러옵니다. 연결 전에는 가상 후보를 만들지 않습니다." : "시연용 매물이 준비된 자치구인지, 총예산이 보증금보다 낮지 않은지 확인해 주세요."}</p>
       <button className="kb-ghost" onClick={flow.retrySearch}><RefreshCw aria-hidden="true" /> 다시 확인</button>
     </div>}
 
     {candidates.length > 0 && <>
-      <p className="kb-step-lead">시연용 매물 {candidates.length}곳입니다. 월세 낮은 순이며 적합도 점수가 아닙니다. 실제 임대 매물이 아니고, 개별 점포 생존등급은 근거 A에서만 제공합니다.</p>
+      {/* 정렬 근거를 그대로 말한다. 상권 통계로 판정한 후보가 먼저 오고, 판정하지 못한 후보는
+          월세 순으로 뒤에 붙는다. 뒤로 보낸 것이지 떨어뜨린 것이 아니다. */}
+      <p className="kb-step-lead">시연용 매물 {candidates.length}곳입니다. 업종·우선순위와 서울시 상권분석 집계로 줄 세웠고, 상권 통계를 확인하지 못한 곳은 뒤에 월세 순으로 붙였습니다. 실제 임대 매물이 아니고, 개별 점포 생존등급은 근거 A에서만 제공합니다.</p>
       <ul className="kb-candidates">{candidates.map((candidate, index) => <li key={candidate.id} data-focused={candidate.id === focused ? "true" : undefined}>
         <button className="kb-candidate-main" onClick={() => flow.setFocused(candidate.id)} aria-pressed={candidate.id === focused}>
           <span className="kb-rank">{index + 1}</span>
@@ -264,7 +310,8 @@ function RecommendStep({ flow }: { flow: Jarimaegim }) {
             <strong>{candidate.name}</strong>
             <small>{candidate.road_address || candidate.address}</small>
             <span className="kb-grade" data-grade={candidate.evidence_grade}>{EVIDENCE_BADGES[candidate.evidence_grade]} · {EVIDENCE_LABELS[candidate.evidence_grade]}</span>
-            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보증금 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월세 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span></span>}
+            {candidate.listing && <span className="listing-terms"><span className="demo-badge">시연용</span><span>{candidate.listing.area_m2}㎡</span><span>보증금 <strong>{manwon(candidate.listing.deposit_krw)}</strong></span><span>월세 <strong>{manwon(candidate.listing.monthly_rent_krw)}</strong></span>{typeof candidate.listing.key_money_krw === "number" && <span>권리금 <strong>{candidate.listing.key_money_krw > 0 ? manwon(candidate.listing.key_money_krw) : "없음"}</strong></span>}</span>}
+            {candidate.listing && <AssumedTerms listing={candidate.listing} />}
           </span>
         </button>
         <ProvenanceBar data={candidate.provenance} />

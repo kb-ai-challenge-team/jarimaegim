@@ -5,6 +5,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SEED = join(ROOT, "data", "listings.seoul.json");
 
+/** 가정값 열. backend/app/listings.py 의 ASSUMED_COLUMNS 와 같아야 한다. */
+const ASSUMED_COLUMNS = ["key_money_krw", "exclusive_area_m2", "built_year", "parking_slots",
+                         "corner", "elevator", "floors_total", "frontage_m", "available_from"];
+
 /** Minimal .env reader; the repo has no dotenv dependency. Values are never logged. */
 async function env(name) {
   let text;
@@ -20,6 +24,10 @@ function toRow(entry) {
     listing_kind: entry.listing.listing_kind, deposit_krw: entry.listing.deposit_krw,
     monthly_rent_krw: entry.listing.monthly_rent_krw, maintenance_fee_krw: entry.listing.maintenance_fee_krw,
     area_m2: entry.listing.area_m2, floor: entry.listing.floor,
+    // 상권분석 데이터와 만나는 유일한 조인 키. 없는 매물은 null 로 두고 상권 축만 꺼진다.
+    admin_dong: entry.admin_dong ?? null, admin_dong_code: entry.admin_dong_code ?? null,
+    // 가정값 열. backend/app/listings.py 의 ASSUMED_COLUMNS 와 같은 목록이어야 한다.
+    ...Object.fromEntries(ASSUMED_COLUMNS.map((key) => [key, entry.listing[key] ?? null])),
   };
 }
 

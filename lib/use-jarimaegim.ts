@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE } from "./constants";
+import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, PRIORITY_LABELS, PYEONG_IN_M2, formatKrw } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
-import type { AnalysisResult, BandLine, PrescribeResult, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AgentProgress, AnalysisResult, BandLine, PrescribeResult, Candidate, CaseInput, CaseRecord, DistrictSummary, FundingBandResult, KbProduct, Program, StatusResponse } from "./types";
 
 // 금융 프로필을 한 번 확정한 뒤 조건 → 입지 → 처방 세 단계로 간다. 프로필은 스텝이 아니라 진입 관문이고,
 // 확정한 값은 케이스 생성·밴드 산출·재검색이 전부 다시 읽는다. 후보를 보기 전에 다시 금액을 묻지 않는다.
@@ -44,20 +44,38 @@ const AGENT_ROWS: { id: string; label: string; detail: string }[] = [
   { id: "grade", label: "팀 보고 통합", detail: "팀이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
 ];
 
-/** 백엔드가 준 문구를 그대로 옮긴다. 없을 때만 상태를 사람 말로 바꾼다. */
-function noteFor(agent: { status: string; message?: string }): string | undefined {
+/** 백엔드가 준 문구를 그대로 옮긴다. 없을 때만 상태를 사람 말로 바꾼다.
+ *
+ *  조달 밴드는 예외적으로 수치를 적는다 — 그 줄이 낸 결론이 문장이 아니라 금액이기 때문이다.
+ *  단 그 금액은 이 에이전트가 이벤트에 실어 보낸 값을 **형식만 바꿔** 적는 것이고, 여기서
+ *  더하거나 고르거나 다시 계산하지 않는다. */
+function noteFor(agent: AgentProgress): string | undefined {
+  if (agent.key === "finance.band" && agent.status === "ok") {
+    const quoted = bandNote(agent.data);
+    if (quoted) return quoted;
+  }
   if (agent.message) return agent.message;
   if (agent.status === "integration_pending") return "연동 대기";
   if (agent.status === "withheld") return "판단 유보";
   return undefined;
 }
 
+/** 에이전트가 낸 권장 조달선 한 줄만 꺼내 읽는다. 없으면 아무것도 적지 않는다. */
+function bandNote(data: Record<string, unknown> | undefined): string | undefined {
+  const bands = Array.isArray(data?.bands) ? (data.bands as Record<string, unknown>[]) : null;
+  const line = bands?.find((item) => item.band === "RECOMMENDED");
+  if (typeof line?.ceiling_krw !== "number" || typeof line?.target_daily_revenue_krw !== "number") return undefined;
+  return `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`;
+}
+
 /** 전체 실행은 12개 에이전트가 한 줄씩이고, 재조회는 매물 조회 leg 만 다시 돈다. */
 function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
+  // 전체 실행의 줄은 백엔드의 12개 에이전트가 그대로다. 재조회는 매물 조회 leg 만 다시 도므로
+  // 두 줄로 남고, 그 문구는 상권 프로파일이 켜진 뒤의 사실을 따른다 — 이제 후보는 근거 B 로도 나온다.
   if (leg === "full") return AGENT_ROWS.map((row) => ({ ...row, status: "idle" as const }));
   return [
-    { id: "search", label: "시연용 매물 데이터 조회", detail: `시연용 매물 데이터 · 서울 ${inputs.district} · 보증금이 총예산 이하인 매물만 · 월세 낮은 순 최대 4곳.`, status: "idle" },
-    { id: "grade", label: "근거 등급·출처 정리", detail: "시연용 매물은 좌표만 확인된 상태라 모두 근거 C이며, 출처는 시연용 생성 데이터로 표시합니다.", status: "idle" }
+    { id: "search", label: "시연용 매물 데이터 조회", detail: `시연용 매물 데이터 · 서울 ${inputs.district} · 보증금이 총예산 이하인 매물만 · ${inputs.industry} 업종의 서울시 상권분석 집계와 '${PRIORITY_LABELS[inputs.priority]}' 우선순위로 정렬 · 최대 4곳.`, status: "idle" },
+    { id: "grade", label: "근거 등급·출처 정리", detail: "상권 통계를 확인한 후보는 근거 B(상권 위험 진단), 확인하지 못한 후보는 근거 C로 남습니다. 개별 이력이 없으므로 근거 A는 나오지 않습니다.", status: "idle" }
   ];
 }
 
@@ -305,9 +323,16 @@ export function useJarimaegim() {
     return result;
   }, []);
 
+  /** 실행에 실제로 쓰이는 조건. 자기자본·총예산은 폼이 아니라 금융 프로필에서 온다.
+   *  화면이 `form` 을 직접 읽으면 관문에서 1억을 확정해도 실행 화면에는 자기자본 0원이
+   *  찍힌다 — 같은 병합을 두 곳에서 하지 않도록 여기서 한 번만 만든다. */
+  const runInputs = useMemo<CaseInput>(
+    () => ({ ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw }),
+    [form, profile.equity_krw]);
+
   const start = useCallback(async () => {
     setError(""); setBusy("case"); setStep("recommend");
-    const inputs: CaseInput = { ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw };
+    const inputs = runInputs;
     beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
@@ -320,7 +345,7 @@ export function useJarimaegim() {
       const settled = new Set<string>();
       const rowId = (key: string) => (key === "main.integrate" ? "grade" : key);
       let outcome: PrescribeResult | null = null;
-      let mainOutcome: { status: string; message?: string } | null = null;
+      let mainOutcome: AgentProgress | null = null;
       await api.prescribeStream(created.id, {
         monthly_rent_krw: bandForm.monthly_rent_krw, monthly_maintenance_krw: bandForm.monthly_maintenance_krw,
         key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
@@ -373,7 +398,7 @@ export function useJarimaegim() {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, operatingStyle, profile, runBands, runSearch, settleStep, utterance]);
+  }, [bandForm, beginTrace, ensureSession, failTrace, handoff, operatingStyle, profile, runBands, runInputs, runSearch, settleStep, utterance]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -409,11 +434,29 @@ export function useJarimaegim() {
     } finally { setBusy(""); }
   }, [bandForm, caseData, profile, runBands]);
 
-  /** 계획 기준 후보. 처방 단계가 이 값을 소비한다. */
+  /** 계획 기준 후보. 처방 단계가 이 값을 소비한다.
+   *
+   *  후보를 확정하면 그 매물의 임대 조건을 필요자금 입력에 그대로 채운다. "이 후보로
+   *  계획하기"를 눌러 놓고 보증금·월세·권리금을 다시 손으로 옮겨 적게 하는 것은 같은 값을
+   *  두 번 묻는 것이다. 권리금은 가정값이므로 화면이 그렇게 표시하고, 사용자가 그 자리에서
+   *  고칠 수 있다. 채운 뒤 밴드를 다시 계산해야 처방 단계가 확정 후보 기준 금액을 본다. */
   const commitCandidate = useCallback((candidateId: string | null) => {
     setCommitted(candidateId);
     setDocuments({}); setDocNotice("");
-  }, []);
+    if (!candidateId) return;
+    const listing = candidates.find((candidate) => candidate.id === candidateId)?.listing;
+    if (!listing || !caseData) return;
+    const next: BandForm = {
+      ...bandForm,
+      area_pyeong: Number((listing.area_m2 / PYEONG_IN_M2).toFixed(1)),
+      deposit_krw: listing.deposit_krw,
+      monthly_rent_krw: listing.monthly_rent_krw,
+      monthly_maintenance_krw: listing.maintenance_fee_krw ?? 0,
+      key_money_krw: listing.key_money_krw ?? 0
+    };
+    setBandForm(next);
+    void runBands(caseData, next, profile).catch(() => setBandState("error"));
+  }, [bandForm, candidates, caseData, profile, runBands]);
 
   /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다. */
   const prepareDocument = useCallback(async (template: string) => {
@@ -512,7 +555,7 @@ export function useJarimaegim() {
   }, []);
 
   return {
-    step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
+    step, setStep, form, runInputs, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
     summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
     profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
