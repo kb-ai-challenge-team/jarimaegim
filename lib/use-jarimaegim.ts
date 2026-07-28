@@ -44,6 +44,14 @@ const AGENT_ROWS: { id: string; label: string; detail: string }[] = [
   { id: "grade", label: "팀 보고 통합", detail: "팀이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
 ];
 
+/** 백엔드가 준 문구를 그대로 옮긴다. 없을 때만 상태를 사람 말로 바꾼다. */
+function noteFor(agent: { status: string; message?: string }): string | undefined {
+  if (agent.message) return agent.message;
+  if (agent.status === "integration_pending") return "연동 대기";
+  if (agent.status === "withheld") return "판단 유보";
+  return undefined;
+}
+
 /** 전체 실행은 12개 에이전트가 한 줄씩이고, 재조회는 매물 조회 leg 만 다시 돈다. */
 function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
   if (leg === "full") return AGENT_ROWS.map((row) => ({ ...row, status: "idle" as const }));
@@ -281,6 +289,7 @@ export function useJarimaegim() {
       const settled = new Set<string>();
       const rowId = (key: string) => (key === "main.integrate" ? "grade" : key);
       let outcome: PrescribeResult | null = null;
+      let mainOutcome: { status: string; message?: string } | null = null;
       await api.prescribeStream(created.id, {
         monthly_rent_krw: bandForm.monthly_rent_krw, monthly_maintenance_krw: bandForm.monthly_maintenance_krw,
         key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
@@ -290,18 +299,28 @@ export function useJarimaegim() {
         onRunStart: () => {},
         onTeamStart: () => {},
         onAgentEnd: (agent) => {
+          // 메인 통합은 마지막 줄이다. 여기서 바로 정착시키면 트레이스가 done 으로 넘어가고,
+          // 그 뒤에 오는 정리 루프가 전부 무시되어 중간 줄이 "진행 중"인 채로 남는다.
+          // 실측으로 확인된 동작이라 순서를 onDone 에 맡긴다.
+          if (agent.key === "main.integrate") { mainOutcome = agent; return; }
           settled.add(rowId(agent.key));
           // 상태를 여기서 다시 판정하지 않는다. 판정에 성공한 것만 done 이고, 나머지는 왜 그런지를
           // note 로 그대로 옮긴다 — 원천이 없다는 사실이 실패로 보이면 안 된다.
-          settleStep(rowId(agent.key), agent.status === "ok" ? "done" : "skipped",
-            agent.message || (agent.status === "integration_pending" ? "연동 대기" : agent.status === "withheld" ? "판단 유보" : undefined));
+          settleStep(rowId(agent.key), agent.status === "ok" ? "done" : "skipped", noteFor(agent));
         },
         onDone: (result) => {
           outcome = result;
-          // 멈춘 실행에서는 뒤쪽 에이전트에게 순서가 오지 않아 이벤트가 없다. 남은 줄을 여기서
-          // 닫아야 마지막 줄이 정착하며 트레이스가 done 으로 넘어간다.
+          // 멈춘 실행에서는 뒤쪽 에이전트에게 순서가 오지 않아 이벤트가 없다. 남은 줄을 선언 순서대로
+          // 닫아야 마지막 줄이 마지막에 정착하며 트레이스가 done 으로 넘어간다.
           for (const row of AGENT_ROWS) {
-            if (!settled.has(row.id)) settleStep(row.id, "skipped", "앞 단계에서 멈춰 순서가 오지 않았습니다.");
+            if (settled.has(row.id)) continue;
+            if (row.id === "grade") {
+              const main = mainOutcome;
+              settleStep("grade", main && main.status === "ok" ? "done" : "skipped",
+                main ? noteFor(main) : "실행이 끝나지 않아 종합하지 못했습니다.");
+            } else {
+              settleStep(row.id, "skipped", "앞 단계에서 멈춰 순서가 오지 않았습니다.");
+            }
           }
         },
       });
