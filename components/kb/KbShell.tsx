@@ -65,7 +65,7 @@ export function KbShell() {
       {aiActive && <JarimaegimPanel flow={flow} onClose={() => setPanelOpen(false)} />}
       {view === "policy" && <KbPolicyPanel flow={flow} />}
       {view === "product" && <KbProductPanel flow={flow} />}
-      {aiActive && flow.traceOpen && <AgentRunOverlay trace={flow.trace} inputs={flow.form} onRetry={flow.retrySearch} onDismiss={flow.dismissTrace}
+      {aiActive && flow.traceOpen && <AgentRunOverlay trace={flow.trace} inputs={flow.runInputs} onRetry={flow.retrySearch} onDismiss={flow.dismissTrace}
         onEditConditions={() => { flow.dismissTrace(); flow.setStep("confirm"); }} />}
     </div>}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, PRIORITY_LABELS, PYEONG_IN_M2, formatKrw } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
@@ -247,9 +247,16 @@ export function useJarimaegim() {
     return result;
   }, []);
 
+  /** 실행에 실제로 쓰이는 조건. 자기자본·총예산은 폼이 아니라 금융 프로필에서 온다.
+   *  화면이 `form` 을 직접 읽으면 관문에서 1억을 확정해도 실행 화면에는 자기자본 0원이
+   *  찍힌다 — 같은 병합을 두 곳에서 하지 않도록 여기서 한 번만 만든다. */
+  const runInputs = useMemo<CaseInput>(
+    () => ({ ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw }),
+    [form, profile.equity_krw]);
+
   const start = useCallback(async () => {
     setError(""); setBusy("case"); setStep("recommend");
-    const inputs: CaseInput = { ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw };
+    const inputs = runInputs;
     beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
@@ -276,7 +283,7 @@ export function useJarimaegim() {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep]);
+  }, [bandForm, beginTrace, ensureSession, failTrace, handoff, profile, runBands, runInputs, runSearch, settleStep]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -433,7 +440,7 @@ export function useJarimaegim() {
   }, []);
 
   return {
-    step, setStep, form, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
+    step, setStep, form, runInputs, setField, parsedKeys, interpret, caseData, candidates, locationState, focused, setFocused,
     summary, overviewDistrict, selectOverviewDistrict, clearOverviewDistrict,
     profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
