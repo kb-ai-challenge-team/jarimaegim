@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { ArrowRight, CircleHelp, Coins, ExternalLink, FileDown, FileText, Info, Landmark, LoaderCircle, LockKeyhole, MapPin, ShieldCheck, Sparkles } from "lucide-react";
-import { PROGRAM_CATEGORY_LABELS, formatKrw } from "@/lib/constants";
+import { PRIORITY_LABELS, PROGRAM_CATEGORY_LABELS, STAGE_LABELS, TYPE_LABELS, formatKrw } from "@/lib/constants";
 import type { BandLine, Candidate, CaseRecord, FundingBandResult, KbProduct, Program } from "@/lib/types";
 import { matchKbProducts } from "@/lib/kb-match";
 import { matchPrograms } from "@/lib/program-match";
@@ -284,15 +284,27 @@ export function PlanPaperwork({ caseData, committed, bands, products, programs, 
 }) {
   const recommended = bands?.bands.find((line) => line.band === "RECOMMENDED") ?? null;
   const chosen = products.length + programs.length;
+  // render_case_pdf 는 case.inputs 의 키를 하나도 빼지 않고 '사용자 확인값'에 적는다. 그러니
+  // 이 줄도 하나를 빼면 안 된다 — 리드 문장의 "화면에 없는 값은 문서에도 없습니다"가 거짓이 된다.
+  // committed_listing_id 만은 바로 아래 '계획 기준 후보' 줄이 이미 말하므로 되풀이하지 않는다.
+  const inputs = caseData.inputs;
+  // 조달 밴드가 시연용 가정값 위에 서 있으면 문서도 그 사실을 조달 요약에 적는다(funding_section_lines).
+  // 숫자를 보여 주는 자리에서 같이 말해야 고지한 것이 된다.
+  const assumed = bands?.provenance?.limitations.find((line) => line.includes("시연용 가정값")) ?? null;
   const rows: { label: string; value: string }[] = [
-    { label: "확정 조건", value: `${caseData.inputs.district} · ${caseData.inputs.industry}` },
-    // 케이스에 저장된 것만 문서에 담긴다. 로컬 확정과 저장 결과가 다르면 그 사실을 여기서 말한다.
+    { label: "확정 조건", value: `${inputs.district} · ${inputs.industry} · ${STAGE_LABELS[inputs.business_stage]} · ${TYPE_LABELS[inputs.startup_type]} · 우선순위 ${PRIORITY_LABELS[inputs.priority]} · 총예산 ${formatKrw(inputs.budget_krw)} · 자기자본 ${formatKrw(inputs.equity_krw)}` },
+    // 케이스에 저장된 것만 문서에 담긴다. 다만 저장에 실패해도 이전에 저장해 둔 매물은 그대로 남아
+    // 있고 listing_section_lines 는 그것을 그대로 싣는다 — "담기지 않는다"가 아니라 "다른 것이
+    // 담길 수 있다"가 실제로 일어나는 일이다.
     { label: "계획 기준 후보", value: !committed ? "확정한 후보가 없습니다"
-      : caseData.inputs.committed_listing_id === committed.id ? `${committed.name} (시연용 매물)`
-      : `${committed.name} — 매물 정보를 케이스에 저장하지 못해 문서에는 담기지 않습니다` },
+      : inputs.committed_listing_id === committed.id ? `${committed.name} (시연용 매물)`
+      : `${committed.name} — 케이스에 저장하지 못했습니다. 문서에는 이 후보 대신 이전에 저장한 매물이 담길 수 있습니다` },
     { label: "조달 요약", value: recommended
       ? `권장 조달선 ${formatKrw(recommended.ceiling_krw)} · 차입 필요액 ${formatKrw(recommended.loan_krw)} · 월 상환 ${recommended.monthly_repayment_krw > 0 ? formatKrw(recommended.monthly_repayment_krw) : "0원"} · 넘어야 하는 일매출 ${formatKrw(recommended.target_daily_revenue_krw)}`
       : "조달 밴드를 계산하지 못해 이 문서에는 조달 요약이 없습니다" },
+    // 문서는 이 고지를 조달 요약 안에 넣는다. 화면에서도 자리는 같지만 줄을 나눈다 — 경고문 자체가
+    // '대출 만기·보증한도'처럼 가운뎃점을 품고 있어 위 줄에 이어 붙이면 금액 구분자와 뒤섞인다.
+    ...(recommended && assumed ? [{ label: "조달 요약 가정", value: assumed }] : []),
     { label: "고른 조달 수단", value: chosen === 0 ? "고른 조달 수단이 없습니다"
       : [...products.map((product) => product.name), ...programs.map((program) => program.title)].join(" · ") },
     { label: "출처·기준일", value: "각 섹션 말미에 출처명과 기준일을 적습니다. 확인되지 않은 값은 '확인 필요'로 남습니다." },
