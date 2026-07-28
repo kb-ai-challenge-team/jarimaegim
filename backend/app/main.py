@@ -176,7 +176,9 @@ async def integration_status():
         "knowledge_index": await knowledge.freshness(),
         "axes": analysis_axes(),
         "limits": {"chat_daily_turns": {
-            "per_session": settings.ai_daily_request_limit,
+            # 음수는 '한도 없음'이다. 그대로 -1 을 내보내면 읽는 쪽이 한도로 오해하므로 null 로 낸다.
+            "per_session": None if settings.ai_daily_request_limit < 0 else settings.ai_daily_request_limit,
+            "unlimited": settings.ai_daily_request_limit < 0,
             "scope": "process_local",
             "note": "다중 워커·재시작 환경에서는 이 한도가 실제로 적용되지 않는 알려진 한계입니다 (세션별 카운터가 프로세스 메모리에만 있습니다).",
         }}}

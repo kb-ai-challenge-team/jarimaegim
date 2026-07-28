@@ -279,7 +279,9 @@ export interface AnalysisAxis {
  * cross-worker/cross-restart) counter -- `note` says so plainly, surface it rather than implying
  * a durable quota. */
 export interface ChatDailyTurnsLimit {
-  per_session: number;
+  /** null 이면 한도 없음. 음수 설정값을 그대로 내보내면 한도로 오해되므로 서버가 null 로 바꿔 보낸다. */
+  per_session: number | null;
+  unlimited: boolean;
   scope: string;
   note: string;
 }

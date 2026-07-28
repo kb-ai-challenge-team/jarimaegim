@@ -201,6 +201,18 @@ function ChipRow({ label, value, options, onSelect }: { label: string; value: st
   return <div className="kb-chiprow"><span>{label}</span><div>{Object.entries(options).map(([key, text]) => <button key={key} type="button" aria-pressed={value === key} onClick={() => onSelect(key)}>{text}</button>)}</div></div>;
 }
 
+/** 밴드 한 줄. 제목과 수치를 같은 줄에 밀어 넣지 않고 위아래로 나눈다.
+ *
+ *  좌우 두 칸으로 두면 좁은 패널에서 양쪽이 폭을 다투다가 '늘리 / 면' 처럼 낱말 가운데가
+ *  끊긴다. 한국어는 기본 줄바꿈 규칙이 글자 단위라 이런 절단이 그대로 나온다. 제목을 한 줄로
+ *  세우고 수치는 아래 줄에 항목 단위로 흘려 보내면 어느 쪽도 잘리지 않는다. */
+function BandRow({ label, facts, tone }: { label: React.ReactNode; facts: string[]; tone?: "primary" }) {
+  return <div className="kb-band-banner-line" data-tone={tone}>
+    <p className="kb-band-banner-line-head">{label}</p>
+    <p className="kb-band-banner-facts">{facts.map((fact) => <span key={fact}>{fact}</span>)}</p>
+  </div>;
+}
+
 /** 확장·축소를 같은 비중으로 보여준다. 한쪽만 노출하면 대출 권유가 된다. */
 function BandBanner({ bands }: { bands: FundingBandResult }) {
   const equity = bands.bands.find((line) => line.band === "EQUITY_ONLY");
@@ -208,12 +220,19 @@ function BandBanner({ bands }: { bands: FundingBandResult }) {
   const maximum = bands.bands.find((line) => line.band === "MAXIMUM");
   if (!equity || !recommended || !maximum) return null;
   const partial = bands.status === "partial";
-  const describe = (line: typeof equity) => `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)} · 소진 ${runwayLabel(line, partial)}`;
+  // 사실을 한 문자열로 이어 붙이면 좁은 패널에서 '스트레스 실/패' 처럼 낱말 가운데가 끊긴다.
+  // 항목별로 쪼개 두면 각 항목이 통째로 줄을 넘어간다.
+  const facts = (line: typeof equity) => [
+    `상환 ${line.monthly_repayment_krw > 0 ? formatKrw(line.monthly_repayment_krw) : "0원"}`,
+    `목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`,
+    `소진 ${runwayLabel(line, partial)}`,
+    ...(line.stress_pass ? [] : ["스트레스 실패"])
+  ];
   return <div className="kb-band-banner">
-    <div className="kb-band-banner-row"><span><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</span><span>{describe(recommended)}</span></div>
-    <div className="kb-band-banner-row kb-band-banner-source"><span>자기자본 {formatKrw(equity.ceiling_krw)} + 차입 {formatKrw(recommended.loan_krw)}</span><span>금융 프로필에서 자동 반영</span></div>
-    <div className="kb-band-banner-row"><span>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</span><span>{describe(equity)}</span></div>
-    <div className="kb-band-banner-row"><span>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</span><span>{describe(maximum)}{maximum.stress_pass ? "" : " · 스트레스 실패"}</span></div>
+    <BandRow tone="primary" label={<><strong>권장 조달선 {formatKrw(recommended.ceiling_krw)}</strong> 기준</>} facts={facts(recommended)} />
+    <p className="kb-band-banner-source"><span>자기자본 {formatKrw(equity.ceiling_krw)} + 차입 {formatKrw(recommended.loan_krw)}</span><span>금융 프로필에서 자동 반영</span></p>
+    <BandRow label={<>▼ 자기자본만 {formatKrw(equity.ceiling_krw)}으로 줄이면</>} facts={facts(equity)} />
+    <BandRow label={<>▲ 최대 {formatKrw(maximum.ceiling_krw)}까지 늘리면</>} facts={facts(maximum)} />
     {/* 이 배너는 화면에서 가장 구체적인 금액을 보여 주는 자리다. 그 숫자가 시연용 가정값
         위에 서 있다면 숫자 옆에서 말해야 한다 — API 응답에만 있고 화면에 없으면 고지한 게
         아니다. 파라미터가 전부 공시값으로 바뀌면 이 줄은 저절로 사라진다. */}

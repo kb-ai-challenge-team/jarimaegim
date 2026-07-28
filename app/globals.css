@@ -387,7 +387,10 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-legal a{color:var(--kb-sub);text-decoration:underline}
 
 /* --- AI panel --- */
-.kb-ai-panel{flex:1;min-height:0;display:flex;flex-direction:column}
+/* 한국어 줄바꿈. 브라우저 기본값은 글자 단위로 끊어서 '지도의'가 '지 / 도의'로, '스트레스
+   실패'가 '실 / 패'로 갈라진다. keep-all 로 어절 경계에서만 넘기고, 한 어절이 통째로도 안
+   들어가는 경우에만 overflow-wrap 이 예외적으로 끊게 둔다(긴 URL·코드 대비). */
+.kb-ai-panel{flex:1;min-height:0;display:flex;flex-direction:column;word-break:keep-all;overflow-wrap:anywhere}
 .kb-ai-head{flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px 12px}
 .kb-ai-head strong{display:block;font-size:15px;color:var(--kb-ink);letter-spacing:-.02em}
 .kb-ai-head small{display:block;font-size:11.5px;color:var(--kb-mute)}
@@ -785,10 +788,21 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-band-row strong small{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#fdece8;color:#a8552f}
 .kb-band-row[data-band="RECOMMENDED"]{background:#fffdf5}
 .kb-band-row[data-pass="false"] span:last-child{color:#b23a2f}
-.kb-band-banner{display:grid;gap:6px;border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:10px;margin:10px 0}
-.kb-band-banner-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;font-variant-numeric:tabular-nums}
-.kb-band-banner-row strong{font-weight:700}
-.kb-band-banner-note{font-size:10.5px;color:var(--muted,#6b7280);margin:0}
+/* 한국어는 기본 줄바꿈이 글자 단위라 '스트레스 실/패' 처럼 낱말 가운데가 끊긴다.
+   keep-all 로 어절 경계에서만 넘기고, 수치는 항목 하나가 통째로 움직이게 둔다. */
+.kb-band-banner{display:grid;gap:8px;border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:12px;margin:10px 0}
+/* 이름을 kb-band-row 로 두면 처방 화면의 밴드 표(위 780행)와 부딪힌다 — 그쪽 5열 템플릿이
+   그대로 적용돼 제목과 수치가 나란히 놓인다. 배너 전용 이름을 따로 쓴다. */
+.kb-band-banner-line{display:grid;gap:3px}
+.kb-band-banner-line-head{margin:0;font-size:12px;line-height:1.45;color:var(--ink)}
+.kb-band-banner-line-head strong{font-weight:700}
+.kb-band-banner-line[data-tone="primary"] .kb-band-banner-line-head{font-size:13px}
+/* 수치는 flex-wrap 으로 흘린다. 각 항목이 nowrap 이라 항목 안에서는 절대 끊기지 않는다. */
+/* 가운뎃점을 항목 앞에 붙이면 줄이 넘어갈 때 '· 스트레스 실패' 처럼 구분자가 줄 머리에
+   홀로 남는다. 구분은 간격만으로 하고 글리프를 쓰지 않으면 어디서 넘어가든 깨끗하다. */
+.kb-band-banner-facts{display:flex;flex-wrap:wrap;gap:2px 14px;margin:0;font-size:11.5px;line-height:1.5;color:var(--muted,#6b7280);font-variant-numeric:tabular-nums}
+.kb-band-banner-facts span{white-space:nowrap}
+.kb-band-banner-note{font-size:11px;line-height:1.5;color:var(--muted,#6b7280);margin:0}
 .kb-summary dt small{display:block;font-weight:400;font-size:9.5px;color:var(--muted,#6b7280)}
 .kb-prescription-block{border-top:1px solid var(--line,#e5e7eb);padding-top:12px;margin-top:14px}
 .kb-prescription-block:first-of-type{border-top:none;padding-top:0;margin-top:6px}
@@ -896,7 +910,7 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-disclosure[data-open=true]>button small svg{transform:rotate(90deg)}
 .kb-disclosure-body{display:grid;gap:11px;padding:0 13px 13px;border-top:1px solid var(--kb-line);padding-top:12px}
 .kb-tune{display:grid;gap:11px}
-.kb-band-banner-source{color:var(--kb-blue);border-top:1px dashed var(--kb-line);padding-top:6px}
+.kb-band-banner-source{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;margin:0;padding-top:8px;font-size:11.5px;line-height:1.5;color:var(--kb-blue);border-top:1px dashed var(--kb-line);font-variant-numeric:tabular-nums}
 .kb-evidence{display:grid;gap:10px;padding:12px;border-top:1px solid var(--kb-line);background:var(--kb-fill);margin:0 -12px -12px;border-radius:0 0 11px 11px}
 .kb-field>span small{display:block;margin-top:2px;font-size:11px;font-weight:500;color:var(--kb-mute);line-height:1.45}
 .kb-profile-form{grid-template-columns:1fr}
