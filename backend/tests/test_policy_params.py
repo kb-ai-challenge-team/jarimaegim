@@ -164,7 +164,10 @@ EXTRACTABLE_INDUSTRIES = ("카페", "제과점", "치킨전문점", "분식점",
                           "네일샵", "학원", "세탁소", "PC방", "무인점포", "일반음식점")
 
 
-def test_every_extractable_industry_is_registered():
-    """추출기가 내놓을 수 있는 업종은 전부 밴드를 계산할 수 있어야 한다."""
+def test_every_industry_hint_is_registered():
+    """INDUSTRY_HINTS 가 내놓는 업종은 전부 밴드를 계산할 수 있어야 한다.
+
+    자유 입력과 NAMED_INDUSTRY 폴백은 어떤 명사든 낼 수 있으므로 미등록 업종 →
+    integration_pending 경로는 등록을 아무리 늘려도 없어지지 않는 정상 상태다."""
     registered = set((_shipped_config().get("industries") or {}))
     assert set(EXTRACTABLE_INDUSTRIES) - registered == set()
