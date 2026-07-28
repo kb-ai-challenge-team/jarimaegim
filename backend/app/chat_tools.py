@@ -3,13 +3,10 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
+from .districts import SEOUL_DISTRICTS
 from .mcp_client import MCPToolError, MCPUnavailable
 
 logger = logging.getLogger(__name__)
-
-SEOUL_DISTRICTS = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구",
-                   "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구",
-                   "관악구", "서초구", "강남구", "송파구", "강동구"}
 
 OUT_OF_SCOPE_MESSAGE = "자리매김은 서울 25개 자치구만 다룹니다. 이 지역은 분석 범위 밖입니다."
 
