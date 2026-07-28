@@ -139,7 +139,28 @@ const prescription = {
   })()
 };
 
-const result = { stepper, overview, drilldown, returned, lease, bands, location, cost, funding, prescription, axes, errors };
+// 원문 이동은 최종 추천(처방)에서만 살아 있다. 정책·상품 탭에서는 제거되었으므로, 되살아나면
+// 여기서 걸린다. 두 패널은 같은 .kb-policy 루트를 쓰므로 탭을 전환해 가며 따로 센다.
+await page.getByRole("button", { name: "정책" }).click();
+await page.waitForFunction(() => {
+  const root = window.document.querySelector(".kb-policy-body");
+  return Boolean(root) && !root.querySelector(".kb-loading");
+}, null, { timeout: 30000 });
+const policyTab = {
+  rows: await page.locator(".kb-policy .kb-program-list li").count(),
+  noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
+};
+await page.getByRole("button", { name: "상품" }).click();
+await page.waitForFunction(() => {
+  const root = window.document.querySelector(".kb-policy-body");
+  return Boolean(root) && !root.querySelector(".kb-loading");
+}, null, { timeout: 30000 });
+const productTab = {
+  rows: await page.locator(".kb-policy .kb-program-list li").count(),
+  noOutboundLinks: await page.locator(".kb-policy a[href^='http']").count() === 0
+};
+
+const result = { stepper, overview, drilldown, returned, lease, bands, location, cost, funding, prescription, policyTab, productTab, axes, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 const expected = ["조건", "자금", "입지", "근거", "처방"];
@@ -151,6 +172,7 @@ if (errors.length || !stepperOk || !lease.fieldsPresent || !bands.autoComputed |
   || prescription.blocks !== 3 || !prescription.committedShown
   || !prescription.documentCreated || !prescription.consultationDisclosed
   || !prescription.documentCopyHonest
+  || !policyTab.noOutboundLinks || !productTab.noOutboundLinks
   || !axes.disabledCarryReason
   || overview.pins !== overview.expected || overview.markersBefore !== 0
   || drilldown.markers === 0 || drilldown.badges < 1 || !drilldown.pinsGone
