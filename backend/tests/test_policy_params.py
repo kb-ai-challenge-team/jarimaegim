@@ -156,3 +156,15 @@ def test_shipped_config_computes_bands_for_every_registered_industry():
                                key_money_krw=0, fitout_krw=None, equity_krw=100_000_000,
                                existing_debt_krw=0, other_monthly_fixed_krw=1_000_000)
         assert len(result["bands"]) == 3
+
+
+# lib/parse-case.ts 의 INDUSTRY_HINTS 가 뱉을 수 있는 이름 전부. 추출은 됐는데 밴드가 막히는
+# 조합이 생기지 않도록 등록 집합과 맞물려 있어야 한다. (한쪽만 늘리면 이 테스트가 잡는다.)
+EXTRACTABLE_INDUSTRIES = ("카페", "제과점", "치킨전문점", "분식점", "주점", "편의점", "미용실",
+                          "네일샵", "학원", "세탁소", "PC방", "무인점포", "일반음식점")
+
+
+def test_every_extractable_industry_is_registered():
+    """추출기가 내놓을 수 있는 업종은 전부 밴드를 계산할 수 있어야 한다."""
+    registered = set((_shipped_config().get("industries") or {}))
+    assert set(EXTRACTABLE_INDUSTRIES) - registered == set()

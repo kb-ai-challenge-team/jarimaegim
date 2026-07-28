@@ -61,6 +61,11 @@
     "주점": {"cogs_ratio": 0.33, "labor_ratio": 0.25, "fitout_krw_per_pyeong": 2600000, "operating_days_per_month": 26, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
     "편의점": {"cogs_ratio": 0.72, "labor_ratio": 0.12, "fitout_krw_per_pyeong": 1500000, "operating_days_per_month": 30, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
     "미용실": {"cogs_ratio": 0.20, "labor_ratio": 0.40, "fitout_krw_per_pyeong": 2800000, "operating_days_per_month": 26, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
+    "네일샵": {"cogs_ratio": 0.18, "labor_ratio": 0.42, "fitout_krw_per_pyeong": 2300000, "operating_days_per_month": 26, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
+    "학원": {"cogs_ratio": 0.10, "labor_ratio": 0.45, "fitout_krw_per_pyeong": 1600000, "operating_days_per_month": 22, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
+    "세탁소": {"cogs_ratio": 0.22, "labor_ratio": 0.30, "fitout_krw_per_pyeong": 2000000, "operating_days_per_month": 26, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
+    "PC방": {"cogs_ratio": 0.15, "labor_ratio": 0.28, "fitout_krw_per_pyeong": 3200000, "operating_days_per_month": 30, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
+    "무인점포": {"cogs_ratio": 0.65, "labor_ratio": 0.05, "fitout_krw_per_pyeong": 1900000, "operating_days_per_month": 30, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"},
     "일반음식점": {"cogs_ratio": 0.40, "labor_ratio": 0.25, "fitout_krw_per_pyeong": 2400000, "operating_days_per_month": 26, "verified": false, "source": "시연용 미검증 값 — 공적 통계에서 단일 값으로 뽑히지 않아 설계 가정값을 등록한다.", "as_of": "2026-07-28"}
   }
 }
