@@ -105,6 +105,8 @@ export function useJarimaegim() {
   const sessionReady = useRef<Promise<void> | null>(null);
   const traceMark = useRef<Record<string, number>>({});
   const traceOrigin = useRef(0);
+  // 마지막으로 누른 후보. 저장이 늦게 도착했을 때 그 응답이 아직 유효한지 판단하는 기준이다.
+  const commitIntent = useRef<string | null>(null);
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
 
@@ -337,15 +339,39 @@ export function useJarimaegim() {
    *  계획하기"를 눌러 놓고 보증금·월세·권리금을 다시 손으로 옮겨 적게 하는 것은 같은 값을
    *  두 번 묻는 것이다. 권리금은 가정값이므로 화면이 그렇게 표시하고, 사용자가 그 자리에서
    *  고칠 수 있다. 채운 뒤 밴드를 다시 계산해야 처방 단계가 확정 후보 기준 금액을 본다. */
+  /** 확정 후보를 케이스에 남긴다. 남겨야 PDF 의 매물 섹션과 대화의 상권 맥락이 산다.
+   *  저장이 실패해도 방금 한 확정을 되돌리지 않는다 — 사용자가 누른 것을 서버 사정으로
+   *  취소해서는 안 된다.
+   *
+   *  후보를 비교하다 A → B 로 빠르게 바꾸면 두 PATCH 가 같은 버전을 들고 나가 한쪽이 409 로
+   *  밀린다. 밀린 쪽이 마지막 클릭이면 화면은 B 인데 서버에는 A 가 남아, PDF 의 계획 기준
+   *  후보와 조달 요약이 서로 다른 매물을 가리키게 된다. 그래서 409 는 케이스를 다시 읽어
+   *  최신 버전으로 한 번만 재시도한다 — 재시도는 한 번뿐이고, 두 번째 409 는 포기한다.
+   *  응답을 반영하기 전에 매번 의도를 다시 확인한다. 늦게 도착한 저장이 사용자가 이미
+   *  떠난 후보로 케이스를 되돌려서는 안 된다. */
+  const persistCommit = useCallback(async (record: CaseRecord, candidateId: string | null) => {
+    const patch = { committed_listing_id: candidateId };
+    try {
+      const saved = await api.updateCase(record.id, record.version, patch);
+      if (commitIntent.current === candidateId) setCaseData(saved);
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 409 || commitIntent.current !== candidateId) return;
+      try {
+        const fresh = await api.getCase(record.id);
+        if (commitIntent.current !== candidateId) return;
+        const saved = await api.updateCase(fresh.id, fresh.version, patch);
+        if (commitIntent.current === candidateId) setCaseData(saved);
+      } catch { return; }
+    }
+  }, []);
+
   const commitCandidate = useCallback((candidateId: string | null) => {
     setCommitted(candidateId);
     // 후보가 바뀌면 부족분이 바뀐다. 그 부족분으로 고른 수단은 근거를 잃으므로 함께 비운다.
     setDocuments({}); setDocNotice(""); setSelected({ products: [], programs: [] }); setDocConfirmed(false);
     if (!caseData) return;
-    // 케이스에 남겨야 PDF 의 매물 섹션과 대화의 상권 맥락이 산다. 저장이 실패해도 방금 한
-    // 확정을 되돌리지 않는다 — 사용자가 누른 것을 서버 사정으로 취소해서는 안 된다.
-    void api.updateCase(caseData.id, caseData.version, { committed_listing_id: candidateId })
-      .then(setCaseData).catch(() => undefined);
+    commitIntent.current = candidateId;
+    void persistCommit(caseData, candidateId);
     if (!candidateId) return;
     const listing = candidates.find((candidate) => candidate.id === candidateId)?.listing;
     if (!listing) return;
@@ -359,7 +385,7 @@ export function useJarimaegim() {
     };
     setBandForm(next);
     void runBands(caseData, next, profile).catch(() => setBandState("error"));
-  }, [bandForm, candidates, caseData, profile, runBands]);
+  }, [bandForm, candidates, caseData, persistCommit, profile, runBands]);
 
   /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다.
    *  선택은 id 로만 보내고 표시 문자열은 서버가 카탈로그에서 되찾는다. 금액은 서버가
@@ -372,7 +398,8 @@ export function useJarimaegim() {
         confirmed: docConfirmed,
         selected_product_ids: selected.products,
         selected_program_ids: selected.programs,
-        funding_input: bandForm.monthly_rent_krw > 0
+        // 밴드를 낼 수 없는 입력이면 아예 보내지 않는다. 판단은 밴드 산출과 같은 술어를 쓴다.
+        funding_input: missingBandInputs(bandForm).length === 0
           ? { industry: caseData.inputs.industry, ...bandForm, ...profile }
           : null
       });
