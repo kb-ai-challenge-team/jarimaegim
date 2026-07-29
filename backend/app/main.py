@@ -41,6 +41,7 @@ from .models import (AnalysisCreate, BandLine, BreakEven, CaseCreate, CasePatch,
 from .policy_params import PolicyParams
 from .repository import Repository, VersionError
 from .retrieval import RetrievalService
+from .industry import canonical as canonical_industry
 from .industry import resolve as resolve_industry
 from .services import AIService, AnalysisService, CostService, LocationService
 from .trade_area import TradeAreaService, TradeAreaUnavailable
@@ -241,6 +242,11 @@ async def delete_current_session(response: Response, session_id: UUID = Depends(
 async def create_case(payload: CaseCreate, session_id: UUID = Depends(current_session)):
     if payload.inputs.district not in SEOUL_DISTRICTS:
         raise HTTPException(400, {"code": "VALIDATION_ERROR", "message": "현재 서울 25개 자치구만 지원합니다."})
+    # 업종은 들어올 때 한 번만 다듬는다. 조사가 붙은 채로 저장되면(직접 입력이든 모델 추출이든)
+    # 매물·상권·제도 파라미터 세 조회가 모두 조용히 빗나가 후보가 근거 B 대신 C 로 떨어진다.
+    # 여기서 정규화해 두면 아래 조회들은 industry.resolve 의 "표에 정확히 적힌 것만" 규칙을
+    # 그대로 지킬 수 있다 — 관대함은 경계 한 곳에만 둔다.
+    payload.inputs.industry = canonical_industry(payload.inputs.industry)
     return repository.create_case(session_id, payload)
 
 
