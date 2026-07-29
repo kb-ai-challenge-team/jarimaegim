@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { DEFAULT_BAND_FORM, DEFAULT_CASE, DEFAULT_PROFILE, PRIORITY_LABELS, PYEONG_IN_M2, formatKrw } from "./constants";
 import { clearProfile, loadProfile, saveProfile, type Profile } from "./profile-storage";
-import type { AgentProgress, AnalysisResult, BandLine, PrescribeResult, Candidate, CaseInput, CaseRecord, ConditionInterpretResult, DistrictSummary, FundingBandResult, FundingCapacityResult, KbProduct, Program, StatusResponse } from "./types";
+import type { AgentProgress, AnalysisResult, BandLine, PrescribeResult, Candidate, CaseInput, CaseRecord, ChatToolActivity, Citation, ConditionInterpretResult, DistrictSummary, FundingBandResult, FundingCapacityResult, KbProduct, Program, StatusResponse } from "./types";
 
 // 금융 프로필은 관문이 아니라 1단계다. 자기자본을 입력한 사용자는 그 자리에서 조달 여력을
 // 돌려받고 단계를 끝낸다(capacity). 조건은 그다음 단계이며 금융 입력을 일절 받지 않는다.
@@ -15,7 +15,10 @@ export type FlowStep = "profile" | "capacity" | "ask" | "confirm" | "recommend" 
 export type BandForm = typeof DEFAULT_BAND_FORM;
 export type { Profile } from "./profile-storage";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
-export interface ChatMessage { role: "assistant" | "user"; text: string; citation?: string }
+/** `citations` 는 이번 턴에 실제로 호출된 도구가 돌려준 원천 목록이다 — 단발성 `api.chat` 시절에는
+ *  항상 비어 있어 첫 항목의 URL 하나만 들고 있었지만, 스트리밍 경로는 도구마다 원천을 붙여 보내므로
+ *  전부 보존한다. `images` 는 get_location_map_image 가 만든 data URL(검증은 lib/api.ts 가 한다). */
+export interface ChatMessage { role: "assistant" | "user"; text: string; citations?: Citation[]; images?: string[] }
 
 export type TraceStatus = "idle" | "active" | "done" | "skipped" | "failed";
 export interface TraceStep { id: string; label: string; detail: string; status: TraceStatus; note?: string; ms?: number }
@@ -154,12 +157,15 @@ export function useJarimaegim() {
   const [messages, setMessages] = useState<ChatMessage[]>([INTRO]);
   const [busy, setBusy] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  /** 이번 턴에 진행 중인 도구 호출. 턴이 끝나면 비운다 — 완료된 근거는 메시지의 citations 가 들고 있다. */
+  const [chatTools, setChatTools] = useState<ChatToolActivity[]>([]);
   const [error, setError] = useState("");
   const [trace, setTrace] = useState<TraceRun>(EMPTY_TRACE);
   const [traceOpen, setTraceOpen] = useState(false);
   /** 조건을 만든 발화. condition.location 이 실행 중에도 이것을 읽어 아직 비어 있는 항목을 채운다. */
   const [utterance, setUtterance] = useState("");
   const sessionReady = useRef<Promise<void> | null>(null);
+  const chatAbort = useRef<AbortController | null>(null);
   const traceMark = useRef<Record<string, number>>({});
   const traceOrigin = useRef(0);
   // 마지막으로 누른 후보와 지금 살아 있는 케이스. 저장이 늦게 도착했을 때 그 응답이 아직
@@ -175,6 +181,9 @@ export function useJarimaegim() {
   }, []);
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
+  // 언마운트 시 열려 있던 SSE 연결을 끊는다. 끊지 않으면 화면이 사라진 뒤에도 스트림이 계속 읽히고,
+  // 그 턴의 setState 가 마운트되지 않은 컴포넌트로 날아간다.
+  useEffect(() => () => { chatAbort.current?.abort(); }, []);
 
   // Landing overview. A failure leaves the map empty rather than breaking the shell —
   // the summary is orientation, not something the flow depends on.
@@ -652,18 +661,43 @@ export function useJarimaegim() {
     }
   }, [ensureSession]);
 
+  /** 스트리밍 경로(`POST /messages/stream`)만 쓴다. 단발성 `api.chat` 은 도구가 붙지 않아
+   *  케이스 요약 밖의 어떤 것도 조회하지 못하므로, 이 화면에서 청약공고·실거래·주변시설을 물으면
+   *  "조회할 수 없다"는 답만 돌아왔다. Workspace 와 같은 경로를 쓰게 해 두 화면의 대화가 갈라지지
+   *  않게 한다 — scripts/flow-check.mjs 가 지키는 회귀도 같은 것이다. */
   const sendChat = useCallback(async (text: string) => {
     if (!text.trim() || chatBusy) return;
     setMessages((prev) => [...prev, { role: "user", text }]);
     setChatBusy(true);
+    setChatTools([]);
+    chatAbort.current?.abort();
+    const controller = new AbortController();
+    chatAbort.current = controller;
+    // 앞선 턴이 늦게 도착해 지금 턴의 화면을 덮어쓰지 못하게 하는 기준. 상태가 아니라 ref 를 읽는
+    // 이유는 commitIntent/activeCaseId 와 같다 — 렌더 사이에 판단해야 하기 때문이다.
+    const isCurrent = () => chatAbort.current === controller;
+    // 이번 턴의 지도 이미지. tool_end 는 언제나 done 보다 먼저 도착하므로(lib/api.ts 의 chatStream)
+    // 지역 배열로 충분하다. chatTools 는 턴 끝에 비우므로 이미지를 거기에 둘 수 없다.
+    const turnImages: string[] = [];
     try {
       await ensureSession();
       if (!caseData) { setMessages((prev) => [...prev, { role: "assistant", text: "먼저 업종과 지역 조건을 확정해 주세요. 조건이 있어야 공식 근거를 붙여 답할 수 있습니다." }]); return; }
-      const result = await api.chat(caseData.id, text);
-      setMessages((prev) => [...prev, { role: "assistant", text: result.message, citation: result.citations[0]?.official_url }]);
+      await api.chatStream(caseData.id, text, {
+        onToolStart: (activity) => { if (isCurrent()) setChatTools((prev) => [...prev, activity]); },
+        onToolEnd: (activity) => {
+          if (!isCurrent()) return;
+          if (activity.display?.image_url) turnImages.push(activity.display.image_url);
+          // label 은 tool_end 에 실려 오지 않는다 — 같은 call_id 의 tool_start 가 남긴 것을 지킨다.
+          setChatTools((prev) => prev.map((item) => item.call_id === activity.call_id ? { ...item, status: activity.status, summary: activity.summary } : item));
+        },
+        onDelta: () => {}, // delta 는 done.message 와 같은 본문이다. 두 번 그리지 않도록 done 에서만 그린다.
+        onDone: (result) => { if (isCurrent()) setMessages((prev) => [...prev, { role: "assistant", text: result.message, citations: result.citations, images: turnImages.length ? turnImages : undefined }]); },
+      }, controller.signal);
     } catch (err) {
+      if (!isCurrent()) return;
+      if (err instanceof Error && err.name === "AbortError") return;
       setMessages((prev) => [...prev, { role: "assistant", text: err instanceof ApiError ? err.message : "AI 연결을 확인하지 못했습니다. 저장된 근거는 계속 볼 수 있습니다." }]);
-    } finally { setChatBusy(false); }
+    } finally { if (isCurrent()) { setChatBusy(false); setChatTools([]); chatAbort.current = null; } }
   }, [caseData, chatBusy, ensureSession]);
 
   /** 조건만 다시 받는다. 금융 프로필은 사용자의 성질이므로 조건을 바꾼다고 다시 묻지 않는다.
@@ -688,7 +722,7 @@ export function useJarimaegim() {
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     selected, toggleFunding, docConfirmed, setDocConfirmed,
-    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
+    analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, chatTools, error, setError, trace, traceOpen,
     start, startWith, rerun, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
   };
 }
