@@ -250,9 +250,13 @@ const stepperLabels = await kb.locator(".kb-stepper li").allTextContents();
 const bandBannerShown = await kb.locator(".kb-band-banner").count() > 0;
 const kbFlow = {
   stepCount: stepperLabels.length,
-  // 자금이 별도 단계로 서 있어야 하고, 근거는 여전히 단계가 아니어야 한다.
-  stepsAreFour: stepperLabels.length === 4
+  // 자금이 별도 단계로 서 있고, 처방 한 칸은 조달·서류 두 칸으로 갈라져 다섯이 된다.
+  // 근거는 여전히 단계가 아니어야 한다.
+  stepsAreFive: stepperLabels.length === 5
     && stepperLabels.some(label => label.includes("자금"))
+    && stepperLabels.some(label => label.includes("조달"))
+    && stepperLabels.some(label => label.includes("서류"))
+    && !stepperLabels.some(label => label.includes("처방"))
     && !stepperLabels.some(label => label.includes("근거")),
   candidates: await kb.locator(".kb-candidates li").count(),
   tuningInPlace: await kb.getByRole("button", { name: /정밀하게 맞추기/ }).count() > 0,
@@ -279,11 +283,72 @@ if (kbFlow.candidates > 0) {
   kbFlow.evidenceInline = true;
 }
 
-const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, mydataGate, capacityStep, conditionStep, rentlessRun, errors };
+// ④ 조달 · ⑤ 서류. 후보를 확정해야 부족분이 확정되므로 확정 전에는 다음으로 갈 수 없어야 한다.
+const prescribe = { reachedFunding: false, reachedPaperwork: false };
+// 아직 없는 화면을 기본 대기시간으로 기다리면 스크립트가 멎은 것처럼 보인다. 멎은 검사는 실패한
+// 검사보다 나쁜 신호이므로, 이 구간만 대기 상한을 낮추고 첫 실패를 prescribe.error 에 적고 빠져나온다.
+kb.setDefaultTimeout(20000);
+// 단계 이동 버튼은 .kb-stepnav 안에만 있다. 오른쪽 대화 칼럼의 추천 질문("다음에 뭘 해야 해?")도
+// 버튼이라 이름만으로 고르면 두 개가 잡힌다. 라벨을 추측하는 대신 컨테이너로 좁힌다.
+const nextStep = () => kb.locator(".kb-stepnav").getByRole("button", { name: /다음/ });
+try {
+  if (kbFlow.candidates > 0) {
+    prescribe.nextLockedBeforeCommit = await nextStep().isDisabled();
+    await kb.getByRole("button", { name: "계획 기준으로 확정" }).first().click();
+    // 계획 기준 배지는 조달 화면에만 있다. 확정 직후에는 아직 입지 화면이므로 목록 안에서
+    // 확정 표시(kb-primary-sm)로 바뀐 것을 기다린다.
+    await kb.waitForSelector(".kb-candidate-actions .kb-primary-sm");
+    prescribe.nextUnlockedAfterCommit = !(await nextStep().isDisabled());
+
+    await nextStep().click();
+    // 부족분 카드는 단계가 뜨는 순간 그려진다 — 어떤 조회도 기다리지 않으므로(실측 2ms) 넉넉한
+    // 값을 줄 이유가 없다. 화면이 없으면 빨리 포기하는 편이 낫다.
+    await kb.waitForSelector(".kb-gap-card", { timeout: 20000 });
+    prescribe.reachedFunding = true;
+    // 카탈로그는 이 화면에 들어선 뒤에야 조회된다(use-jarimaegim 의 step==="funding" 효과).
+    // 그래서 첫 렌더에는 목록이 비어 "고를 수단이 없습니다"가 한 프레임 스쳐 간다 — 그 찰나를
+    // 읽으면 공시가 66건 있어도 빈 상태로 통과해 버린다. 먼저 고를 수 있는 입력이 나타나기를
+    // 기다리고, 끝내 나타나지 않을 때만 빈 상태를 정상으로 인정한다.
+    // 행 수만 세면 체크박스를 잃은 행도 통과하므로, 행이 아니라 입력 자체를 센다.
+    // 실제로 네트워크를 기다리는 대기는 여기다. 같은 파일의 공고 대기와 같은 30초를 준다.
+    const selectable = await kb.waitForSelector(".kb-select-row input[type=checkbox]", { timeout: 30000 }).then(() => true).catch(() => false);
+    // 무키 환경에서는 공시·공고가 둘 다 0건일 수 있다. 그것도 정상 경로이며 그때도 서류로 넘어갈
+    // 수 있어야 한다. 문구는 대화 칼럼이 아니라 단계 본문에서 찾는다 — getByText 는 여러 개가
+    // 잡혀도 count 로는 터지지 않으므로, 대화 말풍선이 같은 말을 하면 조달 화면을 확인하지 않고도
+    // 조용히 통과해 버린다.
+    prescribe.emptyCatalogExplained = selectable
+      || await kb.locator(".kb-step").getByText("고를 수단이 없습니다").count() > 0;
+
+    await kb.getByRole("button", { name: /문서 만들기|서류로/ }).click();
+    await kb.waitForSelector(".kb-doc-preview");
+    prescribe.reachedPaperwork = true;
+    // 미리보기는 항상 나오는 여섯 줄 + 시연용 가정값일 때만 붙는 한 줄로 구성된다. 여기서 막고 싶은
+    // 것은 "동의만 받고 무엇이 담기는지는 안 보여주는" 회귀이지 줄 수의 변화가 아니므로, 정확히
+    // 세지 않고 느슨한 하한만 둔다 — 문구를 다듬는다고 이 검사가 깨지면 안 된다.
+    prescribe.previewListsSections = (await kb.locator(".kb-doc-preview li").count()) >= 4;
+    // 동의 전에는 준비 버튼이 잠겨 있어야 한다. 서버의 422 는 그대로 남아 있는 방어선이다.
+    prescribe.prepareLockedBeforeConsent = await kb.getByRole("button", { name: /초안 준비하기/ }).isDisabled();
+    await kb.getByRole("checkbox", { name: /문서에 담기는 것을 확인/ }).check();
+    prescribe.prepareUnlockedAfterConsent = !(await kb.getByRole("button", { name: /초안 준비하기/ }).isDisabled());
+  }
+} catch (error) {
+  // 첫 줄만 남기면 "Timeout 20000ms exceeded." 뿐이라 무엇을 못 찾았는지가 사라진다.
+  // 어떤 셀렉터에서 멈췄는지가 이 검사의 알맹이이므로 call log 의 대기 대상 줄을 같이 남긴다.
+  // playwright 는 call log 를 ANSI dim 으로 감싸므로 JSON 에 그대로 실리지 않게 벗겨낸다.
+  const lines = String(error?.message ?? error).replace(/\x1b\[\d+m/g, "").split("\n").map(line => line.trim()).filter(Boolean);
+  prescribe.error = [lines[0], lines.find(line => /waiting for/.test(line))].filter(Boolean).join(" ");
+}
+kb.setDefaultTimeout(30000);
+// 번호 매긴 처방 블록이 남아 있으면 단계 분리가 되돌아간 것이다.
+prescribe.noNumberedBlocks = await kb.locator(".kb-prescription-no").count() === 0;
+
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, prescribe, mydataGate, capacityStep, conditionStep, rentlessRun, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.safeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
-if (!kbFlow.stepsAreFour || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.bandDemoLabelled || !kbFlow.evidenceInline) process.exitCode = 1;
+if (!kbFlow.stepsAreFive || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.bandDemoLabelled || !kbFlow.evidenceInline) process.exitCode = 1;
+if (!prescribe.noNumberedBlocks) process.exitCode = 1;
+if (kbFlow.candidates > 0 && (!prescribe.reachedFunding || !prescribe.reachedPaperwork || !prescribe.nextLockedBeforeCommit || !prescribe.nextUnlockedAfterCommit || !prescribe.emptyCatalogExplained || !prescribe.previewListsSections || !prescribe.prepareLockedBeforeConsent || !prescribe.prepareUnlockedAfterConsent)) process.exitCode = 1;
 // 확인 클릭 없는 자동 진행과, 그 대가인 근거 상주가 이 흐름의 계약이다.
 if (!conditionStep.evidencePersists || !conditionStep.noConfirmGate || !conditionStep.editableInPlace) process.exitCode = 1;
 if (!rentlessRun.reached || !rentlessRun.rentBlank) process.exitCode = 1;

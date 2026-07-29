@@ -9,7 +9,9 @@ import type { AgentProgress, AnalysisResult, BandLine, PrescribeResult, Candidat
 // 금융 프로필은 관문이 아니라 1단계다. 자기자본을 입력한 사용자는 그 자리에서 조달 여력을
 // 돌려받고 단계를 끝낸다(capacity). 조건은 그다음 단계이며 금융 입력을 일절 받지 않는다.
 // 최대 조달선은 프로필만으로 나오고 권장 조달선만 업종·월세를 요구한다 — 이 경계가 단계를 가른다.
-export type FlowStep = "profile" | "capacity" | "ask" | "confirm" | "recommend" | "prescribe";
+// 옛 처방은 조달·서류로 갈라졌고 그 경계도 데이터가 정한다 — 부족분은 후보를 확정해야 확정되고,
+// 조달에서 고른 수단은 서류가 만드는 문서의 내용을 바꾼다.
+export type FlowStep = "profile" | "capacity" | "ask" | "confirm" | "recommend" | "funding" | "paperwork";
 export type BandForm = typeof DEFAULT_BAND_FORM;
 export type { Profile } from "./profile-storage";
 export type LocationState = "idle" | "loading" | "success" | "empty" | "integration_pending" | "error";
@@ -142,6 +144,9 @@ export function useJarimaegim() {
   const [documents, setDocuments] = useState<Record<string, string>>({});
   const [docBusy, setDocBusy] = useState("");
   const [docNotice, setDocNotice] = useState("");
+  // 화면에 보인 순서를 그대로 들고 있는다. 문서의 나열 순서가 화면과 같아야 대조가 된다.
+  const [selected, setSelected] = useState<{ products: string[]; programs: string[] }>({ products: [], programs: [] });
+  const [docConfirmed, setDocConfirmed] = useState(false);
   const [bandForm, setBandForm] = useState<BandForm>(DEFAULT_BAND_FORM);
   const [bands, setBands] = useState<FundingBandResult | null>(null);
   const [bandState, setBandState] = useState<LocationState>("idle");
@@ -157,6 +162,17 @@ export function useJarimaegim() {
   const sessionReady = useRef<Promise<void> | null>(null);
   const traceMark = useRef<Record<string, number>>({});
   const traceOrigin = useRef(0);
+  // 마지막으로 누른 후보와 지금 살아 있는 케이스. 저장이 늦게 도착했을 때 그 응답이 아직
+  // 유효한지 판단하는 기준이다. 둘 다 렌더 사이에 읽어야 하므로 상태가 아니라 ref 다.
+  const commitIntent = useRef<string | null>(null);
+  const activeCaseId = useRef<string | null>(null);
+
+  /** 케이스가 바뀌는 유일한 통로. 상태와 activeCaseId 를 함께 옮겨 둘이 어긋나지 않게 한다.
+   *  setCaseData 를 직접 부르면 ref 가 뒤처지고, 뒤처진 ref 는 늦게 온 응답을 막지 못한다. */
+  const applyCase = useCallback((record: CaseRecord | null) => {
+    activeCaseId.current = record?.id ?? null;
+    setCaseData(record);
+  }, []);
 
   useEffect(() => { api.status().then(setStatus).catch(() => setStatus(null)); }, []);
 
@@ -196,6 +212,13 @@ export function useJarimaegim() {
 
   const setProfileField = useCallback((key: keyof Profile, value: number) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const toggleFunding = useCallback((kind: "products" | "programs", id: string) => {
+    setSelected((prev) => {
+      const list = prev[kind];
+      return { ...prev, [kind]: list.includes(id) ? list.filter((item) => item !== id) : [...list, id] };
+    });
   }, []);
 
   /** 조달 여력. 케이스 이전이라 프로필만 보낸다. 실패해도 조건으로 가는 길은 막지 않는다. */
@@ -341,7 +364,9 @@ export function useJarimaegim() {
       await ensureSession();
       const title = `${inputs.district} ${inputs.industry}`.trim() || "새 케이스";
       const created = await api.createCase(inputs, title);
-      setCaseData(created);
+      // 케이스 쓰기는 applyCase 한 곳으로 모은다 — activeCaseId 와 caseData 가 어긋나면
+      // 늦게 도착한 저장 응답이 이미 버린 케이스를 되살린다.
+      applyCase(created);
 
       // 실행 순서는 이제 백엔드의 메인 에이전트가 가진다. 여기서는 도착한 판정을 줄에 옮길 뿐,
       // 어느 팀이 먼저인지도 어디서 멈추는지도 클라이언트가 정하지 않는다.
@@ -386,7 +411,7 @@ export function useJarimaegim() {
         },
       });
 
-      // 밴드 산출물은 처방 화면이 통째로 쓰므로 기존 경로를 그대로 유지한다. 같은 compute_bands 를
+      // 밴드 산출물은 조달 화면이 통째로 쓰므로 기존 경로를 그대로 유지한다. 같은 compute_bands 를
       // 부르므로 두 경로가 다른 답을 낼 수는 없다. 페이로드 통합은 별도 변경으로 다룬다.
       const band = await runBands(created, terms, profile);
       const line = recommendedLine(band);
@@ -396,14 +421,14 @@ export function useJarimaegim() {
       const record = ceiling && ceiling > created.inputs.budget_krw
         ? await api.updateCase(created.id, created.version, { budget_krw: ceiling })
         : created;
-      if (record !== created) setCaseData(record);
+      if (record !== created) applyCase(record);
       await runSearch(record);
       await handoff();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep, utterance]);
+  }, [applyCase, bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep, utterance]);
 
   const start = useCallback(() => startWith({}), [startWith]);
 
@@ -417,7 +442,7 @@ export function useJarimaegim() {
     void startWith({});
   }, [caseData, startWith, trace.state]);
 
-  /** 발화를 서버 제안으로 바꾼다. 케이스는 아직 만들지 않는다 — 확인 화면의 승인이 그 일을 한다. */
+  /** 발화를 서버 제안으로 바꾼다. 차단 항목(업종)이 채워지면 확인을 기다리지 않고 그대로 시작한다. */
   const interpret = useCallback(async (text: string) => {
     setBusy("interpret"); setError(""); setInterpretText(text);
     // 발화 원문을 남긴다. 처방 실행의 condition.location 이 아직 비어 있는 항목을
@@ -485,18 +510,54 @@ export function useJarimaegim() {
     } finally { setBusy(""); }
   }, [bandForm, caseData, profile, runBands]);
 
+  /** 확정 후보를 케이스에 남긴다. 남겨야 PDF 의 매물 섹션과 대화의 상권 맥락이 산다.
+   *  저장이 실패해도 방금 한 확정을 되돌리지 않는다 — 사용자가 누른 것을 서버 사정으로
+   *  취소해서는 안 된다.
+   *
+   *  후보를 비교하다 A → B 로 빠르게 바꾸면 두 PATCH 가 같은 버전을 들고 나가 한쪽이 409 로
+   *  밀린다. 밀린 쪽이 마지막 클릭이면 화면은 B 인데 서버에는 A 가 남아, PDF 의 계획 기준
+   *  후보와 조달 요약이 서로 다른 매물을 가리키게 된다. 그래서 409 는 케이스를 다시 읽어
+   *  최신 버전으로 한 번만 재시도한다 — 재시도는 한 번뿐이고, 두 번째 409 는 포기한다.
+   *
+   *  응답을 반영하기 전에 매번 의도와 케이스를 함께 확인한다. 후보 id 만으로는 모자란다 —
+   *  시연용 매물 id 는 세션마다 새로 나지 않고 데이터셋 행에 고정돼 있어(backend/app/listings.py),
+   *  조건을 다시 입력해 만든 새 케이스에서 같은 매물을 고르면 후보 id 가 글자까지 같다.
+   *  그때 먼저 떠난 케이스의 응답이 도착하면 id·버전·조건이 전부 다른 레코드가 살아 있는
+   *  세션으로 들어앉는다. 케이스가 바뀌었으면 그 응답은 버린다. */
+  const persistCommit = useCallback(async (record: CaseRecord, candidateId: string | null) => {
+    const patch = { committed_listing_id: candidateId };
+    const stillCurrent = () => activeCaseId.current === record.id && commitIntent.current === candidateId;
+    try {
+      const saved = await api.updateCase(record.id, record.version, patch);
+      if (stillCurrent()) applyCase(saved);
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 409 || !stillCurrent()) return;
+      try {
+        const fresh = await api.getCase(record.id);
+        if (!stillCurrent()) return;
+        const saved = await api.updateCase(fresh.id, fresh.version, patch);
+        if (stillCurrent()) applyCase(saved);
+      } catch { return; }
+    }
+  }, [applyCase]);
+
   /** 계획 기준 후보. 처방 단계가 이 값을 소비한다.
    *
    *  후보를 확정하면 그 매물의 임대 조건을 필요자금 입력에 그대로 채운다. "이 후보로
    *  계획하기"를 눌러 놓고 보증금·월세·권리금을 다시 손으로 옮겨 적게 하는 것은 같은 값을
    *  두 번 묻는 것이다. 권리금은 가정값이므로 화면이 그렇게 표시하고, 사용자가 그 자리에서
    *  고칠 수 있다. 채운 뒤 밴드를 다시 계산해야 처방 단계가 확정 후보 기준 금액을 본다. */
+
   const commitCandidate = useCallback((candidateId: string | null) => {
     setCommitted(candidateId);
-    setDocuments({}); setDocNotice("");
+    // 후보가 바뀌면 부족분이 바뀐다. 그 부족분으로 고른 수단은 근거를 잃으므로 함께 비운다.
+    setDocuments({}); setDocNotice(""); setSelected({ products: [], programs: [] }); setDocConfirmed(false);
+    if (!caseData) return;
+    commitIntent.current = candidateId;
+    void persistCommit(caseData, candidateId);
     if (!candidateId) return;
     const listing = candidates.find((candidate) => candidate.id === candidateId)?.listing;
-    if (!listing || !caseData) return;
+    if (!listing) return;
     const next: BandForm = {
       ...bandForm,
       area_pyeong: Number((listing.area_m2 / PYEONG_IN_M2).toFixed(1)),
@@ -507,20 +568,30 @@ export function useJarimaegim() {
     };
     setBandForm(next);
     void runBands(caseData, next, profile).catch(() => setBandState("error"));
-  }, [bandForm, candidates, caseData, profile, runBands]);
+  }, [bandForm, candidates, caseData, persistCommit, profile, runBands]);
 
-  /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다. */
+  /** 문서 초안. 백엔드가 PDF 를 만들고 익명 세션에서만 내려받을 수 있다.
+   *  선택은 id 로만 보내고 표시 문자열은 서버가 카탈로그에서 되찾는다. 금액은 서버가
+   *  같은 산식으로 다시 계산하므로 여기서 계산한 값을 보내지 않는다. */
   const prepareDocument = useCallback(async (template: string) => {
-    if (!caseData) return;
+    if (!caseData || !docConfirmed) return;
     setDocBusy(template); setDocNotice("");
     try {
-      const record = await api.createDocument(caseData.id, template);
+      const record = await api.createDocument(caseData.id, template, {
+        confirmed: docConfirmed,
+        selected_product_ids: selected.products,
+        selected_program_ids: selected.programs,
+        // 밴드를 낼 수 없는 입력이면 아예 보내지 않는다. 판단은 밴드 산출과 같은 술어를 쓴다.
+        funding_input: missingBandInputs(bandForm).length === 0
+          ? { industry: caseData.inputs.industry, ...bandForm, ...profile }
+          : null
+      });
       setDocuments((prev) => ({ ...prev, [template]: record.document_id }));
       setDocNotice(record.message);
     } catch (err) {
       setDocNotice(err instanceof ApiError ? err.message : "문서를 준비하지 못했습니다.");
     } finally { setDocBusy(""); }
-  }, [caseData]);
+  }, [bandForm, caseData, docConfirmed, profile, selected]);
 
   const downloadDocument = useCallback(async (template: string) => {
     const id = documents[template];
@@ -564,8 +635,8 @@ export function useJarimaegim() {
     }
   }, [ensureSession]);
 
-  useEffect(() => { if (step === "prescribe" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
-  useEffect(() => { if (step === "prescribe" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
+  useEffect(() => { if (step === "funding" && programState === "idle") void loadPrograms(); }, [step, programState, loadPrograms]);
+  useEffect(() => { if (step === "funding" && kbState === "idle") void loadKbProducts(); }, [step, kbState, loadKbProducts]);
 
   /** The 정책 tab reads the same official notices without needing a case. */
   const loadCatalog = useCallback(async () => {
@@ -598,12 +669,16 @@ export function useJarimaegim() {
   /** 조건만 다시 받는다. 금융 프로필은 사용자의 성질이므로 조건을 바꾼다고 다시 묻지 않는다.
    *  프로필을 고치는 경로는 어느 화면에서나 상단 배지의 "수정" 하나뿐이다. */
   const restart = useCallback(() => {
-    setStep("ask"); setForm(DEFAULT_CASE); setProposal(null); setInterpretText(""); setEdited(new Set()); setCaseData(null);
+    // applyCase(null) 로 비워야 activeCaseId 도 함께 풀린다. 떠난 케이스로 날아간 저장은
+    // 새 케이스에서 같은 후보를 다시 골라도 케이스 검사에 걸려 버려진다.
+    setStep("ask"); setForm(DEFAULT_CASE); setProposal(null); setInterpretText(""); setEdited(new Set());
+    applyCase(null); commitIntent.current = null;
     setCandidates([]); setLocationState("idle"); setFocused(null); setOverviewDistrict(null); setAnalysis({});
     setPrograms([]); setProgramState("idle"); setMessages([INTRO]); setError(""); setTrace(EMPTY_TRACE);
     setBandForm(DEFAULT_BAND_FORM); setBands(null); setBandState("idle");
     setCommitted(null); setDocuments({}); setDocBusy(""); setDocNotice(""); setTraceOpen(false);
-  }, []);
+    setSelected({ products: [], programs: [] }); setDocConfirmed(false);
+  }, [applyCase]);
 
   return {
     step, setStep, form, runInputs, setField, proposal, interpretText, edited, interpret, startManual, caseData, candidates, locationState, focused, setFocused,
@@ -612,6 +687,7 @@ export function useJarimaegim() {
     profile, setProfileField, profileConfirmed, profileRestored, confirmProfile, forgetProfile, restart,
     bandForm, setBandField, bands, bandState, recomputeBands,
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
+    selected, toggleFunding, docConfirmed, setDocConfirmed,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
     start, startWith, rerun, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
   };

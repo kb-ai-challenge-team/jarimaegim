@@ -258,6 +258,11 @@ class DocumentCreate(BaseModel):
     case_id: UUID
     template: Literal["location", "cost", "funding", "business", "checklist"]
     confirmed: bool
+    # 선택은 id 로만 받는다. 이름·금리·URL 은 서버가 카탈로그에서 되찾는다 — 클라이언트가 보낸
+    # 문자열을 그대로 인쇄하면 조작된 상품명과 금리가 KB 문서 모양으로 찍힌다.
+    selected_product_ids: list[str] = Field(default_factory=list, max_length=10)
+    selected_program_ids: list[str] = Field(default_factory=list, max_length=10)
+    funding_input: "FundingFacts | None" = None
 
 
 class PrivacyRequestCreate(BaseModel):
@@ -301,10 +306,12 @@ class ConditionInterpret(BaseModel):
     known: dict[str, Any] = Field(default_factory=dict)
 
 
-class FundingBandInput(BaseModel):
-    """평수·보증금은 필요자금(→현금소진)에만 쓰이므로 없어도 밴드 상한과 손익분기는 계산된다."""
+class FundingFacts(BaseModel):
+    """밴드 산출에 필요한 사실만. 케이스 식별자는 담지 않는다 — 문서 요청처럼 바깥에 이미
+    case_id 가 있는 곳에서 두 번 싣지 않기 위해서다.
 
-    case_id: UUID
+    평수·보증금은 필요자금(→현금소진)에만 쓰이므로 없어도 밴드 상한과 손익분기는 계산된다."""
+
     industry: str = Field(min_length=1, max_length=120)
     area_pyeong: float | None = Field(default=None, gt=0, le=500)
     deposit_krw: int | None = Field(default=None, ge=0, le=100_000_000_000)
@@ -315,6 +322,13 @@ class FundingBandInput(BaseModel):
     equity_krw: int = Field(ge=0, le=100_000_000_000)
     existing_debt_krw: int = Field(default=0, ge=0, le=100_000_000_000)
     other_monthly_fixed_krw: int = Field(default=0, ge=0, le=1_000_000_000)
+
+
+class FundingBandInput(FundingFacts):
+    case_id: UUID
+
+
+DocumentCreate.model_rebuild()
 
 
 class BandLine(BaseModel):
