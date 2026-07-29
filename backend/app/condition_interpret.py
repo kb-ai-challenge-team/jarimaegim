@@ -3,6 +3,7 @@ from typing import Any
 
 from .condition_parse import FIELDS, amount_from
 from .districts import SEOUL_DISTRICTS
+from .industry import canonical
 
 # AI 경로와 규칙 경로가 함께 통과하는 단 하나의 게이트.
 #
@@ -76,4 +77,8 @@ def _keep(text: str, name: str, raw: Any, notes: list[str]) -> dict[str, Any]:
     # industry — 자유 문자열이지만 길이와 타입은 케이스 모델의 상한을 따른다.
     if not isinstance(value, str) or not value.strip() or len(value) > MAX_INDUSTRY_LEN:
         return _blank()
-    return {"value": value.strip(), "evidence": evidence}
+    # 게이트 5 — 모델은 "카페를 준비 중"에서 업종을 `카페를` 로 뽑는다. 인용은 사용자의 말
+    # 그대로여야 하니 그 자체는 옳지만, 조사가 붙은 채로는 상권 코드로 풀리지 않아 후보가
+    # 근거 B 대신 근거 C 로 떨어진다. 이미 풀리는 값은 canonical 이 손대지 않으므로, 이
+    # 한 줄이 할 수 있는 일은 못 찾던 것을 찾게 만드는 것뿐이다.
+    return {"value": canonical(value), "evidence": evidence}

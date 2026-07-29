@@ -91,6 +91,34 @@ def resolve(industry: str) -> str | None:
     return _ALIASES.get(key)
 
 
+# 업종 뒤에 붙어 들어오는 조사. 긴 것을 먼저 봐야 '에서' 가 '에' 로 잘리지 않는다.
+_PARTICLES = ("이라고", "라고", "이랑", "에게", "에서", "으로", "까지", "부터",
+              "을", "를", "은", "는", "이", "가", "과", "와", "랑", "의", "도", "만", "에", "로")
+
+
+def canonical(industry: str) -> str:
+    """조사가 붙어 들어온 업종을 별칭 표에 있는 형태로 되돌린다.
+
+    모델은 "카페를 준비 중"에서 업종을 `카페를` 로 뽑는다. 인용은 사용자의 말 그대로여야 하니
+    그 자체는 옳지만, `카페를` 은 표에 없어 상권 코드로 풀리지 않고 후보가 근거 B 대신 근거 C 로
+    떨어진다 — 조사 한 글자가 핵심 판정을 조용히 지운다.
+
+    **이미 풀리는 값은 손대지 않는다.** 그래서 이 함수가 할 수 있는 일은 못 찾던 것을 찾게
+    만드는 것뿐이고, 찾던 것을 다른 업종으로 옮기지는 못한다. resolve 의 "표에 정확히 적힌
+    것만" 규칙은 그대로 남는다 — 줄기가 표에 없으면(`스터디카페를`) 그대로 돌려보낸다.
+    """
+    text = (industry or "").strip()
+    if not text or resolve(text):
+        return text
+    for particle in _PARTICLES:
+        if not text.endswith(particle):
+            continue
+        stem = text[: -len(particle)].strip()
+        if stem and resolve(stem):
+            return stem
+    return text
+
+
 def display_name(code: str) -> str:
     return INDUSTRY_NAMES.get(code, code)
 
