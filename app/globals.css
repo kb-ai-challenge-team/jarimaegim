@@ -626,6 +626,12 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:80;padding:11px 18px;border-radius:50px;background:rgba(34,34,34,.9);color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.24)}
 
 /* --- responsive --- */
+/* 320×568 에서는 대화를 열면 지도·본문·내비·대화 넷이 설 자리가 없다. 지도를 96px 로
+   줄여도 본문에 38px 밖에 남지 않아 읽을 수 없다. 이 폭에서는 대화를 여는 동안 지도를
+   접는다 — 대화를 닫으면 곧바로 돌아오고, 접지 않으면 본문이 사라지는 것과 같다. */
+@media(max-width:420px){
+  .kb-app[data-chat=open] .kb-stage{display:none}
+}
 @media(max-width:1400px){
   .kb-panel{width:380px}
   .kb-app[data-ai=open] .kb-panel{width:420px}
@@ -642,15 +648,21 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
   .kb-logo{display:none}
   .kb-gnb button{width:auto;flex:1;font-size:10px;gap:3px}
   .kb-gnb button svg{width:19px;height:19px}
-  .kb-panel,.kb-app[data-ai=open] .kb-panel{width:100%;order:2;flex:1 1 58%;min-height:0;box-shadow:0 -6px 16px rgba(0,0,0,.12)}
-  .kb-stage{order:1;flex:1 1 42%;min-height:200px}
+  /* 세로로 쌓이면 지도·패널·내비·대화가 한 화면 높이를 나눠 갖는다. 그 다툼에서 밀리면
+     안 되는 것은 단계 본문이다 — 320×568 에서 예전 비율(지도 42% + 최소 200px)은 본문의
+     스크롤 영역을 32px 까지 눌렀다. 지도 몫을 줄여 본문에 준다. */
+  .kb-panel,.kb-app[data-ai=open] .kb-panel{width:100%;order:2;flex:1 1 64%;min-height:0;box-shadow:0 -6px 16px rgba(0,0,0,.12)}
+  .kb-stage{order:1;flex:1 1 36%;min-height:150px}
+  /* 대화를 열면 넷이 동시에 서야 한다. 그때는 지도가 양보한다 — 대화 중에 가장 덜 쓰이고,
+     닫으면 곧바로 돌아온다. 이 규칙이 없으면 본문이 다시 몇십 px 로 눌린다. */
+  .kb-app[data-chat=open] .kb-stage{flex:0 0 96px;min-height:96px}
   .kb-filters{right:14px;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
   .kb-filters::-webkit-scrollbar{display:none}
   .kb-filter,.kb-filter-icon{flex:none}
   .kb-filter{font-size:12.5px;min-height:32px;padding:0 11px}
   .kb-filter-icon{width:32px;min-height:32px}
-  .kb-chat-rail{width:100%;order:4;flex:none;max-height:44vh;border-left:0;border-top:1px solid var(--kb-line);box-shadow:none}
-  .kb-chat-rail .kb-chat-log{max-height:26vh}
+  .kb-chat-rail{width:100%;order:4;flex:none;max-height:34vh;border-left:0;border-top:1px solid var(--kb-line);box-shadow:none}
+  .kb-chat-rail .kb-chat-log{max-height:20vh}
   .kb-fab{right:14px;bottom:70px;min-width:50px;height:50px;padding:0 10px}
   .kb-fab svg{width:19px;height:19px}
   .kb-app[data-chat=closed] .kb-map-controls{bottom:14px}
