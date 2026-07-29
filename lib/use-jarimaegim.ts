@@ -25,28 +25,30 @@ const INTRO: ChatMessage = { role: "assistant", text: "어떤 업종으로, 서�
 const EMPTY_TRACE: TraceRun = { steps: [], state: "idle", totalMs: null };
 const HANDOFF_MS = 900;
 
-/** 제안서 03장의 12개 에이전트가 그대로 한 줄씩이다. 순서는 백엔드가 이벤트를 내보내는 순서와
- *  같아야 한다 — `settleStep` 이 정착한 줄의 다음 줄을 활성으로 올리기 때문이다.
+/** 실행 한 줄 = 축 하나. 순서는 백엔드가 이벤트를 내보내는 순서와 같아야 한다 —
+ *  `settleStep` 이 정착한 줄의 다음 줄을 활성으로 올리기 때문이다.
+ *
+ *  개수를 문구로 적지 않는다. 축이 늘 때마다 화면과 서버가 어긋나므로, "N단계"는 이 배열의
+ *  길이에서 나온다(`AgentRunOverlay` 가 `trace.steps.length` 를 쓴다).
  *
  *  마지막 줄의 id 가 에이전트 키가 아니라 `grade` 인 것은 의도적이다. AgentRunOverlay 가 완료
- *  문구를 `steps.find(step => step.id === "grade")` 의 note 에서 읽는데, 그 컴포넌트는 이번
- *  변경의 범위 밖이라 고치지 않는다. 메인 에이전트가 내는 것이 실제로 종합 요약이므로 이 자리에
- *  놓는 것이 내용상으로도 맞다. */
+ *  문구를 `steps.find(step => step.id === "grade")` 의 note 에서 읽는다. 메인 에이전트가 내는
+ *  것이 실제로 종합 요약이므로 이 자리에 놓는 것이 내용상으로도 맞다. */
 const AGENT_ROWS: { id: string; label: string; detail: string }[] = [
-  { id: "condition.location", label: "입지 조건 확정", detail: "업종·자치구·평수·운영형태·희망 임대조건. 최소 조건이 덜 차면 후보를 만들지 않고 되묻습니다." },
+  { id: "condition.location", label: "입지 조건 확정", detail: "업종·자치구·자기자본만 되묻고, 희망 월세·평수·보증금은 없어도 진행합니다. 없으면 그 수치만 유보합니다." },
   { id: "condition.finance", label: "금융 프로필 확정", detail: "자기자본·기존부채·월고정지출. 마이데이터는 꺼져 있고 수동 입력이 같은 스키마를 채웁니다." },
-  { id: "finance.band", label: "조달 밴드 산출", detail: "자기자본선·권장 조달선·최대 조달선과 손익분기선. 제도 파라미터가 없으면 추정하지 않습니다." },
-  { id: "finance.stress", label: "창업 금융 스트레스 테스트", detail: "매출 −20%에서 상환 부담과 현금소진을 봅니다. 권장 조달선은 이 시험을 통과하는 최대치입니다." },
-  { id: "finance.kb_products", label: "KB 상품 조합", detail: "금융감독원 공시의 개인사업자대출 금리를 정책자금 금리와 나란히 놓습니다. 한도가 문장이라 조합은 계산하지 않습니다." },
-  { id: "finance.subsidy", label: "정부·지자체 지원정책", detail: "기업마당·K-Startup 공고. 지원 규모가 구조화 필드로 오지 않아 조달선 상향은 반영하지 않습니다." },
+  { id: "finance.band", label: "조달 밴드 산출", detail: "자기자본선·권장 조달선·최대 조달선과 손익분기선. 커널이라 모델이 끼지 않습니다." },
+  { id: "finance.stress", label: "창업 금융 스트레스 테스트", detail: "매출 −20%/−30%·금리 +1%p 세 시나리오를 항상 전부 돌립니다." },
+  { id: "finance.kb_products", label: "금융상품", detail: "금융감독원 공시의 개인사업자대출 금리를 정책자금 금리와 나란히 놓습니다. 한도가 문장이라 조합은 계산하지 않습니다." },
+  { id: "finance.subsidy", label: "정부지원", detail: "기업마당·K-Startup 공고. 지원 규모가 구조화 필드로 오지 않아 조달선 상향은 반영하지 않습니다." },
   { id: "location.demand", label: "수요", detail: "유동·상주·직장인구와 배후 구매력. 서울시 상권분석 집계이므로 근거 B입니다." },
   { id: "location.competition", label: "경쟁", detail: "동종 점포밀도와 신규·폐업 추세. 상권 단위 집계입니다." },
-  { id: "location.viability", label: "달성 가능성", detail: "목표매출을 상권 동종 매출 분포에 대입해 어디쯤인지 봅니다." },
-  { id: "location.survival", label: "생존시기", detail: "18/24개월 영업유지율. 인허가 이력 코호트가 있어야 하는 유일한 근거 A 경로입니다." },
-  { id: "timing.policy", label: "국가 부동산·개발정책", detail: "재개발·교통·주택공급·공사 일정. 원천이 없으면 시점을 권하지 않고 판단을 유보합니다." },
-  { id: "grade", label: "팀 보고 통합", detail: "팀이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
+  { id: "location.viability", label: "매출", detail: "목표매출을 상권 동종 매출 분포에 대입해 어디쯤인지 봅니다. 후보를 떨어뜨릴 수 있는 유일한 축입니다." },
+  { id: "location.survival", label: "생존이력", detail: "18/24개월 영업유지율. 인허가 이력 코호트가 있어야 하는 유일한 근거 A 경로입니다." },
+  { id: "location.access", label: "접근성", detail: "역·버스·주요 시설과의 인접 관계. 좌표계 실측 전에는 거리·소요시간을 만들지 않습니다." },
+  { id: "timing.policy", label: "시점", detail: "재개발·교통·주택공급·공사 일정. 원천이 없으면 시점을 권하지 않고 판단을 유보합니다. 후보 순위와 탈락에 관여하지 않습니다." },
+  { id: "grade", label: "종합", detail: "축이 낸 수치를 모아 카드로 정리합니다. 여기서 새로 계산하거나 설명을 지어내지 않습니다." },
 ];
-
 /** 백엔드가 준 문구를 그대로 옮긴다. 없을 때만 상태를 사람 말로 바꾼다.
  *
  *  조달 밴드는 예외적으로 수치를 적는다 — 그 줄이 낸 결론이 문장이 아니라 금액이기 때문이다.
@@ -71,9 +73,9 @@ function bandNote(data: Record<string, unknown> | undefined): string | undefined
   return `권장 조달선 ${formatKrw(line.ceiling_krw)} · 목표 일매출 ${formatKrw(line.target_daily_revenue_krw)}`;
 }
 
-/** 전체 실행은 12개 에이전트가 한 줄씩이고, 재조회는 매물 조회 leg 만 다시 돈다. */
+/** 전체 실행은 축마다 한 줄이고, 재조회는 매물 조회 leg 만 다시 돈다. */
 function planTrace(inputs: CaseInput, leg: "full" | "search"): TraceStep[] {
-  // 전체 실행의 줄은 백엔드의 12개 에이전트가 그대로다. 재조회는 매물 조회 leg 만 다시 도므로
+  // 전체 실행의 줄은 백엔드의 축 선언이 그대로다. 재조회는 매물 조회 leg 만 다시 도므로
   // 두 줄로 남고, 그 문구는 상권 프로파일이 켜진 뒤의 사실을 따른다 — 이제 후보는 근거 B 로도 나온다.
   if (leg === "full") return AGENT_ROWS.map((row) => ({ ...row, status: "idle" as const }));
   return [
@@ -190,33 +192,6 @@ export function useJarimaegim() {
     return sessionReady.current;
   }, []);
 
-  /** 발화를 서버 제안으로 바꾼다. 케이스는 아직 만들지 않는다 — 확인 화면의 승인이 그 일을 한다. */
-  const interpret = useCallback(async (text: string) => {
-    setBusy("interpret"); setError(""); setInterpretText(text);
-    // 발화 원문을 남긴다. 처방 실행의 condition.location 이 아직 비어 있는 항목을
-    // 이 원문에서 읽고, 그때도 원문에 그대로 있는 조각만 통과한다.
-    setUtterance(text);
-    try {
-      await ensureSession();
-      const result = await api.interpretConditions(text);
-      setProposal(result); setEdited(new Set());
-      const patch: Partial<CaseInput> = {};
-      const field = result.fields;
-      if (typeof field.industry.value === "string") patch.industry = field.industry.value;
-      if (typeof field.district.value === "string") patch.district = field.district.value;
-      if (typeof field.business_stage.value === "string") patch.business_stage = field.business_stage.value as CaseInput["business_stage"];
-      if (typeof field.startup_type.value === "string") patch.startup_type = field.startup_type.value as CaseInput["startup_type"];
-      if (typeof field.priority.value === "string") patch.priority = field.priority.value as CaseInput["priority"];
-      setForm((prev) => ({ ...prev, ...patch }));
-      const rent = field.monthly_rent_krw.value;
-      if (typeof rent === "number" && rent > 0) setBandForm((prev) => ({ ...prev, monthly_rent_krw: rent }));
-      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: result.message }]);
-      setStep("confirm");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "조건을 정리하지 못했습니다. 아래에서 직접 골라 주세요.");
-      setProposal(null); setStep("confirm");
-    } finally { setBusy(""); }
-  }, [ensureSession]);
 
   /** 직접 입력으로 시작. 서버를 거치지 않고 빈 제안으로 확인 화면에 들어간다. */
   const startManual = useCallback(() => {
@@ -373,9 +348,17 @@ export function useJarimaegim() {
     () => ({ ...form, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw }),
     [form, profile.equity_krw]);
 
-  const start = useCallback(async () => {
+  /** 실행. `patch` 는 방금 읽어 아직 `form` 에 반영되지 않은 값이다.
+   *
+   *  `form` 은 `setForm` 직후에도 이전 값이다. 자동 진행은 발화에서 방금 읽은 업종으로 곧바로
+   *  시작해야 하므로 상태 반영을 기다리지 않고 패치를 직접 받는다 — 기다리면 업종이 빈 채로
+   *  케이스가 만들어진다. */
+  const startWith = useCallback(async (patch: Partial<CaseInput>, bandPatch: Partial<BandForm> = {}) => {
     setError(""); setBusy("case"); setStep("recommend");
-    const inputs = runInputs;
+    const inputs: CaseInput = { ...form, ...patch, equity_krw: profile.equity_krw, budget_krw: profile.equity_krw };
+    // 임대 조건도 같은 이유로 패치를 직접 받는다. 발화에서 읽은 월세를 `setBandForm` 으로만
+    // 넘기면 이 실행은 반영 전 값(0원)을 보내고, 손익분기가 유보로 빠진다.
+    const terms: BandForm = { ...bandForm, ...bandPatch };
     beginTrace(planTrace(inputs, "full"));
     try {
       await ensureSession();
@@ -392,15 +375,15 @@ export function useJarimaegim() {
       let outcome: PrescribeResult | null = null;
       let mainOutcome: AgentProgress | null = null;
       await api.prescribeStream(created.id, {
-        monthly_rent_krw: bandForm.monthly_rent_krw, monthly_maintenance_krw: bandForm.monthly_maintenance_krw,
-        key_money_krw: bandForm.key_money_krw, area_pyeong: bandForm.area_pyeong || null,
-        deposit_krw: bandForm.deposit_krw || null, fitout_krw: bandForm.fitout_krw || null,
+        monthly_rent_krw: terms.monthly_rent_krw, monthly_maintenance_krw: terms.monthly_maintenance_krw,
+        key_money_krw: terms.key_money_krw, area_pyeong: terms.area_pyeong || null,
+        deposit_krw: terms.deposit_krw || null, fitout_krw: terms.fitout_krw || null,
         existing_debt_krw: profile.existing_debt_krw, other_monthly_fixed_krw: profile.other_monthly_fixed_krw,
         // 운영형태는 화면이 묻지 않는다. 발화에 있으면 처방 때 condition.location 이 읽는다.
         utterance,
       }, {
         onRunStart: () => {},
-        onTeamStart: () => {},
+        onAxisStart: () => {},
         onAgentEnd: (agent) => {
           // 메인 통합은 마지막 줄이다. 여기서 바로 정착시키면 트레이스가 done 으로 넘어가고,
           // 그 뒤에 오는 정리 루프가 전부 무시되어 중간 줄이 "진행 중"인 채로 남는다.
@@ -430,10 +413,11 @@ export function useJarimaegim() {
 
       // 밴드 산출물은 조달 화면이 통째로 쓰므로 기존 경로를 그대로 유지한다. 같은 compute_bands 를
       // 부르므로 두 경로가 다른 답을 낼 수는 없다. 페이로드 통합은 별도 변경으로 다룬다.
-      const band = await runBands(created, bandForm, profile);
+      const band = await runBands(created, terms, profile);
       const line = recommendedLine(band);
       const ceiling = (outcome as PrescribeResult | null)?.summary?.recommended_ceiling_krw ?? line?.ceiling_krw ?? null;
       // 후보를 거르는 상한은 사용자가 스스로 좁힌 예산이 아니라 산출된 권장 조달선이다.
+      // 희망 월세가 없으면 권장 조달선도 없다 — 그때는 케이스 예산을 그대로 둔다.
       const record = ceiling && ceiling > created.inputs.budget_krw
         ? await api.updateCase(created.id, created.version, { budget_krw: ceiling })
         : created;
@@ -444,7 +428,53 @@ export function useJarimaegim() {
       const message = err instanceof ApiError ? err.message : "케이스를 만들지 못했습니다.";
       failTrace(message); setLocationState("error"); setError(message);
     } finally { setBusy(""); }
-  }, [applyCase, bandForm, beginTrace, ensureSession, failTrace, handoff, profile, runBands, runInputs, runSearch, settleStep, utterance]);
+  }, [applyCase, bandForm, beginTrace, ensureSession, failTrace, form, handoff, profile, runBands, runSearch, settleStep, utterance]);
+
+  const start = useCallback(() => startWith({}), [startWith]);
+
+  /** 조건을 고치면 영향받는 분석을 다시 돌린다. 부분 무효화는 M5 의 몫이고, 그전까지는
+   *  전체를 다시 돈다 — 낡은 판정을 새 조건 옆에 남겨 두는 것보다 낫다.
+   *
+   *  케이스가 없으면(조건 화면에서 고치는 중) 아무것도 하지 않는다. 아직 돌린 것이 없으므로
+   *  다시 돌릴 것도 없다. */
+  const rerun = useCallback(() => {
+    if (!caseData || trace.state === "running") return;
+    void startWith({});
+  }, [caseData, startWith, trace.state]);
+
+  /** 발화를 서버 제안으로 바꾼다. 차단 항목(업종)이 채워지면 확인을 기다리지 않고 그대로 시작한다. */
+  const interpret = useCallback(async (text: string) => {
+    setBusy("interpret"); setError(""); setInterpretText(text);
+    // 발화 원문을 남긴다. 처방 실행의 condition.location 이 아직 비어 있는 항목을
+    // 이 원문에서 읽고, 그때도 원문에 그대로 있는 조각만 통과한다.
+    setUtterance(text);
+    try {
+      await ensureSession();
+      const result = await api.interpretConditions(text);
+      setProposal(result); setEdited(new Set());
+      const patch: Partial<CaseInput> = {};
+      const field = result.fields;
+      if (typeof field.industry.value === "string") patch.industry = field.industry.value;
+      if (typeof field.district.value === "string") patch.district = field.district.value;
+      if (typeof field.business_stage.value === "string") patch.business_stage = field.business_stage.value as CaseInput["business_stage"];
+      if (typeof field.startup_type.value === "string") patch.startup_type = field.startup_type.value as CaseInput["startup_type"];
+      if (typeof field.priority.value === "string") patch.priority = field.priority.value as CaseInput["priority"];
+      setForm((prev) => ({ ...prev, ...patch }));
+      const rent = field.monthly_rent_krw.value;
+      const bandPatch: Partial<BandForm> = {};
+      if (typeof rent === "number" && rent > 0) { bandPatch.monthly_rent_krw = rent; setBandForm((prev) => ({ ...prev, monthly_rent_krw: rent })); }
+      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: result.message }]);
+      // 차단 항목(업종)이 발화에서 채워졌으면 확인을 기다리지 않고 그대로 진행한다. 자치구는
+      // 기본값이 있고 자기자본은 프로필 단계가 이미 확정했으므로 여기서 볼 것은 업종뿐이다.
+      // 확인을 없앤 대신 조건 스트립이 실행 화면에 상주하며 무엇을 어떻게 읽었는지 계속 보여준다.
+      const industry = typeof field.industry.value === "string" ? field.industry.value.trim() : "";
+      if (industry) { void startWith({ ...patch, industry }, bandPatch); return; }
+      setStep("confirm");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "조건을 정리하지 못했습니다. 아래에서 직접 골라 주세요.");
+      setProposal(null); setStep("confirm");
+    } finally { setBusy(""); }
+  }, [ensureSession, startWith]);
 
   const retrySearch = useCallback(async () => {
     if (!caseData || trace.state === "running") return;
@@ -659,7 +689,7 @@ export function useJarimaegim() {
     committed, commitCandidate, documents, docBusy, docNotice, prepareDocument, downloadDocument,
     selected, toggleFunding, docConfirmed, setDocConfirmed,
     analysis, programs, programState, catalog, catalogState, kbProducts, kbState, status, messages, busy, chatBusy, error, setError, trace, traceOpen,
-    start, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
+    start, startWith, rerun, retrySearch, runAnalysis, sendChat, loadCatalog, loadKbProducts, dismissTrace
   };
 }
 

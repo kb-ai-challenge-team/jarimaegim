@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { applyPrescribeFrame, ApiError } from "../lib/api.ts";
 
 function recorder() {
-  const calls = { runStart: [], teamStart: [], agentEnd: [], done: [] };
+  const calls = { runStart: [], axisStart: [], agentEnd: [], done: [] };
   return { calls,
     onRunStart: info => calls.runStart.push(info),
-    onTeamStart: team => calls.teamStart.push(team),
+    onAxisStart: axis => calls.axisStart.push(axis),
     onAgentEnd: agent => calls.agentEnd.push(agent),
     onDone: result => calls.done.push(result) };
 }
@@ -17,10 +17,10 @@ test("run_start reports how many agents the run will cover", () => {
   assert.deepEqual(handlers.calls.runStart, [{ total_agents: 12, fingerprint: "abc" }]);
 });
 
-test("team_start carries the team's Korean name and its agent count", () => {
+test("axis_start carries the axis key and its Korean name", () => {
   const handlers = recorder();
-  applyPrescribeFrame({ event: "team_start", data: { team: "finance", name: "금융처방 팀", agent_count: 4 } }, handlers);
-  assert.deepEqual(handlers.calls.teamStart, [{ team: "finance", name: "금융처방 팀", agent_count: 4 }]);
+  applyPrescribeFrame({ event: "axis_start", data: { key: "finance.band", name: "조달 밴드 산출" } }, handlers);
+  assert.deepEqual(handlers.calls.axisStart, [{ key: "finance.band", name: "조달 밴드 산출" }]);
 });
 
 test("agent_end keeps the backend status verbatim so the UI never re-judges it", () => {
@@ -64,12 +64,36 @@ test("a halted run still settles and names where it stopped", () => {
 test("a run halted at the condition layer forwards its questions", () => {
   const handlers = recorder();
   applyPrescribeFrame({ event: "done", data: { halted_at: "condition", questions: [{ field: "industry", label: "업종" }] } }, handlers);
-  assert.deepEqual(handlers.calls.done[0].questions, [{ field: "industry", label: "업종" }]);
+  // 서버가 안 보낸 키는 빈 값으로 채운다. 되묻기 항목의 모양이 두 가지면 화면이 매번 어느
+  // 쪽인지 확인해야 하고, 한쪽에만 있는 키를 읽다 조용히 undefined 가 된다.
+  assert.deepEqual(handlers.calls.done[0].questions,
+    [{ field: "industry", label: "업종", reason: "MISSING", message: "", options: [] }]);
 });
 
-test("team_end is accepted and ignored, not treated as the end of the run", () => {
+test("an unmappable industry forwards its recovery reason and candidates", () => {
+  const handlers = recorder();
+  applyPrescribeFrame({ event: "done", data: { halted_at: "condition", questions: [{
+    field: "industry", label: "업종", reason: "UNMAPPED_INDUSTRY",
+    message: "'스터디카페' 은(는) 상권 통계의 업종 코드로 이어지지 않아 입지 판단을 할 수 없습니다. 가까운 업종을 골라 주세요.",
+    options: ["카페", "학원"]
+  }] } }, handlers);
+  const question = handlers.calls.done[0].questions[0];
+  assert.equal(question.reason, "UNMAPPED_INDUSTRY");
+  assert.deepEqual(question.options, ["카페", "학원"]);
+});
+
+test("an unknown question reason degrades to MISSING rather than passing through", () => {
+  const handlers = recorder();
+  applyPrescribeFrame({ event: "done", data: { questions: [{ field: "industry", label: "업종", reason: "SOMETHING_ELSE" }] } }, handlers);
+  assert.equal(handlers.calls.done[0].questions[0].reason, "MISSING");
+});
+
+test("a legacy team frame is ignored, not treated as the end of the run", () => {
+  // 팀 이벤트는 사라졌지만 옛 서버가 보내도 스트림이 끊기면 안 된다 — 모르는 프레임 하나가
+  // 실행 전체를 실패로 보이게 만든다.
   const handlers = recorder();
   assert.equal(applyPrescribeFrame({ event: "team_end", data: { team: "finance", active: 1 } }, handlers), false);
+  assert.equal(applyPrescribeFrame({ event: "team_start", data: { team: "finance" } }, handlers), false);
   assert.deepEqual(handlers.calls.done, []);
 });
 
@@ -83,7 +107,7 @@ test("an error frame throws ApiError so the caller cannot mistake it for a finis
 test("an unknown event name is a forward-compatible no-op, not a crash", () => {
   const handlers = recorder();
   assert.equal(applyPrescribeFrame({ event: "something_new", data: {} }, handlers), false);
-  assert.deepEqual(handlers.calls, { runStart: [], teamStart: [], agentEnd: [], done: [] });
+  assert.deepEqual(handlers.calls, { runStart: [], axisStart: [], agentEnd: [], done: [] });
 });
 
 test("agent_end forwards the agent's own numbers so a settled row can quote them", () => {

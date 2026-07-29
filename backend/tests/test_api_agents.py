@@ -97,16 +97,18 @@ def frames(response) -> list[dict]:
 
 # ── GET /api/v1/agents ────────────────────────────────────────────
 
-def test_the_roster_lists_all_twelve_declarations(client):
+def test_the_roster_lists_every_declaration(client):
     payload = client.get("/api/v1/agents").json()
-    assert payload["total"] == 12
-    assert len(payload["agents"]) == 12
+    assert payload["total"] == len(payload["agents"])
+    # 판단 축 8 + 커널 2 + 조건 2 + 메인 1.
+    assert payload["total"] == 13
+    assert len([item for item in payload["agents"] if item["display_group"]]) == 8
 
 
 def test_every_declaration_carries_its_source_and_team(client):
     for item in client.get("/api/v1/agents").json()["agents"]:
         assert item["source_name"]
-        assert item["team"] in ("main", "condition", "finance", "location", "timing")
+        assert item["team"] in ("main", "condition", "kernel", "finance", "location", "timing")
 
 
 def test_the_roster_is_public_because_it_is_a_declaration_not_user_data():
@@ -115,9 +117,27 @@ def test_the_roster_is_public_because_it_is_a_declaration_not_user_data():
         assert anonymous.get("/api/v1/agents").status_code == 200
 
 
-def test_status_reports_the_same_twelve(client):
+def test_status_reports_the_same_roster(client):
     payload = client.get("/api/v1/status").json()
-    assert payload["agents"]["total"] == 12
+    assert payload["agents"]["total"] == 13
+    # 축 목록은 선언에서 파생된다 — 두 곳에 적으면 한쪽만 늘어난다.
+    assert len(payload["axes"]) == 8
+
+
+def test_the_roster_exposes_the_display_group(client):
+    """화면이 축을 어디/얼마/언제로 묶으려면 그 묶음을 선언에서 읽을 수 있어야 한다.
+    프론트가 키 이름으로 짐작해 묶으면 축이 늘 때마다 두 곳을 고쳐야 한다."""
+    agents = {item["key"]: item for item in client.get("/api/v1/agents").json()["agents"]}
+    assert agents["location.demand"]["display_group"] == "어디"
+    assert agents["finance.kb_products"]["display_group"] == "얼마"
+    assert agents["timing.policy"]["display_group"] == "언제"
+    # 메인과 조건은 판단 축이 아니므로 묶음이 없다.
+    assert agents["main.integrate"]["display_group"] is None
+
+
+def test_status_carries_the_display_group_too(client):
+    agents = {item["key"]: item for item in client.get("/api/v1/status").json()["agents"]["agents"]}
+    assert agents["location.survival"]["display_group"] == "어디"
 
 
 # ── POST /api/v1/cases/{id}/prescribe ─────────────────────────────
@@ -128,20 +148,36 @@ def test_prescribe_requires_a_session(case_id):
         assert anonymous.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY).status_code == 401
 
 
-def test_prescribe_streams_team_progress_then_a_result(client, case_id, filled_params):
+def test_prescribe_streams_axis_progress_then_a_result(client, case_id, filled_params):
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
     assert response.status_code == 200
     names = [frame["event"] for frame in frames(response)]
     assert names[0] == "run_start"
-    assert "team_start" in names
+    assert "axis_start" in names
     assert "agent_end" in names
     assert names[-1] == "done"
 
 
-def test_each_team_reports_before_the_next_one_starts(client, case_id, filled_params):
+def test_each_axis_reports_before_the_next_one_starts(client, case_id, filled_params):
+    """진행은 축 단위로 온다. 팀 경계는 이벤트에 나타나지 않는다 — 화면의 묶음은
+    `AgentSpec.display_group` 이 정하고, 그것은 표시일 뿐 실행 단위가 아니다."""
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
-    teams = [frame["data"]["team"] for frame in frames(response) if frame["event"] == "team_start"]
-    assert teams == ["condition", "finance", "location", "timing", "main"]
+    started = [frame["data"]["key"] for frame in frames(response) if frame["event"] == "axis_start"]
+    assert started == ["condition.location", "condition.finance",
+                       "finance.band", "finance.stress", "finance.kb_products", "finance.subsidy",
+                       "location.demand", "location.competition", "location.viability",
+                       "location.survival", "location.access", "timing.policy", "main.integrate"]
+
+
+def test_an_axis_starts_before_it_ends(client, case_id, filled_params):
+    """`axis_start` 와 `agent_end` 가 축마다 짝을 이룬다. 시작 없이 끝나면 화면의 진행 막대가
+    건너뛴 축을 완료로 칠한다."""
+    response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
+    order = [(frame["event"], frame["data"]["key"]) for frame in frames(response)
+             if frame["event"] in ("axis_start", "agent_end")]
+    for index in range(0, len(order), 2):
+        assert order[index][0] == "axis_start"
+        assert order[index + 1] == ("agent_end", order[index][1])
 
 
 def test_every_agent_end_names_the_agent_and_its_status(client, case_id, filled_params):
@@ -155,7 +191,7 @@ def test_every_agent_end_names_the_agent_and_its_status(client, case_id, filled_
 def test_the_done_frame_carries_activation_and_the_summary(client, case_id, filled_params):
     response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
     done = frames(response)[-1]["data"]
-    assert done["activation"]["total"] == 12
+    assert done["activation"]["total"] == 13
     assert done["summary"]["recommended_ceiling_krw"] > 0
 
 
@@ -174,10 +210,19 @@ def test_the_registered_parameters_in_this_repository_let_the_run_reach_every_te
     done = frames(response)[-1]["data"]
     assert done["halted_at"] is None
     assert done["summary"]["recommended_ceiling_krw"] > 0
-    assert len([frame for frame in frames(response) if frame["event"] == "agent_end"]) == 12
+    assert len([frame for frame in frames(response) if frame["event"] == "agent_end"]) == 13
 
 
 def test_the_chat_cannot_reach_this_endpoint_with_a_case_patch(client, case_id, filled_params):
     response = client.post(f"/api/v1/cases/{case_id}/prescribe",
                            json={**BODY, "confirmed_case_patch": [{"field": "industry"}]})
     assert response.status_code == 422
+
+
+def test_the_done_frame_carries_the_deferred_items_and_any_proposals(client, case_id, filled_params):
+    """화면이 "무엇을 못 냈는지" 와 "무엇을 바꾸자고 제안하는지" 를 한 프레임에서 읽는다."""
+    response = client.post(f"/api/v1/cases/{case_id}/prescribe", json=BODY)
+    done = next(frame for frame in frames(response) if frame["event"] == "done")
+    assert "deferred" in done["data"]
+    assert "proposals" in done["data"]
+    assert isinstance(done["data"]["proposals"], list)

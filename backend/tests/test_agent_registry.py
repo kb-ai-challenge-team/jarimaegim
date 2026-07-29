@@ -10,15 +10,24 @@ import pytest
 from app.agents.registry import AGENT_SPECS, spec
 
 
-def test_the_proposal_s_twelve_agents_are_declared():
-    assert len(AGENT_SPECS) == 12
+def test_the_eight_judging_axes_are_declared():
+    """축은 `display_group` 을 가진 것이 전부다. 밴드·스트레스는 커널이라 축이 아니고,
+    조건 수립과 메인 종합도 판단 축이 아니다."""
+    assert len([item for item in AGENT_SPECS if item.display_group]) == 8
 
 
-def test_team_composition_is_one_main_two_conditions_and_nine_subs():
+def test_the_declaration_separates_kernels_from_judging_axes():
     counts: dict[str, int] = {}
     for item in AGENT_SPECS:
         counts[item.team] = counts.get(item.team, 0) + 1
-    assert counts == {"main": 1, "condition": 2, "finance": 4, "location": 4, "timing": 1}
+    # 커널 2(밴드·스트레스)는 축이 아니다. 계산이지 판단이 아니므로 화면의 축 개수에 들어가지 않는다.
+    assert counts == {"main": 1, "condition": 2, "kernel": 2, "finance": 2, "location": 5, "timing": 1}
+
+
+def test_the_kernels_are_not_display_axes():
+    for key in ("finance.band", "finance.stress"):
+        assert spec(key).display_group is None
+        assert spec(key).team == "kernel"
 
 
 def test_every_agent_declares_where_its_answer_would_come_from():
@@ -56,3 +65,50 @@ def test_spec_looks_up_by_key():
 def test_spec_rejects_an_unknown_key():
     with pytest.raises(KeyError):
         spec("finance.nope")
+
+
+# ── 화면 표시 그룹 ────────────────────────────────────────────────────────
+#
+# `display_group` 은 **표시용 묶음일 뿐 실행 단위가 아니다.** 실행 그래프는 축 하나가 단위이고,
+# 어디/얼마/언제는 그 축들을 화면에서 어떻게 묶어 보여줄지만 정한다. 팀(`team`)이 실행 경계를
+# 겸하던 구조를 걷어내는 것이 이후 단계이고, 그때 사라지는 것은 `team` 이지 이 필드가 아니다.
+
+def test_every_judging_axis_declares_a_display_group():
+    """판단 축은 전부 화면 어딘가에 놓인다. 놓일 자리가 없는 축은 화면에서 사라진다."""
+    for item in AGENT_SPECS:
+        if item.team in ("finance", "location", "timing"):
+            assert item.display_group, f"{item.key} 에 표시 그룹이 없습니다"
+
+
+def test_the_display_groups_are_exactly_the_three_the_product_promises():
+    groups = {item.display_group for item in AGENT_SPECS if item.display_group}
+    assert groups == {"어디", "얼마", "언제"}
+
+
+def test_location_axes_are_shown_under_where():
+    for item in AGENT_SPECS:
+        if item.team == "location":
+            assert item.display_group == "어디"
+
+
+def test_finance_axes_are_shown_under_how_much():
+    for item in AGENT_SPECS:
+        if item.team == "finance":
+            assert item.display_group == "얼마"
+
+
+def test_the_where_group_carries_the_five_location_axes():
+    where = [item.key for item in AGENT_SPECS if item.display_group == "어디"]
+    assert where == ["location.demand", "location.competition", "location.viability",
+                     "location.survival", "location.access"]
+
+
+def test_timing_is_shown_under_when():
+    assert spec("timing.policy").display_group == "언제"
+
+
+def test_the_main_agent_and_the_condition_layer_are_not_display_axes():
+    """메인은 종합이고 조건은 수립이다. 둘 다 판단 축이 아니므로 축 묶음에 끼지 않는다 —
+    끼면 화면의 축 개수가 실제 판단 개수보다 많아진다."""
+    for key in ("main.integrate", "condition.location", "condition.finance"):
+        assert spec(key).display_group is None

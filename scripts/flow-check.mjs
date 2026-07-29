@@ -204,10 +204,11 @@ const capacityStep = {
 await kb.getByRole("button", { name: /^조건 입력으로/ }).click();
 await kb.locator(".kb-field-block textarea").fill("강남구에서 카페를 준비 중이고 월세는 250 정도 생각해요");
 await kb.getByRole("button", { name: /조건으로 정리하기/ }).click();
-await kb.waitForSelector(".kb-condrows", { timeout: 20000 });
+// 확인 클릭이 없다. 업종이 발화에서 읽히면 그대로 후보 목록까지 간다.
+await kb.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 40000 });
 
-// ② 조건은 발화를 읽어 되돌려주고 확인을 받는다. 금융 입력은 이 화면에 없어야 한다.
-const rows = await kb.locator(".kb-condrows li").allTextContents();
+// ② 조건은 발화를 읽어 되돌려주고 **확인 없이 진행한다.** 금융 입력은 이 화면에 없어야 한다.
+const rows = await kb.locator(".kb-condstrip .kb-condrows li").allTextContents();
 const conditionStep = {
   rowCount: rows.length,
   // "준비 중이에요"의 "중"이 중구로 새지 않아야 한다.
@@ -215,16 +216,35 @@ const conditionStep = {
   rentParsed: rows.some(row => row.includes("희망 월세") && row.includes("250")),
   // 키가 없는 환경에서는 규칙 추출로 내려가되 출처를 숨기지 않아야 한다.
   sourceLabelled: rows.some(row => row.includes("AI 추론") || row.includes("규칙 추출")),
-  // 추출한 값에는 사용자 발화 인용이 붙어야 한다.
-  evidenceShown: await kb.locator(".kb-condrow-evidence svg").count() > 0,
+  // 확인 클릭을 없앤 대가 — 근거 인용이 실행이 끝난 뒤에도 화면에 남아야 한다.
+  evidencePersists: await kb.locator(".kb-condstrip .kb-condrow-evidence svg").count() > 0,
+  // 확인 게이트가 되살아나면 회귀다.
+  noConfirmGate: await kb.getByRole("button", { name: /네, 맞아요/ }).count() === 0,
+  // 조건은 실행 뒤에도 그 자리에서 고칠 수 있어야 한다.
+  editableInPlace: await kb.locator(".kb-condrow-edit").count() > 0,
   // 단계 분리 회귀 방지 — 자금 항목이 조건 화면의 입력으로 돌아오면 안 된다.
   noProfileChips: !rows.some(row => row.includes("자기자본") || row.includes("기존부채") || row.includes("월 고정지출"))
 };
 
-const askCount = await kb.locator(".kb-askbox .kb-field").count();
-if (askCount > 0) await kb.locator(".kb-askbox input").first().fill("2500000");
-await kb.getByRole("button", { name: /네, 맞아요/ }).click();
-await kb.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 40000 });
+// 희망 월세를 말하지 않아도 입지 판단까지 간다. 손익분기만 유보된다 — 이것이 M0 의 핵심이다.
+//
+// 컨텍스트를 새로 판다. 앞 흐름의 컨텍스트를 재사용하면 localStorage 에 남은 금융 프로필이
+// 복원되어 자금 화면을 건너뛰고, 이 검사가 기다리는 입력이 아예 나타나지 않는다.
+const rentlessContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const noRent = await rentlessContext.newPage();
+await noRent.goto(`${base}/kb`, { waitUntil: "networkidle" });
+await noRent.locator(".kb-profile-form input").nth(0).fill("50000000");
+await noRent.getByRole("button", { name: /확정하고 조달 여력 보기/ }).click();
+await noRent.getByRole("button", { name: /^조건 입력으로/ }).click();
+await noRent.locator(".kb-field-block textarea").fill("성동구에서 카페 하려고요");
+await noRent.getByRole("button", { name: /조건으로 정리하기/ }).click();
+const rentlessRun = {
+  reached: await noRent.waitForSelector(".kb-candidates li, .kb-empty", { timeout: 40000 }).then(() => true).catch(() => false),
+  // 월세를 지어내지 않고 빈칸으로 둬야 한다.
+  rentBlank: (await noRent.locator(".kb-condstrip .kb-condrows li").allTextContents())
+    .some(row => row.includes("희망 월세") && row.includes("\u2014"))
+};
+await rentlessContext.close();
 
 const stepperLabels = await kb.locator(".kb-stepper li").allTextContents();
 const bandBannerShown = await kb.locator(".kb-band-banner").count() > 0;
@@ -241,7 +261,14 @@ const kbFlow = {
   candidates: await kb.locator(".kb-candidates li").count(),
   tuningInPlace: await kb.getByRole("button", { name: /정밀하게 맞추기/ }).count() > 0,
   // 밴드를 냈다면 시연용 파라미터로 계산했다는 사실이 접힌 곳이 아니라 배너에 보여야 한다.
-  bandDemoLabelled: !bandBannerShown || await kb.locator(".kb-band-banner .demo-badge").count() > 0,
+  //
+  // 배너는 배지가 아니라 문장으로 고지한다(`assumedNotice` → `.kb-band-banner-warning`).
+  // 예전 선택자는 `.kb-band-banner .demo-badge` 였는데 그 배지는 배너에 있었던 적이 없어,
+  // 배너가 뜨는 순간 이 단언이 항상 거짓이었다 — 배너가 안 뜰 때만 통과하던 검사다.
+  // 둘 다 받아들이되 **적어도 하나는** 있어야 한다. 고지 방식이 바뀌어도 고지 자체는 남는다.
+  bandDemoLabelled: !bandBannerShown
+    || await kb.locator(".kb-band-banner .demo-badge").count() > 0
+    || await kb.locator(".kb-band-banner-warning").count() > 0,
   // 제도 파라미터가 미등록이면 밴드를 지어내지 않고 사유를 밝혀야 한다.
   // 진행 오버레이에도 같은 문구가 남으므로 패널 본문 쪽 고지만 센다.
   bandSafeState: bandBannerShown || await kb.locator(".kb-step > .kb-note", { hasText: "파라미터가 아직 등록되지" }).count() > 0
@@ -315,13 +342,16 @@ kb.setDefaultTimeout(30000);
 // 번호 매긴 처방 블록이 남아 있으면 단계 분리가 되돌아간 것이다.
 prescribe.noNumberedBlocks = await kb.locator(".kb-prescription-no").count() === 0;
 
-const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, prescribe, mydataGate, capacityStep, conditionStep, errors };
+const result = { onboarding, listings, cost, funding, search, bands, axes, document: documentResult, copilot, kbFlow, prescribe, mydataGate, capacityStep, conditionStep, rentlessRun, errors };
 console.log(JSON.stringify(result, null, 2));
 await browser.close();
 if (errors.length || !listings.rows || !listings.badges || !cost.calculated || !funding.safeState || !funding.noOutboundLinks || !search.safeState || !search.hidesSimilarity || !search.noOutboundLinks || !bands.safeState || !axes.disabledCarryReason || !documentResult.sessionScoped || !copilot.safeState || !copilot.caseUnchanged || !copilot.noFabricatedCitations || !copilot.noOrphanedProgress || !copilot.streamEndpointUsed) process.exitCode = 1;
 if (!kbFlow.stepsAreFive || !kbFlow.tuningInPlace || !kbFlow.bandSafeState || !kbFlow.bandDemoLabelled || !kbFlow.evidenceInline) process.exitCode = 1;
 if (!prescribe.noNumberedBlocks) process.exitCode = 1;
 if (kbFlow.candidates > 0 && (!prescribe.reachedFunding || !prescribe.reachedPaperwork || !prescribe.nextLockedBeforeCommit || !prescribe.nextUnlockedAfterCommit || !prescribe.emptyCatalogExplained || !prescribe.previewListsSections || !prescribe.prepareLockedBeforeConsent || !prescribe.prepareUnlockedAfterConsent)) process.exitCode = 1;
+// 확인 클릭 없는 자동 진행과, 그 대가인 근거 상주가 이 흐름의 계약이다.
+if (!conditionStep.evidencePersists || !conditionStep.noConfirmGate || !conditionStep.editableInPlace) process.exitCode = 1;
+if (!rentlessRun.reached || !rentlessRun.rentBlank) process.exitCode = 1;
 if (!mydataGate.buttonDisabled || !mydataGate.lockExplained || !mydataGate.manualAdapter) process.exitCode = 1;
 if (!capacityStep.resolved || !capacityStep.demoLabelled || !capacityStep.recommendedDeferred || !capacityStep.noConditionInputs) process.exitCode = 1;
-if (conditionStep.rowCount !== 6 || !conditionStep.districtParsed || !conditionStep.rentParsed || !conditionStep.sourceLabelled || !conditionStep.evidenceShown || !conditionStep.noProfileChips) process.exitCode = 1;
+if (conditionStep.rowCount !== 6 || !conditionStep.districtParsed || !conditionStep.rentParsed || !conditionStep.sourceLabelled || !conditionStep.noProfileChips) process.exitCode = 1;

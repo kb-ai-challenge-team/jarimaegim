@@ -44,7 +44,10 @@ def sanitize(text: str, proposed: dict[str, Any]) -> dict[str, Any]:
     fields = {name: _keep(text, name, proposed.get(name), notes) for name in FIELDS}
     unresolved = [name for name, field in fields.items() if field["value"] is None]
     kept = len(FIELDS) - len(unresolved)
-    message = (f"말씀에서 조건 {kept}개를 찾았습니다. 맞는지 확인해 주세요."
+    # 확인을 기다리지 않는다 — 발화에 업종이 있으면 그대로 실행이 시작된다. 그래서 문구도
+    # "확인해 주세요"가 아니라 무엇을 읽었는지 알리는 쪽이다. 고칠 곳은 조건 스트립에 상주하고,
+    # 고치면 영향받는 축만 다시 돈다.
+    message = (f"말씀에서 조건 {kept}개를 읽었습니다. 다르면 아래에서 바로 고칠 수 있어요."
                if kept else "말씀에서 확정할 수 있는 조건을 찾지 못했습니다. 아래에서 직접 골라 주세요.")
     if notes:
         message = f"{message} {' '.join(notes)}"

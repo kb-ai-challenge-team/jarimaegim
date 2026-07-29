@@ -36,10 +36,11 @@ PROFILE_WEAK = {"demand_index": 0.6, "competition_index": 1.5, "revenue_percenti
                 "quarter": "2026Q1"}
 
 
-def test_the_team_runs_all_four_of_its_sub_agents():
+def test_the_team_runs_all_five_of_its_axes():
     report = LocationTeam().run(CANDIDATES, CONDITIONS)
     assert [item.key for item in report.outcomes] == [
-        "location.demand", "location.competition", "location.viability", "location.survival"]
+        "location.demand", "location.competition", "location.viability",
+        "location.survival", "location.access"]
 
 
 def test_without_a_trade_area_profile_every_axis_is_pending():
@@ -62,9 +63,13 @@ def test_a_dead_axis_never_drops_a_candidate():
     assert report.dropped == []
 
 
-def test_the_team_never_blocks_the_run():
-    # 금융처방 팀과 달리 입지팀 실패는 후속 중단 사유가 아니다.
-    assert LocationTeam().run(CANDIDATES, CONDITIONS).blocking is False
+def test_a_location_failure_never_stops_the_run():
+    """입지 축은 중단 규칙에 들어 있지 않다 — 축 하나가 죽어도 나머지로 계속 간다.
+    중단은 조건 미확정과 여력 커널 실패 둘뿐이고, 그 판정은 orchestrator 가 한다."""
+    from app.agents.orchestrator import capacity_failed, conditions_unsettled
+    report = LocationTeam().run(CANDIDATES, CONDITIONS)
+    assert not hasattr(report, "halted")
+    assert not hasattr(report, "blocking")
 
 
 def test_axes_turn_on_when_a_profile_is_available():
@@ -99,16 +104,17 @@ def test_a_candidate_above_the_top_decile_boundary_is_hard_dropped_with_a_reason
     assert "분기점" in report.dropped[0]["reason"]
 
 
-def test_a_failing_stress_check_hard_drops_the_candidate():
-    trade = FakeTradeArea({("역삼1동", "카페"): PROFILE_STRONG, ("삼성2동", "카페"): PROFILE_STRONG})
+def test_only_the_sales_axis_may_drop_a_candidate():
+    """탈락 권한은 매출 축 하나뿐이다. 축이 여덟으로 늘었다고 탈락 사유가 여덟이 되면 안 된다 —
+    축을 늘린 목적은 "무엇을 아는가"를 넓히는 것이지 "무엇을 떨어뜨리는가"를 넓히는 것이 아니다.
 
-    def stress(candidate):
-        return {"passes": candidate["id"] != "l1", "runway_months": 6}
-
-    report = LocationTeam(trade_area=trade, stress_check=stress).run(CANDIDATES, CONDITIONS)
-    assert [item["id"] for item in report.surviving] == ["l2"]
-    assert "스트레스" in report.dropped[0]["reason"]
-
+    예전에는 스트레스 검사도 후보를 떨어뜨릴 수 있었다(`stress_check`). 운영 배선에는 한 번도
+    연결된 적이 없어 죽은 경로였고, 살아 있었다면 불변조건 3을 어겼을 것이다."""
+    from app.agents.narrowing import DROP_AUTHORITY, UnauthorisedDrop, drop_reason
+    import pytest as _pytest
+    assert DROP_AUTHORITY == frozenset({"location.viability"})
+    with _pytest.raises(UnauthorisedDrop):
+        drop_reason("location.demand", {"above_top_decile": True, "value": 0.95})
 
 def test_the_drop_count_is_not_fixed():
     # "8 → 4 고정"이 아니라 사유가 있는 것만 탈락한다.

@@ -994,3 +994,10 @@ h1,h2,h3,.page-heading h1,.hero-copy h1{font-family:var(--headline);letter-spaci
 .kb-condrow-evidence{grid-column:1/-1;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--kb-mute);line-height:1.5}
 .kb-condrow-evidence svg{width:11px;height:11px;flex:0 0 11px}
 .kb-condrow-evidence em{font-style:normal;opacity:.5}
+.kb-condstrip{display:grid;gap:9px;padding:12px;border:1px solid var(--kb-line);border-radius:12px;background:var(--kb-fill)}
+.kb-condstrip h3{margin:0;font-size:12px;font-weight:600;color:var(--kb-sub)}
+.kb-condstrip .kb-condrows li{grid-template-columns:64px 1fr auto auto}
+.kb-condrow-edit{border:0;background:none;padding:2px;color:var(--kb-mute);cursor:pointer;display:flex;align-self:center}
+.kb-condrow-edit svg{width:13px;height:13px}
+.kb-condrow-edit:hover{color:var(--kb-ink)}
+.kb-condstrip-edit{padding-top:9px;border-top:1px dashed var(--kb-line);display:grid;gap:9px}

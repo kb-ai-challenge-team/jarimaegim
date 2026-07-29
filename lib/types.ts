@@ -359,14 +359,22 @@ export interface ChatStreamHandlers {
   onDone(result: { message: string; citations: Citation[]; integration_status: string }): void;
 }
 
-/** 제안서 03장의 12개 에이전트 선언. `GET /api/v1/agents` 가 주는 모양. */
+/** 화면이 축을 묶어 보여주는 세 갈래. **실행 단위가 아니다** — 실행 그래프의 단위는 축
+ *  하나이고, 이 값은 그 축들을 화면에서 어떻게 모아 보여줄지만 정한다. 둘을 겹쳐 놓으면
+ *  "같이 보여주는 것"이 "같이 실행되는 것"이 된다. */
+export type DisplayGroup = "어디" | "얼마" | "언제";
+
+/** 에이전트 선언. `GET /api/v1/agents` 가 주는 모양.
+ *  판단 축은 `display_group` 을 가진 것이 전부다 — 개수를 문자열로 적지 않는다. */
 export interface AgentSpec {
   key: string;
-  team: "main" | "condition" | "finance" | "location" | "timing";
+  team: "main" | "condition" | "kernel" | "finance" | "location" | "timing";
   name: string;
   source_name: string;
   produces: string;
   evidence_grade: EvidenceGrade | null;
+  /** 판단 축만 갖는다. 메인(종합)과 조건(수립)은 판단 축이 아니므로 null 이다. */
+  display_group: DisplayGroup | null;
 }
 
 /** 백엔드 `AgentStatus` 와 짝을 이룬다. 유니온을 열어 두는 이유는, 백엔드가 어휘를 넓혔을 때
@@ -377,13 +385,52 @@ export type AgentRunStatus = "ok" | "integration_pending" | "withheld" | "failed
  *  형태는 에이전트마다 다르므로 읽는 쪽이 필요한 필드만 좁혀서 꺼내 쓴다. */
 export interface AgentProgress { team: string; key: string; name: string; status: AgentRunStatus; message?: string; data?: Record<string, unknown> }
 
+/** 되묻기 항목.
+ *
+ *  `MISSING` 은 값이 비어 계산이 성립하지 않는 것이고, `UNMAPPED_INDUSTRY` 는 값은 있지만
+ *  상권 통계의 업종 코드로 이어지지 않는 것이다 — 후자는 확인 절차가 아니라 실패 복구이며,
+ *  `options` 는 **표시용** 후보일 뿐 코드가 자동으로 붙이지 않는다(유사 매칭 금지). */
+export interface ConditionQuestion {
+  field: string;
+  label: string;
+  reason: "MISSING" | "UNMAPPED_INDUSTRY";
+  message: string;
+  options: string[];
+}
+
+/** 발화가 이미 확정된 값과 어긋나 올라온 변경 제안. 적용되지 않은 상태로 온다 —
+ *  조건 변경은 재실행을 유발하므로 사용자가 모르는 사이에 일어나면 안 된다. */
+export interface ConditionProposal { field: string; current: string | number | null; proposed: string | number; span: string }
+
+/** `orchestrator._summary` 를 그대로 미러링한다. 여력 세 줄은 금융 프로필만으로 나오므로
+ *  언제나 있고, 권장 조달선 이하는 희망 월세가 있어야 나온다. */
+export interface PrescribeSummary {
+  equity_line_krw?: number | null;
+  borrowing_headroom_krw?: number | null;
+  maximum_line_krw?: number | null;
+  /** 이 실행에서 값이 없어 내지 못한 조건 항목. */
+  deferred?: string[];
+  recommended_ceiling_krw?: number | null;
+  monthly_repayment_krw?: number | null;
+  target_monthly_revenue_krw?: number | null;
+  target_daily_revenue_krw?: number | null;
+  runway_months?: number | null;
+  required_capital_krw?: number | null;
+}
+
 export interface PrescribeResult {
   fingerprint?: string;
   reused: boolean;
   halted_at: string | null;
-  questions: { field: string; label: string }[];
+  questions: ConditionQuestion[];
+  /** 없어서 그 수치만 내지 못한 조건 항목. 되묻지 않고 진행했다는 사실을 화면이 말한다. */
+  deferred: string[];
+  proposals: ConditionProposal[];
+  /** 이번 실행에서 다시 돌지 않고 앞 실행의 판정을 그대로 쓴 축. 조건 한 칸을 고쳤을 때
+   *  영향 없는 축까지 다시 도는 것을 막는다 — 무효 판정은 `invalidation.DEPENDENCIES` 가 한다. */
+  reused_units: string[];
   activation: { total: number; active: number; by_key: Record<string, AgentRunStatus | null> };
-  summary: Record<string, number | null>;
+  summary: PrescribeSummary;
   surviving: Record<string, unknown>[];
   dropped: (Record<string, unknown> & { reason?: string })[];
 }
@@ -391,7 +438,9 @@ export interface PrescribeResult {
 /** `done` 은 언제나 마지막 프레임이고 `error` 는 던져진다 — chat 스트림과 같은 규칙이다. */
 export interface PrescribeStreamHandlers {
   onRunStart(info: { total_agents: number; fingerprint: string }): void;
-  onTeamStart(team: { team: string; name: string; agent_count: number }): void;
+  /** 축 하나가 시작했다. 팀 경계는 더 이상 이벤트에 없다 — 화면의 묶음은
+   *  `AgentSpec.display_group` 이 정하고, 그것은 표시일 뿐 실행 단위가 아니다. */
+  onAxisStart(axis: { key: string; name: string }): void;
   onAgentEnd(agent: AgentProgress): void;
   onDone(result: PrescribeResult): void;
 }

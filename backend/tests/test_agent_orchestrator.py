@@ -59,46 +59,60 @@ def agent(params=FULL, *, timing=None, location=None):
                      timing=timing or TimingTeam())
 
 
-async def test_a_complete_run_reports_every_team_in_order():
+async def test_a_complete_run_reports_every_axis_group_in_order():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "finance", "location", "timing", "main"]
+    assert [report.key for report in result.reports] == ["condition", "finance", "location", "timing", "main"]
 
 
-async def test_unsettled_conditions_stop_before_the_finance_team_runs():
+async def test_unsettled_conditions_stop_before_the_finance_axes_run():
     result = await agent().run({**CONDITIONS, "industry": ""}, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "main"]
+    assert [report.key for report in result.reports] == ["condition", "main"]
     assert result.halted_at == "condition"
     assert result.questions
     assert result.surviving == []
 
 
-async def test_a_missing_band_stops_before_the_location_team_runs():
+async def test_a_missing_band_stops_before_the_location_axes_run():
     # 팀 계약 — 기준선 없이는 후보를 판정할 수 없으므로 후속 전체 중단.
     result = await agent(EMPTY).run(CONDITIONS, CANDIDATES)
-    assert [report.team for report in result.reports] == ["condition", "finance", "main"]
+    assert [report.key for report in result.reports] == ["condition", "finance", "main"]
     assert result.halted_at == "finance"
     assert result.surviving == []
 
 
-async def test_the_timing_team_only_sees_surviving_candidates():
+class DroppingTradeArea:
+    """매출 축만 후보를 떨어뜨릴 수 있다. l1 만 상위 10% 경계를 넘는 상권으로 둔다."""
+
+    available = True
+    keyed_by = "admin_dong"
+
+    @staticmethod
+    def reason_for(axis: str) -> str | None:
+        return None
+
+    @staticmethod
+    def profile(joiner: str, industry: str) -> dict | None:
+        return {"revenue_percentile": 0.95 if joiner == "역삼1동" else 0.4, "quarter": "2026Q1"}
+
+
+async def test_the_timing_axis_only_sees_surviving_candidates():
     timing = CountingTiming()
-    dropping = LocationTeam(stress_check=lambda candidate: {"passes": candidate["id"] != "l1",
-                                                            "runway_months": 6})
+    dropping = LocationTeam(trade_area=DroppingTradeArea())
     result = await agent(timing=timing, location=dropping).run(CONDITIONS, CANDIDATES)
     assert timing.saw == ["l2"]
     assert [item["id"] for item in result.surviving] == ["l2"]
     assert result.dropped[0]["id"] == "l1"
 
 
-async def test_the_finance_team_runs_once_regardless_of_candidate_count():
+async def test_the_finance_axes_run_once_regardless_of_candidate_count():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    finance = next(report for report in result.reports if report.team == "finance")
+    finance = next(report for report in result.reports if report.key == "finance")
     assert len([item for item in finance.outcomes if item.key == "finance.band"]) == 1
 
 
-async def test_the_run_reports_how_many_of_the_twelve_agents_are_active():
+async def test_the_run_reports_how_many_agents_are_active():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    assert result.activation["total"] == 12
+    assert result.activation["total"] == 13
     # 조건 2 + 밴드 + 스트레스 + 메인 통합 = 5. 상권·생존·타이밍·KB·지원금은 원천이 없다.
     assert result.activation["active"] == 5
     assert result.activation["by_key"]["location.demand"] == AgentStatus.INTEGRATION_PENDING
@@ -123,9 +137,9 @@ async def test_changed_conditions_force_a_rerun():
     assert timing.calls == 2
 
 
-async def test_the_summary_only_repeats_numbers_the_teams_produced():
+async def test_the_summary_only_repeats_numbers_the_axes_produced():
     result = await agent().run(CONDITIONS, CANDIDATES)
-    band = next(report for report in result.reports if report.team == "finance")
+    band = next(report for report in result.reports if report.key == "finance")
     lines = next(item for item in band.outcomes if item.key == "finance.band").data["bands"]
     assert result.summary["recommended_ceiling_krw"] == lines[1]["ceiling_krw"]
     assert result.summary["target_monthly_revenue_krw"] == lines[1]["target_monthly_revenue_krw"]
@@ -136,13 +150,13 @@ async def test_the_summary_is_empty_when_the_run_halted():
     assert result.summary == {}
 
 
-async def test_the_main_agent_reports_its_own_integration_as_the_twelfth_outcome():
+async def test_the_main_agent_reports_its_own_integration_as_the_last_outcome():
     # 메인도 일을 한다 — 팀 보고를 모아 수치 카드를 만든다. 그 결과를 스스로 내지 않으면
     # 화면에는 11개만 도착하고 12번째 칸이 영원히 비어 있게 된다.
     result = await agent().run(CONDITIONS, CANDIDATES)
     keys = [item.key for report in result.reports for item in report.outcomes]
     assert keys[-1] == "main.integrate"
-    assert len(keys) == 12
+    assert len(keys) == 13
 
 
 async def test_the_main_agent_marks_itself_withheld_when_the_run_halted():
@@ -158,3 +172,40 @@ async def test_the_integration_outcome_carries_the_same_numbers_as_the_summary()
     main = next(item for report in result.reports for item in report.outcomes if item.key == "main.integrate")
     assert main.data["summary"] == result.summary
     assert main.data["surviving_count"] == len(result.surviving)
+
+
+# ── 부분 무효화 — 바뀐 것만 다시 돈다 ──────────────────────────────────────
+
+async def test_an_identical_rerun_still_reuses_everything():
+    """가드 2 는 그대로다. 부분 무효화는 그 규칙을 세밀하게 만든 것이지 푼 것이 아니다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run(CONDITIONS, CANDIDATES)
+    assert second.reused is True
+
+
+async def test_changing_the_equity_reruns_the_kernel_but_reuses_the_lookups():
+    """자기자본만 고쳤다면 공시·공고를 다시 조회할 이유가 없다 — 금액으로 달라지지 않는다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run({**CONDITIONS, "equity_krw": 200_000_000}, CANDIDATES)
+    assert second.reused is False
+    # 밴드는 금액이 바뀌었으므로 다시 돌았다.
+    assert "finance.band" not in second.reused_units
+
+
+async def test_changing_the_district_reuses_the_finance_group():
+    """자치구는 탐색 공간이다. 조달 밴드도 공시 금리도 자치구로 달라지지 않는다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run({**CONDITIONS, "district": "성동구"}, CANDIDATES)
+    assert "finance.band" in second.reused_units
+    assert "finance.kb_products" in second.reused_units
+
+
+async def test_changing_the_industry_reuses_nothing():
+    """상권 조회 코드도 원가 구조도 공고 대조도 업종에서 갈린다."""
+    main = agent()
+    await main.run(CONDITIONS, CANDIDATES)
+    second = await main.run({**CONDITIONS, "industry": "치킨"}, CANDIDATES)
+    assert second.reused_units == []

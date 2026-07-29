@@ -151,10 +151,13 @@ async def healthz():
 
 
 def analysis_axes() -> dict[str, dict[str, Any]]:
-    """각 분석 축의 가동 여부 (설계 스펙 §7 가드 3).
+    """각 **판단 축**의 가동 여부 (설계 스펙 §7 가드 3).
 
     축이 켜지려면 원천이 설정되어 있고 **그 축을 계산하는 코드가 존재해야** 한다.
     설정만 있고 구현이 없는 축을 켜면 화면이 "판정했다"고 말하게 되므로 켜지 않는다.
+
+    목록은 `AGENT_SPECS` 에서 `display_group` 을 가진 것만 뽑아 만든다 — 축을 두 곳에 적으면
+    한쪽만 늘어나 화면과 서버가 다른 개수를 말한다. 밴드·스트레스는 커널이라 여기 없다.
     """
     finlife = bool(settings.finlife_api_key and (settings.finlife_api_url or settings.finlife_api_base_url))
     subsidy = bool((settings.bizinfo_api_key and settings.bizinfo_api_url)
@@ -164,13 +167,12 @@ def analysis_axes() -> dict[str, dict[str, Any]]:
     trade_area = trade_areas.available
     trade_area_pending = "서울 상권분석 프로파일 미생성 — `npm run pipeline:trade-area` 실행 전에는 판정하지 않습니다"
     trade_area_note = f"{trade_areas.quarter} 기준 행정동 {trade_areas.dong_count}개" if trade_area else None
-    return {
-        "finance.band": {"enabled": True, "disabled_reason": None,
-                         # 축이 켜져 있다는 것과 근거가 실측이라는 것은 다르다. 지금 등록된
-                         # 제도 파라미터에는 시연용 가정값이 섞여 있고, 그 사실을 여기서도 밝힌다.
-                         "note": ("대출 만기·보증한도·정책자금 한도와 업종 원가 구조가 시연용 가정값입니다 — 실제 심사 결과와 다릅니다"
-                                  if policy_params.assumed("카페") else "제도 파라미터 미등록 시 integration_pending을 반환합니다")},
-        "finance.stress": {"enabled": True, "disabled_reason": None, "note": None},
+    # 매출 축은 상권 프로파일이 있어도 켜지지 않는다. 목표매출을 상권 매출 분포에 대입하는
+    # 백분위 정의가 정해지지 않았고(`trade_area_adapter.PENDING_REASONS`), 정의되지 않은 기준으로
+    # 후보를 떨어뜨릴 수는 없다 — 탈락 권한을 가진 유일한 축이라 더욱 그렇다.
+    viability_pending = ("목표매출을 상권 매출 분포에 대입하는 백분위 정의 미확정 — "
+                         "정의 전에는 판정하지 않으며, 판정하지 않은 축은 탈락 근거로 쓰이지 않습니다")
+    states: dict[str, dict[str, Any]] = {
         "finance.kb_products": {"enabled": finlife,
                                 "disabled_reason": None if finlife else "금융상품 공시 endpoint 미검증",
                                 "note": "finlife는 소비자 대출만 공시합니다. 창업자금 상품 정보는 연동 대기입니다"},
@@ -181,11 +183,19 @@ def analysis_axes() -> dict[str, dict[str, Any]]:
                             "note": trade_area_note},
         "location.competition": {"enabled": trade_area, "disabled_reason": None if trade_area else trade_area_pending,
                                  "note": trade_area_note},
-        "location.viability": {"enabled": trade_area, "disabled_reason": None if trade_area else trade_area_pending,
-                               "note": "추정매출은 상권·업종 조합의 일부에만 제공되어 후보마다 판정 여부가 다릅니다" if trade_area else None},
+        "location.viability": {"enabled": False, "disabled_reason": viability_pending,
+                               "note": "후보를 떨어뜨릴 수 있는 유일한 축입니다"},
         "location.survival": {"enabled": False, "disabled_reason": "인허가 이력 코호트 미구축", "note": "유일한 A등급 경로입니다"},
-        "timing.policy": {"enabled": False, "disabled_reason": "개발·정책 일정 원천 미확보 — 일정 확인 전 판단 유보", "note": None},
+        "location.access": {"enabled": mcp_client.available,
+                            "disabled_reason": None if mcp_client.available else "presale-mcp 미연결 — 좌표계를 추측해 거리·소요시간을 만들지 않습니다",
+                            "note": "대화가 쓰는 조회 도구를 그대로 씁니다"},
+        "timing.policy": {"enabled": False, "disabled_reason": "개발·정책 일정 원천 미확보 — 일정 확인 전 판단 유보",
+                          "note": "후보 순위와 탈락에 관여하지 않는 소프트 표시입니다"},
     }
+    declared = [item.key for item in AGENT_SPECS if item.display_group]
+    missing = [key for key in declared if key not in states]
+    assert not missing, f"판단 축인데 가동 여부를 선언하지 않았습니다: {missing}"
+    return {key: states[key] for key in declared}
 
 
 @app.get("/api/v1/status")
@@ -384,6 +394,17 @@ async def create_funding_bands(payload: FundingBandInput, session_id: UUID = Dep
                              provenance=provenance)
 
 
+@contextlib.asynccontextmanager
+async def access_toolset():
+    """접근성 축이 쓰는 도구 세트. 세션은 여는 함수가 닫는다.
+
+    대화가 쓰는 것과 **같은 도구**다(`ChatToolset`) — 같은 질문에 두 벌의 조회 코드를 두면
+    화면과 대화가 다른 답을 내게 된다. 세션 수명이 이 컨텍스트 매니저 안으로 닫히는 이유는
+    `mcp_client` 가 적어 둔 anyio 취소 스코프 제약 그대로다."""
+    async with mcp_client.session() as session:
+        yield ChatToolset(session, PlaceRegistry())
+
+
 #: 케이스별 메인 에이전트. 가드 2(동일 조건 재실행 금지)의 캐시가 인스턴스 안에 있으므로
 #: 요청마다 새로 만들면 캐시가 절대 맞지 않는다. `repository` 의 일일 한도 카운터와 같은
 #: 성질의 프로세스 로컬 상태이고, 같은 한계(다중 워커·재시작에서 유지되지 않음)를 갖는다.
@@ -410,7 +431,8 @@ def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
             # 상권 프로파일은 어댑터를 거쳐 들어온다. 어댑터가 옮기는 것은 원천이 이미 내린
             # 판정이고, 옮길 수 없는 축(달성 가능성)은 사유와 함께 꺼진 채로 남는다.
             # 프로파일이 없으면 세 축 모두 integration_pending 이고 모델도 부르지 않는다(가드 3).
-            location=LocationTeam(trade_area=TradeAreaProfiles(trade_areas), llm=reasoner),
+            location=LocationTeam(trade_area=TradeAreaProfiles(trade_areas), llm=reasoner,
+                                  toolset_factory=access_toolset if mcp_client.available else None),
             # 일정 문서 원천이 아직 없다. 문서가 붙기 전에는 관련성 판단도 하지 않는다.
             timing=TimingTeam(llm=reasoner),
             llm=integrator, budget=budget)
@@ -420,9 +442,12 @@ def main_agent_for(case_id: UUID, kb_products: list[dict[str, Any]],
 
 def agent_roster() -> dict[str, Any]:
     return {"total": len(AGENT_SPECS),
+            # `display_group` 은 화면 묶음이지 실행 단위가 아니다. 프론트가 키 이름으로
+            # 짐작해 묶으면 축이 늘 때마다 두 곳을 고쳐야 하므로 선언에서 그대로 내보낸다.
             "agents": [{"key": item.key, "team": item.team, "name": item.name,
                         "source_name": item.source_name, "produces": item.produces,
-                        "evidence_grade": item.evidence_grade} for item in AGENT_SPECS]}
+                        "evidence_grade": item.evidence_grade,
+                        "display_group": item.display_group} for item in AGENT_SPECS]}
 
 
 @app.get("/api/v1/agents")
@@ -464,10 +489,13 @@ async def prescribe(case_id: UUID, payload: PrescribeRequest, session_id: UUID =
                 yield sse_frame({"event": "done", "data": {
                     "fingerprint": result.fingerprint, "reused": result.reused,
                     "halted_at": result.halted_at, "questions": result.questions,
+                    "deferred": result.deferred, "proposals": result.proposals,
+                    "reused_units": result.reused_units,
                     "activation": result.activation, "summary": result.summary,
                     "surviving": result.surviving, "dropped": result.dropped,
-                    "reports": [{"team": report.team, "name": report.name,
-                                 "blocking": report.blocking, "halted": report.halted,
+                    # 축 묶음 하나가 낸 결과. `blocking`·`halted` 는 없다 — 무엇을 멈출지는
+                    # 보고가 아니라 orchestrator 가 정하고, 그 결론은 `halted_at` 한 곳에 있다.
+                    "reports": [{"key": report.key, "name": report.name,
                                  "outcomes": [{"key": item.key, "name": item.name,
                                                "status": item.status, "message": item.message,
                                                "data": item.data,

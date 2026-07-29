@@ -178,7 +178,7 @@ async def test_a_halted_run_writes_no_narrative_at_all():
     assert "narrative" not in integrated.data
 
 
-async def test_a_run_without_a_model_still_reports_the_twelfth_agent():
+async def test_a_run_without_a_model_still_reports_the_main_agent():
     plain = MainAgent(conditions=ConditionLayer(),
                       finance=FinanceTeam(FULL, kb_products=[], programs=[]),
                       location=LocationTeam(), timing=TimingTeam())
@@ -200,26 +200,34 @@ async def test_a_repeat_of_the_same_conditions_calls_no_model_at_all():
     assert len(responder.calls) == spent
 
 
+#: 상한을 실제로 넘겨 보려면 부를 축이 있어야 한다. 밴드·스트레스가 커널로 내려간 뒤로는
+#: 조회 축(공시·공고)만 모델을 부르므로, 예산 시험은 그 둘을 실제로 채워 놓고 한다.
+LOOKUPS = dict(kb_products=[{"id": "p1", "name": "사업자대출", "category": "BUSINESS_LOAN"}],
+               programs=[{"id": "n1", "title": "창업지원"}])
+
+
+def budgeted_agent(responder, max_calls):
+    reasoner = AgentLLM(responder, budget=RunBudget(max_calls=max_calls))
+    return MainAgent(conditions=ConditionLayer(llm=reasoner),
+                     finance=FinanceTeam(FULL, llm=reasoner, **LOOKUPS),
+                     location=LocationTeam(llm=reasoner), timing=TimingTeam(llm=reasoner),
+                     llm=reasoner, budget=reasoner.budget)
+
+
 async def test_one_run_never_exceeds_the_call_budget():
     responder = ScriptedResponder(__text__="요약")
-    reasoner = AgentLLM(responder, budget=RunBudget(max_calls=3))
-    agent = MainAgent(conditions=ConditionLayer(llm=reasoner),
-                      finance=FinanceTeam(FULL, kb_products=[], programs=[], llm=reasoner),
-                      location=LocationTeam(llm=reasoner), timing=TimingTeam(llm=reasoner),
-                      llm=reasoner, budget=reasoner.budget)
+    # 부르려는 축은 셋(공시·공고·설명문)인데 상한은 둘이다.
+    agent = budgeted_agent(responder, max_calls=2)
     result = await agent.run(CONDITIONS, LISTINGS)
-    assert len(responder.calls) == 3
+    assert len(responder.calls) == 2
     # 상한을 넘긴 것은 에러가 아니라 부분 결과다 — 실행은 끝까지 가고 12개가 모두 보고한다.
-    assert len([item for report in result.reports for item in report.outcomes]) == 12
+    assert len([item for report in result.reports for item in report.outcomes]) == 13
 
 
 async def test_the_budget_starts_over_when_the_conditions_change():
     responder = ScriptedResponder(__text__="요약")
-    reasoner = AgentLLM(responder, budget=RunBudget(max_calls=2))
-    agent = MainAgent(conditions=ConditionLayer(llm=reasoner),
-                      finance=FinanceTeam(FULL, kb_products=[], programs=[], llm=reasoner),
-                      location=LocationTeam(llm=reasoner), timing=TimingTeam(llm=reasoner),
-                      llm=reasoner, budget=reasoner.budget)
+    agent = budgeted_agent(responder, max_calls=2)
     await agent.run(CONDITIONS, LISTINGS)
     await agent.run({**CONDITIONS, "equity_krw": 200_000_000}, LISTINGS)
+    # 상한은 케이스 평생이 아니라 실행 한 번의 것이다.
     assert len(responder.calls) == 4

@@ -9,7 +9,7 @@
 """
 import pytest
 
-from app.agents.conditions import ConditionLayer, amount_krw, resolve_mention
+from app.agents.conditions import ConditionLayer, resolve_mention
 from app.agents.contracts import AgentStatus
 from app.agents.llm import AgentLLM, RunBudget
 
@@ -43,17 +43,8 @@ def layer(responder, **kwargs):
 
 # ── 코드가 값을 읽는다 — 순수 함수부터 고정한다 ─────────────────────────────
 
-@pytest.mark.parametrize("text,expected", [
-    ("1억", 100_000_000), ("3천만원", 30_000_000), ("250만원", 2_500_000),
-    ("1억 5천만원", 150_000_000), ("2,500,000원", 2_500_000), ("보증금 5천만", 50_000_000),
-])
-def test_amounts_are_read_from_the_text_by_code(text, expected):
-    assert amount_krw(text) == expected
-
-
-def test_text_without_an_amount_yields_nothing_rather_than_zero():
-    # 0 을 돌려주면 "월세 0원"이라는 조건이 조용히 만들어진다.
-    assert amount_krw("적당한 가격이면 좋겠어요") is None
+# 금액 파싱 자체의 계약은 `test_amount_parsing.py` 가 두 경로에 걸쳐 고정한다.
+# 여기서 다시 단언하면 같은 것을 두 곳에서 정의하게 되고, 한쪽만 고쳐도 통과하게 된다.
 
 
 def test_a_district_is_resolved_only_to_one_of_the_twenty_five():
@@ -132,10 +123,21 @@ async def test_without_an_llm_the_layer_behaves_exactly_as_before():
 # ── condition.finance ────────────────────────────────────────────────────
 
 async def test_the_model_chooses_which_gaps_to_ask_about():
-    responder = ScriptedResponder(mentions(), asks("monthly_rent_krw"))
+    responder = ScriptedResponder(mentions(), asks("equity_krw"))
     conditions = {"industry": "카페", "district": "강남구", "utterance": "강남구 카페"}
     report = await layer(responder).arun(conditions)
-    assert [question["field"] for question in report.questions] == ["monthly_rent_krw"]
+    assert [question["field"] for question in report.questions] == ["equity_krw"]
+
+
+async def test_the_model_cannot_ask_about_a_deferrable_gap():
+    """희망 월세는 비어 있어도 되묻기 목록에 오르지 않는다 — 모델이 골라도 마찬가지다.
+    유보 항목을 되물으면 되묻기가 다시 늘어나고 자동 진행이 그만큼 막힌다."""
+    responder = ScriptedResponder(mentions(), asks("monthly_rent_krw"))
+    conditions = {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+                  "utterance": "강남구 카페"}
+    report = await layer(responder).arun(conditions)
+    assert report.questions == []
+    assert "monthly_rent_krw" in report.deferred
 
 
 async def test_a_question_about_something_that_is_not_missing_is_discarded():
@@ -156,8 +158,8 @@ async def test_the_question_limit_survives_the_model():
 async def test_a_model_that_picks_nothing_falls_back_to_the_declared_order():
     responder = ScriptedResponder(mentions(), asks())
     report = await layer(responder).arun({"industry": "카페", "utterance": "카페 하려고요"})
-    assert [question["field"] for question in report.questions] == ["district", "equity_krw",
-                                                                    "monthly_rent_krw"]
+    # 선언 순서는 BLOCKING 의 순서다. 희망 월세는 유보 항목이라 여기 오지 않는다.
+    assert [question["field"] for question in report.questions] == ["district", "equity_krw"]
 
 
 async def test_the_finance_agent_records_what_the_model_chose():
@@ -174,3 +176,42 @@ async def test_the_finance_agent_records_what_the_model_chose():
 def test_the_synchronous_path_still_works_without_any_model():
     report = ConditionLayer().run(COMPLETE)
     assert report.settled is True
+
+
+# ── 충돌은 덮어쓰지 않고 제안으로 올린다 ──────────────────────────────────
+
+async def test_an_utterance_that_contradicts_a_settled_value_never_overwrites_it():
+    """폼에 강남구를 확정해 놓고 "마포는 어때" 라고 말해도 조건은 바뀌지 않는다.
+    조건 변경은 재실행을 유발하므로 조용히 일어나면 안 된다."""
+    responder = ScriptedResponder(mentions({"field": "district", "span": "마포구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "마포구는 어때요"})
+    assert report.conditions["district"] == "강남구"
+
+
+async def test_a_contradicting_utterance_is_surfaced_as_a_proposal():
+    responder = ScriptedResponder(mentions({"field": "district", "span": "마포구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "마포구는 어때요"})
+    assert report.proposals == [
+        {"field": "district", "current": "강남구", "proposed": "마포구", "span": "마포구"}]
+
+
+async def test_an_utterance_that_agrees_with_a_settled_value_is_not_a_proposal():
+    """같은 값을 다시 말한 것은 변경 제안이 아니다."""
+    responder = ScriptedResponder(mentions({"field": "district", "span": "강남구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "강남구에서 찾고 있어요"})
+    assert report.proposals == []
+
+
+async def test_a_span_that_is_not_in_the_utterance_never_becomes_a_proposal_either():
+    """검증은 채우기와 제안 양쪽에 똑같이 걸린다."""
+    responder = ScriptedResponder(mentions({"field": "district", "span": "송파구"}))
+    report = await layer(responder).arun(
+        {"industry": "카페", "district": "강남구", "equity_krw": 50_000_000,
+         "utterance": "마포구는 어때요"})
+    assert report.proposals == []
