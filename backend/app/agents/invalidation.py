@@ -33,6 +33,13 @@ WHERE_UNITS: tuple[str, ...] = tuple(
 LOOKUP_UNITS: tuple[str, ...] = tuple(
     item.key for item in AGENT_SPECS if item.display_group in ("얼마", "언제"))
 
+#: 후보 하나하나를 읽는 단위. 후보 집합이 바뀌면 이것만 무효다.
+#:
+#: 공시·공고는 여기 없다 — 조건과 조회 인덱스만 읽고 후보는 보지 않는다. 자치구를 바꾸면
+#: 후보도 함께 바뀌므로, 조회 축까지 여기 넣으면 "자치구만 고쳤는데 공시를 다시 조회한다"가
+#: 되어 부분 무효화가 정확히 노리던 경우에서 무력해진다.
+CANDIDATE_READERS: tuple[str, ...] = WHERE_UNITS + ("timing.policy",)
+
 #: 조건 수립과 메인 종합은 언제나 다시 돈다 — 전자는 입력 그 자체이고, 후자는 나머지를 읽는다.
 ALWAYS: tuple[str, ...] = tuple(
     item.key for item in AGENT_SPECS if item.team in ("condition", "main"))
@@ -83,14 +90,13 @@ def invalidated(previous: dict[str, str], current: dict[str, str],
                 candidates_changed: bool) -> set[str]:
     """다시 돌려야 하는 단위들.
 
-    후보 집합이 바뀌면 후보마다 판정하는 축은 전부 무효다. 커널은 후보를 읽지 않으므로
-    (조건만으로 계산한다) 후보가 바뀌어도 유효하다."""
+    후보 집합이 바뀌면 **후보를 읽는 축만** 무효다(`CANDIDATE_READERS`). 커널은 조건만으로
+    계산하고, 공시·공고는 조회 인덱스만 읽으므로 후보가 바뀌어도 유효하다."""
     stale: set[str] = set(ALWAYS)
     touched = {key for key in set(previous) | set(current)
                if previous.get(key) != current.get(key)}
     for key in touched:
         stale.update(DEPENDENCIES.get(key, _UNKNOWN_INVALIDATES_ALL))
     if candidates_changed:
-        stale.update(WHERE_UNITS)
-        stale.update(LOOKUP_UNITS)
+        stale.update(CANDIDATE_READERS)
     return stale

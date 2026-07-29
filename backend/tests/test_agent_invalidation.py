@@ -85,3 +85,26 @@ def test_an_unknown_condition_key_invalidates_everything():
 def test_removing_a_condition_counts_as_a_change():
     without = {key: value for key, value in BASE.items() if key != "district"}
     assert set(WHERE_UNITS) <= stale(BASE, without)
+
+
+def test_a_new_candidate_set_leaves_the_lookup_axes_valid():
+    """공시·공고는 후보를 읽지 않는다 — 조건과 조회 인덱스만 본다.
+
+    자치구를 바꾸면 후보도 함께 바뀌므로, 후보 변경이 조회 축까지 무효화하면
+    "자치구만 고쳤는데 공시를 다시 조회한다"가 되어 부분 무효화가 노리던 경우에서 무력해진다."""
+    result = stale(BASE, BASE, candidates_changed=True)
+    assert "finance.kb_products" not in result
+    assert "finance.subsidy" not in result
+
+
+def test_a_new_candidate_set_invalidates_timing_because_it_reads_survivors():
+    """시점 축은 잔존 후보를 본다. 후보가 바뀌면 무효다."""
+    assert "timing.policy" in stale(BASE, BASE, candidates_changed=True)
+
+
+def test_changing_the_district_leaves_the_lookup_axes_valid_even_with_new_candidates():
+    """M5 의 대표 사례 — 자치구를 고치면 어디 축만 다시 돌고 얼마 축은 앞 판정을 쓴다."""
+    result = stale(BASE, {**BASE, "district": "성동구"}, candidates_changed=True)
+    assert set(WHERE_UNITS) <= result
+    assert "finance.kb_products" not in result
+    assert "finance.subsidy" not in result
